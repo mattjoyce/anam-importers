@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How importers fit</title>
+<meta name="description" content="How anam-importers puts a source's data into Anam: the pieces, who holds what, a batch's journey, retries, and how to write a new importer.">
+<style>
+:root {
+  --bg: #fbfaf7; --fg: #1f2328; --muted: #5b636d; --rule: #d9d6cf; --panel: #f1efe9;
+  --accent: #2f6f8f; --accent-soft: #dcebf2; --ok: #2e7d4f; --warn: #a2610b; --bad: #b3362f;
+  --code-bg: #efece4; --box: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15181c; --fg: #e4e6e9; --muted: #9aa3ad; --rule: #2e343b; --panel: #1c2026;
+    --accent: #7fb6d3; --accent-soft: #1f3440; --ok: #6cc28f; --warn: #e0a54e; --bad: #ef7a72;
+    --code-bg: #1f242a; --box: #1a1e23;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15181c; --fg: #e4e6e9; --muted: #9aa3ad; --rule: #2e343b; --panel: #1c2026;
+  --accent: #7fb6d3; --accent-soft: #1f3440; --ok: #6cc28f; --warn: #e0a54e; --bad: #ef7a72;
+  --code-bg: #1f242a; --box: #1a1e23;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+main { max-width: 46rem; margin: 0 auto; padding: 2.5rem 16px 4rem; }
+h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .4rem; }
+h2 { font-size: 1.3rem; margin: 2.6rem 0 .6rem; padding-top: .4rem; border-top: 1px solid var(--rule); }
+h3 { font-size: 1.05rem; margin: 1.6rem 0 .4rem; }
+p, ul, ol, table { margin: 0 0 1rem; }
+.lede { color: var(--muted); font-size: 1.05rem; margin-bottom: 1.6rem; }
+a { color: var(--accent); }
+code { font: .88em/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--code-bg); padding: .08em .3em; border-radius: 3px; }
+pre { background: var(--code-bg); padding: .9rem 1rem; border-radius: 6px; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; font-size: .93rem; display: block; overflow-x: auto; }
+th, td { text-align: left; vertical-align: top; padding: .45rem .6rem; border-bottom: 1px solid var(--rule); }
+th { color: var(--muted); font-weight: 600; }
+figure { margin: 1.4rem 0 1.6rem; }
+figure svg { width: 100%; height: auto; display: block; }
+figcaption { color: var(--muted); font-size: .88rem; margin-top: .5rem; }
+nav.toc { background: var(--panel); border-radius: 6px; padding: .8rem 1rem; font-size: .93rem; }
+nav.toc ol { margin: 0; padding-left: 1.2rem; }
+.note { background: var(--accent-soft); border-left: 3px solid var(--accent); padding: .7rem 1rem; border-radius: 0 6px 6px 0; font-size: .95rem; }
+.s-ok { color: var(--ok); font-weight: 600; }
+.s-warn { color: var(--warn); font-weight: 600; }
+.s-bad { color: var(--bad); font-weight: 600; }
+/* diagram styling, shared by every svg below */
+svg text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: var(--fg); }
+svg .small { font-size: 11px; fill: var(--muted); }
+svg .label { font-size: 13px; font-weight: 600; }
+svg .box { fill: var(--box); stroke: var(--rule); stroke-width: 1.5; }
+svg .anam { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+svg .zone { fill: none; stroke: var(--rule); stroke-dasharray: 5 4; }
+svg .line { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .accent { stroke: var(--accent); }
+svg .life { stroke: var(--rule); stroke-width: 1.5; stroke-dasharray: 3 4; }
+svg .ok { fill: var(--ok); } svg .warn { fill: var(--warn); } svg .bad { fill: var(--bad); }
+svg .arrowhead { fill: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>How importers fit</h1>
+<p class="lede">anam-importers 0.1.0. What an importer is, where each piece lives, and what happens to a batch on its way into Anam. For a reader who wants to write one without reading the base first.</p>
+
+<nav class="toc" aria-label="Contents">
+<ol>
+<li><a href="#what">What an importer is</a></li>
+<li><a href="#pieces">The pieces, and who holds what</a></li>
+<li><a href="#journey">A batch's journey</a></li>
+<li><a href="#retry">When things fail</a></li>
+<li><a href="#write">Writing a new importer</a></li>
+<li><a href="#withings">The Withings example</a></li>
+</ol>
+</nav>
+
+<h2 id="what">1. What an importer is</h2>
+
+<p>Anam is a personal longitudinal record: an append-only ledger of facts about one person, with everything else derived from it. It used to read each vendor's data itself, with a Go worker per source compiled into the binary that owns the ledger. Every new source meant a new release of that binary, and a parsing bug in one vendor's format ran inside the process holding the record.</p>
+
+<p>An importer moves that work out. It is a <a href="https://github.com/mattjoyce/ductile">ductile</a> plugin that reads one source and shapes its rows into payloads that match a <em>Facet Definition</em>: a JSON Schema plus the rules for which fields identify a fact and which field says when it happened. Anam keeps the Definitions it publishes, the admission gate that checks every payload, and the record. It no longer knows any vendor's format.</p>
+
+<p>Two things follow. An importer can be written in any language that can validate JSON Schema, and a broken importer can only fail to send; it cannot corrupt what Anam already holds.</p>
+
+<h2 id="pieces">2. The pieces, and who holds what</h2>
+
+<figure>
+<svg viewBox="0 0 720 330" role="img" aria-labelledby="pieces-t pieces-d">
+<title id="pieces-t">The pieces of an import</title>
+<desc id="pieces-d">The source database feeds the importer plugin, which emits batch events to anam_submit. anam_submit holds the token and calls Anam, which holds the Definitions, the gate and the ledger. All plugins run inside the ductile gateway; the vault grants the token to anam_submit only.</desc>
+<defs><marker id="ah1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+
+<rect class="zone" x="150" y="20" width="370" height="290" rx="10"/>
+<text class="small" x="164" y="40">ductile gateway</text>
+
+<rect class="box" x="10" y="110" width="120" height="70" rx="8"/>
+<text class="label" x="70" y="140" text-anchor="middle">source</text>
+<text class="small" x="70" y="160" text-anchor="middle">withings.db</text>
+
+<rect class="box" x="170" y="95" width="145" height="100" rx="8"/>
+<text class="label" x="242" y="122" text-anchor="middle">anam_withings</text>
+<text class="small" x="242" y="142" text-anchor="middle">shapes, validates</text>
+<text class="small" x="242" y="158" text-anchor="middle">definitions/*.json</text>
+<text class="small" x="242" y="174" text-anchor="middle">read-only, no token</text>
+
+<rect class="box" x="365" y="95" width="140" height="100" rx="8"/>
+<text class="label" x="435" y="122" text-anchor="middle">anam_submit</text>
+<text class="small" x="435" y="142" text-anchor="middle">publish, then post</text>
+<text class="small" x="435" y="158" text-anchor="middle">holds the token</text>
+<text class="small" x="435" y="174" text-anchor="middle">knows no source</text>
+
+<rect class="box" x="365" y="240" width="140" height="50" rx="8"/>
+<text class="label" x="435" y="262" text-anchor="middle">vault</text>
+<text class="small" x="435" y="279" text-anchor="middle">ANAM_IMPORTER_TOKEN</text>
+
+<rect class="anam" x="555" y="70" width="155" height="150" rx="8"/>
+<text class="label" x="632" y="98" text-anchor="middle">Anam</text>
+<text class="small" x="632" y="122" text-anchor="middle">Definitions (versions</text>
+<text class="small" x="632" y="137" text-anchor="middle">immutable once held)</text>
+<text class="small" x="632" y="160" text-anchor="middle">admission gate</text>
+<text class="small" x="632" y="183" text-anchor="middle">ledger</text>
+<text class="small" x="632" y="204" text-anchor="middle">token's SHA-256 only</text>
+
+<path class="line" d="M130,145 L168,145" marker-end="url(#ah1)"/>
+<path class="line" d="M315,145 L363,145" marker-end="url(#ah1)"/>
+<text class="small" x="340" y="137" text-anchor="middle">event</text>
+<path class="line accent" d="M505,145 L553,145" marker-end="url(#ah1)"/>
+<text class="small" x="529" y="137" text-anchor="middle">HTTP</text>
+<path class="line" d="M435,240 L435,197" marker-end="url(#ah1)"/>
+<text class="small" x="428" y="222" text-anchor="end">granted to this instance</text>
+</svg>
+<figcaption>Each piece holds one thing. The importer holds the source's format and its Definitions; <code>anam_submit</code> holds the token; Anam holds the record.</figcaption>
+</figure>
+
+<table>
+<thead><tr><th>Piece</th><th>Holds</th><th>Does not hold</th></tr></thead>
+<tbody>
+<tr><td>The importer (<code>withings/</code>)</td><td>The source's format, and the Definitions it emits in <code>definitions/&lt;type&gt;.json</code></td><td>A token, Anam's address, any identity rule</td></tr>
+<tr><td><code>anam_submit</code></td><td>One importer's token, granted by the gateway's vault to that instance alone</td><td>Any knowledge of a source</td></tr>
+<tr><td><code>anam_importer</code>, the base</td><td>Loading Definitions, local validation, batching, the HTTP client, the ductile protocol</td><td>Anything vendor-specific</td></tr>
+<tr><td>Anam</td><td>Published Definitions, the gate, the ledger, and each importer's token as a SHA-256 with the source and types it may use</td><td>The token itself, any vendor's format</td></tr>
+</tbody>
+</table>
+
+<p>One <code>anam_submit</code> instance per importer, each with its own token, so a token never leaves the plugin that uses it. The token names the source: envelopes carry no <code>source</code> field, and Anam admits everything a token sends as that token's source. An importer that takes over a built-in worker's data uses that worker's source name, so its facts are the same facts.</p>
+
+<p>A Definition version is immutable once Anam holds it. A change to the schema is a new version, and a new version may change the schema or classification but not which fields identify a fact or say when it happened.</p>
+
+<h2 id="journey">3. A batch's journey</h2>
+
+<figure>
+<svg viewBox="0 0 720 470" role="img" aria-labelledby="j-t j-d">
+<title id="j-t">A batch's journey</title>
+<desc id="j-d">The importer shapes and validates payloads, cuts them into batches of at most 49 and emits each as an event. anam_submit asks Anam for each Definition at its version, registers it only if Anam answers 404, then posts the batch. Anam answers 200 admitted, 422 refused with reasons, or 503 busy.</desc>
+<defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker></defs>
+
+<rect class="box" x="40" y="10" width="140" height="36" rx="6"/><text class="label" x="110" y="33" text-anchor="middle">importer</text>
+<rect class="box" x="290" y="10" width="140" height="36" rx="6"/><text class="label" x="360" y="33" text-anchor="middle">anam_submit</text>
+<rect class="anam" x="540" y="10" width="140" height="36" rx="6"/><text class="label" x="610" y="33" text-anchor="middle">Anam</text>
+<line class="life" x1="110" y1="46" x2="110" y2="465"/>
+<line class="life" x1="360" y1="46" x2="360" y2="465"/>
+<line class="life" x1="610" y1="46" x2="610" y2="465"/>
+
+<text class="small" x="120" y="78">1 read rows, shape payloads</text>
+<text class="small" x="120" y="96">2 validate each against its Definition</text>
+<text class="small" x="120" y="114">3 cut into batches of ≤ 49</text>
+
+<path class="line" d="M110,145 L358,145" marker-end="url(#ah2)"/>
+<text class="small" x="234" y="138" text-anchor="middle">4 event &lt;plugin&gt;.batch</text>
+<text class="small" x="234" y="160" text-anchor="middle">envelopes, definitions, label</text>
+
+<path class="line" d="M360,195 L608,195" marker-end="url(#ah2)"/>
+<text class="small" x="484" y="188" text-anchor="middle">5 GET /v1/definitions/{type}/{v}</text>
+<path class="line" d="M610,220 L362,220" marker-end="url(#ah2)"/>
+<text class="small" x="484" y="236" text-anchor="middle">200 same body: go on · other body: stop</text>
+
+<path class="line" d="M360,282 L608,282" stroke-dasharray="5 4" marker-end="url(#ah2)"/>
+<text class="small" x="484" y="275" text-anchor="middle">only on 404: POST /v1/definitions</text>
+
+<path class="line accent" d="M360,330 L608,330" marker-end="url(#ah2)"/>
+<text class="small" x="484" y="323" text-anchor="middle">6 POST /v1/envelopes</text>
+
+<path class="line" d="M610,365 L362,365" marker-end="url(#ah2)"/>
+<circle class="ok" cx="380" cy="382" r="4"/><text class="small" x="390" y="386">200 admitted whole: admitted, superseded, no-op</text>
+<circle class="bad" cx="380" cy="404" r="4"/><text class="small" x="390" y="408">422 refused whole, every bad envelope named</text>
+<circle class="warn" cx="380" cy="426" r="4"/><text class="small" x="390" y="430">503 the ledger was busy: send it again</text>
+
+<text class="small" x="370" y="455">7 on 200: emit anam.admitted</text>
+</svg>
+<figcaption>Steps 1 to 4 run in the importer, 5 to 7 in <code>anam_submit</code>. Nothing leaves the importer that its own Definitions would refuse.</figcaption>
+</figure>
+
+<ol>
+<li><strong>Shape.</strong> The importer reads the source and builds one payload per fact, using the source's own values. It composes no identity, joins nothing and summarises nothing; the gate works out identity from the Definition's <code>identity_key</code>.</li>
+<li><strong>Validate.</strong> <code>check</code> tests every payload against its Definition's JSON Schema with a stock library. If any fails, the run fails and nothing is emitted, so a refusal at the gate later means the importer and Anam disagree about the Definition, not that a row was malformed.</li>
+<li><strong>Batch.</strong> <code>batches</code> cuts the envelopes into groups of at most 49, the gate's transaction size.</li>
+<li><strong>Emit.</strong> Each batch goes out as a <code>&lt;plugin&gt;.batch</code> event carrying the envelopes, the Definitions they were shaped to (as JSON text) and a label. A pipeline routes it to that importer's <code>anam_submit</code> instance.</li>
+<li><strong>Publish.</strong> For each Definition, <code>anam_submit</code> asks Anam for that type at that version. If Anam holds it with the same body, it moves on. If Anam answers 404, it registers it. If Anam holds a different body at that version, it stops without retrying: the two disagree about what that version means, and nothing should be submitted until they agree. A type Anam's binary bundles is always found by the GET, so it is never registered.</li>
+<li><strong>Post.</strong> The batch goes to <code>POST /v1/envelopes</code> under the token. Anam admits it whole or not at all.</li>
+<li><strong>Report.</strong> On 200 it emits <code>anam.admitted</code> with the watermark <code>w</code> and a count of each outcome.</li>
+</ol>
+
+<h3>What the outcomes mean</h3>
+<table>
+<thead><tr><th>Outcome</th><th>Meaning</th></tr></thead>
+<tbody>
+<tr><td><code>admitted</code></td><td>A fact Anam had not seen before.</td></tr>
+<tr><td><code>no-op</code></td><td>The same payload under the same identity. Nothing written.</td></tr>
+<tr><td><code>superseded</code></td><td>The same identity with a changed payload. The new version is written; the old one stays in the ledger.</td></tr>
+</tbody>
+</table>
+
+<h2 id="retry">4. When things fail</h2>
+
+<p>Every response a plugin gives the gateway says whether trying again can help. The base decides it the same way everywhere:</p>
+
+<table>
+<thead><tr><th>What happened</th><th>Retried</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td><span class="s-warn">503</span> from Anam</td><td>Yes</td><td>Another write held the ledger for more than 5 s, usually an ingest. The same batch will land.</td></tr>
+<tr><td>Other 5xx, 429, timeout, connection refused</td><td>Yes</td><td>The daemon or the network, not the data.</td></tr>
+<tr><td><span class="s-bad">422</span> batch refused</td><td>No</td><td>The data or the Definition is wrong. The run fails with each refused envelope's reason in its logs.</td></tr>
+<tr><td>401 / 403</td><td>No</td><td>The token is missing, wrong, or not allowed this type.</td></tr>
+<tr><td>A Definition Anam holds with another body</td><td>No</td><td>A disagreement someone has to settle.</td></tr>
+<tr><td>Source database locked</td><td>Yes</td><td>The writer will finish. Raised as <code>Failure(..., retry=True)</code>.</td></tr>
+<tr><td>Source table missing, a bug, bad config</td><td>No</td><td>Trying again will fail the same way.</td></tr>
+</tbody>
+</table>
+
+<p>Sending a batch again is always safe. An unchanged payload is a <code>no-op</code>, so a run that is unsure whether its batch landed, because the connection dropped after the request went out, just sends it again. The same property makes resend-everything a cheap way to catch up: a full Withings resend is 113 batches, nearly all <code>no-op</code>.</p>
+
+<p>The gateway does the retrying, under each plugin's <code>retry:</code> settings, so a plugin never sleeps and loops. Whatever goes wrong, a plugin still writes exactly one response to stdout, so a crash is reported as an error the gateway can act on rather than a traceback it can't.</p>
+
+<h2 id="write">5. Writing a new importer</h2>
+
+<ol>
+<li>Make a folder named for the source, holding <code>manifest.yaml</code> (the ductile plugin manifest), <code>run.py</code>, and <code>definitions/&lt;type&gt;.json</code> for each type it emits. A Definition is Anam's manifest format: closed JSON Schema in <code>schema</code>, identity and time in <code>meta</code>.</li>
+<li>In <code>run.py</code>, read the source and build payloads. Wrap each with <code>envelope</code>, validate with <code>check</code>, cut with <code>batches</code>, and emit one event per batch.</li>
+<li>Give it a <code>handle</code> for whatever event announces new data, and a <code>poll</code> that resends everything. Anam makes the resend idempotent.</li>
+<li>Raise <code>Failure(message, retry=...)</code> where the source fails, saying whether a later try can help.</li>
+<li>Add a pipeline from <code>&lt;plugin&gt;.batch</code> to a new <code>anam_submit</code> instance, give that instance its own token in the vault, and add the token's SHA-256, source and types to Anam's <code>importers_file</code>.</li>
+<li>Bump the repo's version (one version for everything; a test checks every manifest agrees) and note it in the changelog.</li>
+</ol>
+
+<pre><code>import anam_importer as ai
+from anam_importer import ductile
+
+DEFS = ai.load(HERE)                      # definitions/*.json, by type
+d = DEFS["health.measurement"]
+
+envs = [ai.envelope(d, payload) for payload in rows]
+ai.check(DEFS, envs)                      # raises Invalid before anything leaves
+events = [ductile.event("anam_withings.batch",
+                        {"envelopes": b, "definitions": [d.body.decode()], "batch": label})
+          for b in ai.batches(envs)]
+return ductile.ok(f"{len(envs)} measurements", events=events)</code></pre>
+
+<p class="note">Payloads carry the source's own values as the source wrote them. If the source says <code>"2026-10-09 07:30"</code>, the payload says that, and the Definition's <code>time_semantics</code> tells Anam how to read it. Converting units, merging rows, or computing anything belongs in a projection inside Anam, not in an importer.</p>
+
+<h2 id="withings">6. The Withings example</h2>
+
+<p><code>anam_withings</code> reads the database the withings plugin keeps, read-only, and emits one <code>health.measurement</code> envelope per measurement, with its measure group's attribution beside it. It runs on three triggers:</p>
+
+<ul>
+<li><code>withings.measurement_recorded</code>: the batch for that one new measure group.</li>
+<li><code>withings.reconciled</code>: everything, since a reconcile can change old groups' attribution.</li>
+<li>A daily <code>poll</code>: everything, because the withings plugin rewrites readings Withings revises in place and announces only new groups. A correction reaches Anam within a day.</li>
+</ul>
+
+<p>It replaces a Go worker that Anam's binary carried. Both submit under the source <code>withings</code> and Anam builds identity from <code>(withings_id, type)</code> either way, so the same measurement from either path is the same fact. During cut-over both run, and the importer's batches should come back <code>no-op</code>. When they do, the Go worker is deleted.</p>
+
+<h3>Why values are written <code>29.371</code></h3>
+
+<p>The withings plugin stores a value as a SQLite REAL, a binary double with no text of its own. Anam's Go worker read it with <code>CAST(value AS TEXT)</code>, and its SQLite build writes 17 significant digits whenever 15 do not read back as the same double: <code>29.371000000000002</code>. SQLite 3.43 and later write the shortest form, <code>29.371</code>. So the worker's text came from its SQLite build, and an upgrade of that library would itself change it.</p>
+
+<p><code>anam_withings</code> writes the shortest decimal that reads back as the same double, without an exponent (<code>0.00001</code>, not <code>1e-05</code>, which the Definition refuses). IEEE 754 fixes that text whatever language or library reads the value. Against the live record, 222 of 5,531 measurements are written differently by the two paths, each the same number. At cut-over those 222 come back <code>superseded</code> once, with the old text kept in the ledger, and every resend after that is <code>no-op</code>.</p>
+
+<p class="note">Whether to accept those 222 supersessions, or instead render each value from Withings' own integer and exponent, is still open. This page describes what 0.1.0 does.</p>
+
+</main>
+</body>
+</html>
