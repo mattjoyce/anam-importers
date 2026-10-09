@@ -89,7 +89,8 @@ Not deployed. What it takes, in order:
    ```
 
    The token itself goes into the gateway's vault as `anam_importer_token_withings`, granted
-   to the `anam_submit_withings` instance only. Vault secret names are lowercase and global,
+   to the principal `anam-submit-withings` only, which the `anam_submit_withings` instance
+   names in `vault_principal`. Vault secret names are lowercase and global,
    so each importer's token has its own name, and its `anam_submit` instance names it in
    `token_secret`.
 
@@ -114,6 +115,8 @@ Not deployed. What it takes, in order:
      anam_submit_withings:
        uses: anam_submit
        enabled: true
+       requires_vault: true                  # fail closed: no token, no spawn
+       vault_principal: anam-submit-withings # the principal granted the token
        timeout: 60s
        retry:
          max_attempts: 5        # a 503 while Anam ingests is retried
