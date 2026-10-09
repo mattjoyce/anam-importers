@@ -14,6 +14,15 @@ from .client import AnamError
 Handler = Callable[[Dict[str, Any]], Dict[str, Any]]
 
 
+class Failure(Exception):
+    """A command that cannot do its work, and whether a later try can. Raise it from
+    a handler where a source fails: a locked database passes, a missing table does not."""
+
+    def __init__(self, message: str, retry: bool):
+        super().__init__(message)
+        self.retry = retry
+
+
 def ok(result: str, events: Optional[List[Dict[str, Any]]] = None, logs: Optional[List[str]] = None) -> Dict[str, Any]:
     """A command that did what it was asked."""
     return {"status": "ok", "result": result, "events": events or [], "logs": _logs(logs)}
@@ -45,8 +54,10 @@ def _logs(lines: Optional[List[str]]) -> List[Dict[str, str]]:
 def run(handlers: Dict[str, Handler]) -> None:
     """Read the request, run its command's handler, write the response.
 
-    An AnamError becomes an error carrying its retry. Any other exception is a bug or
-    bad config, and is reported as not worth retrying.
+    An AnamError or a Failure becomes an error carrying its retry. Any other exception
+    is a bug or bad config, reported as not worth retrying. Whatever happens, stdout
+    holds one response: a plugin that dies with a traceback tells the supervisor
+    nothing it can act on.
     """
     try:
         request = json.load(sys.stdin)
@@ -60,8 +71,8 @@ def run(handlers: Dict[str, Handler]) -> None:
         return
     try:
         response = handler(request)
-    except AnamError as exc:
+    except (AnamError, Failure) as exc:
         response = error(str(exc), retry=exc.retry)
-    except (KeyError, ValueError, TypeError, OSError) as exc:
+    except Exception as exc:  # noqa: BLE001 (the protocol needs an answer for every failure)
         response = error(f"{type(exc).__name__}: {exc}", retry=False)
     json.dump(response, sys.stdout)

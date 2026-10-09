@@ -61,7 +61,13 @@ Not deployed. What it takes, in order:
      anam_withings:
        enabled: true
        timeout: 120s
-       max_attempts: 1
+       retry:
+         max_attempts: 3        # a locked withings database is retried
+       schedules:
+         - id: resend           # catches readings Withings revised: the withings plugin rewrites
+           command: poll        # those rows in place and announces only new groups. A resend is
+           every: 24h           # 113 batches, nearly all no-op, so once a day: a correction
+           jitter: 1h           # reaches Anam within a day
        config:
          db_path: <the withings plugin's db_path>
          person_id: <Anam's person_id>
@@ -69,7 +75,8 @@ Not deployed. What it takes, in order:
        uses: anam_submit
        enabled: true
        timeout: 60s
-       max_attempts: 5          # a 503 while Anam ingests is retried
+       retry:
+         max_attempts: 5        # a 503 while Anam ingests is retried
        config:
          anam_url: http://<anam host>:8787
    ```

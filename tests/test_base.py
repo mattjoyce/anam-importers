@@ -30,9 +30,46 @@ class DefinitionsTest(unittest.TestCase):
         self.assertTrue(any(p.startswith("envelope 2") for p in caught.exception.problems))
 
     def test_an_envelope_names_no_source(self):
-        env = envelope(self.measurement, {"x": 1}, asserted_person="matt")
+        env = envelope(self.measurement, {"x": 1}, asserted_person="person-a")
         self.assertEqual(set(env), {"type", "definition_version", "payload", "asserted_person"})
         self.assertEqual(env["definition_version"], self.measurement.version)
+
+
+class ProtocolTest(unittest.TestCase):
+    def test_an_unexpected_exception_is_still_a_protocol_response(self):
+        import io
+        import json
+        import sys
+        from unittest import mock
+
+        from anam_importer import ductile
+
+        def broken(_request):
+            raise RuntimeError("boom")
+
+        out = io.StringIO()
+        with mock.patch.object(sys, "stdin", io.StringIO('{"command": "poll"}')), mock.patch.object(sys, "stdout", out):
+            ductile.run({"poll": broken})
+        response = json.loads(out.getvalue())
+        self.assertEqual(response["status"], "error")
+        self.assertFalse(response["retry"])
+        self.assertIn("boom", response["error"])
+
+    def test_a_failure_carries_its_retry(self):
+        import io
+        import json
+        import sys
+        from unittest import mock
+
+        from anam_importer import ductile
+
+        def busy(_request):
+            raise ductile.Failure("source is busy", retry=True)
+
+        out = io.StringIO()
+        with mock.patch.object(sys, "stdin", io.StringIO('{"command": "poll"}')), mock.patch.object(sys, "stdout", out):
+            ductile.run({"poll": busy})
+        self.assertTrue(json.loads(out.getvalue())["retry"])
 
 
 class BatchesTest(unittest.TestCase):

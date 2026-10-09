@@ -64,7 +64,7 @@ class Daemon:
             port = s.getsockname()[1]
         self.url = f"http://127.0.0.1:{port}"
         self.env = {**{k: v for k, v in os.environ.items() if not k.startswith("ANAM_")},
-                    "ANAM_PERSON_ID": "matt", "ANAM_LEDGER_PATH": str(d / "ledger.db"),
+                    "ANAM_PERSON_ID": "person-a", "ANAM_LEDGER_PATH": str(d / "ledger.db"),
                     "ANAM_DB_PATH": str(d / "tracking.db"), "ANAM_ARTIFACT_DIR": str(d / "artifacts"),
                     "ANAM_LISTEN": f"127.0.0.1:{port}", "ANAM_TOKEN_FILE": str(d / "token"),
                     "ANAM_IMPORTERS_FILE": str(d / "importers.yaml"), "ANAM_ZONE": "UTC"}

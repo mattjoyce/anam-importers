@@ -24,8 +24,10 @@ Commands:
 
 from __future__ import annotations
 
+import math
 import sqlite3
 import sys
+from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -64,18 +66,38 @@ QUERY = """
 FIELDS = ("withings_id", "date", "type", "value", "unit", "attrib", "model", "deviceid", "timezone")
 
 
-def open_source(db_path: str) -> sqlite3.Connection:
+# DEFAULT_BUSY_MS is how long a read waits for the withings plugin to finish a write
+# before it gives up and asks to be retried.
+DEFAULT_BUSY_MS = 5000
+
+
+def read_source(config: Dict[str, Any], withings_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """The payloads in the withings database, every one or one group's. A database
+    that is busy is a failure worth retrying; one that is missing or the wrong shape
+    is not, until someone changes it."""
+    try:
+        conn = open_source(str(config["db_path"]), int(config.get("busy_timeout_ms", DEFAULT_BUSY_MS)))
+        try:
+            return payloads(conn, withings_id)
+        finally:
+            conn.close()
+    except sqlite3.Error as exc:
+        busy = isinstance(exc, sqlite3.OperationalError) and ("locked" in str(exc) or "busy" in str(exc))
+        raise ductile.Failure(f"withings database {config['db_path']}: {exc}", retry=busy) from exc
+
+
+def open_source(db_path: str, busy_ms: int = DEFAULT_BUSY_MS) -> sqlite3.Connection:
     """The withings database, read-only. It must carry measure_groups (the withings
     plugin 0.4.0 after its reconcile), or attribution is unknown."""
     path = Path(db_path)
     if not path.is_file():
-        raise ValueError(f"no withings database at {db_path}")
-    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
+        raise ductile.Failure(f"no withings database at {db_path}", retry=False)
+    conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True, timeout=busy_ms / 1000)
     has = conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'measure_groups'").fetchone()[0]
     if not has:
         conn.close()
-        raise ValueError("the withings database has no measure_groups table, so attribution is unknown; "
-                         "run the withings plugin's reconcile")
+        raise ductile.Failure("the withings database has no measure_groups table, so attribution is unknown; "
+                              "run the withings plugin's reconcile", retry=False)
     return conn
 
 
@@ -97,8 +119,13 @@ def payloads(conn: sqlite3.Connection, withings_id: Optional[int] = None) -> Lis
 
 def render(value: float) -> str:
     """A measurement's value as the shortest decimal that reads back as the same
-    double, with .0 on a whole number: 80.5, 29.371, 99.0."""
-    return repr(float(value))
+    double, written out in full with .0 on a whole number: 80.5, 29.371, 99.0,
+    0.00001. Never an exponent: the Definition's value is a plain decimal."""
+    v = float(value)
+    if not math.isfinite(v):
+        raise ValueError(f"value {value!r} is not a finite number")
+    s = format(Decimal(repr(v)), "f")
+    return s if "." in s else s + ".0"
 
 
 def envelopes_of(definition: Definition, rows: List[Dict[str, Any]], person: str) -> List[Dict[str, Any]]:
@@ -113,11 +140,7 @@ def batch_events(request: Dict[str, Any], withings_id: Optional[int]) -> Dict[st
     config = request.get("config") or {}
     definitions = load(HERE)
     definition = definitions[TYPE]
-    conn = open_source(str(config["db_path"]))
-    try:
-        rows = payloads(conn, withings_id)
-    finally:
-        conn.close()
+    rows = read_source(config, withings_id)
     envs = envelopes_of(definition, rows, str(config["person_id"]))
     check(definitions, envs)
 
@@ -148,11 +171,7 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     definitions = load(HERE)
-    conn = open_source(str(config["db_path"]))
-    try:
-        rows = payloads(conn)
-    finally:
-        conn.close()
+    rows = read_source(config)
     check(definitions, envelopes_of(definitions[TYPE], rows, "health-check"))
     return ductile.ok(f"{len(rows)} measurement(s), every one conforming to {TYPE} v{definitions[TYPE].version}")
 

@@ -57,4 +57,4 @@ commands:
       status: string
 config_keys:
   required: [db_path, person_id]
-  optional: []
+  optional: [busy_timeout_ms]

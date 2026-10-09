@@ -30,7 +30,7 @@ class AgainstAnamTest(unittest.TestCase):
 
     def test_withings_through_anam_submit(self):
         db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)
-        shaped = run_plugin(WITHINGS, {"command": "poll", "config": {"db_path": str(db), "person_id": "matt"}})
+        shaped = run_plugin(WITHINGS, {"command": "poll", "config": {"db_path": str(db), "person_id": "person-a"}})
         first = self.submit(shaped["events"][0])
         self.assertEqual(first["status"], "ok", first)
         self.assertEqual(first["events"][0]["payload"]["outcomes"], {"admitted": 3})

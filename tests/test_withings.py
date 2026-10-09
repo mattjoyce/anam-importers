@@ -18,7 +18,7 @@ class WithingsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)
-        self.config = {"db_path": str(self.db), "person_id": "matt"}
+        self.config = {"db_path": str(self.db), "person_id": "person-a"}
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -34,7 +34,7 @@ class WithingsTest(unittest.TestCase):
         self.assertEqual(envs[0]["payload"], {
             "withings_id": "101", "date": "2026-10-09 07:30:00", "type": "1", "value": "80.5", "unit": "-3",
             "attrib": "0", "model": "Body Smart", "deviceid": "ab12", "timezone": "Australia/Sydney"})
-        self.assertEqual(envs[0]["asserted_person"], "matt")
+        self.assertEqual(envs[0]["asserted_person"], "person-a")
         self.assertNotIn("asserted_person", envs[2], "an ambiguous group asserts no one")
         self.assertEqual(len(batch["payload"]["definitions"]), 1)
 
@@ -61,6 +61,52 @@ class WithingsTest(unittest.TestCase):
         self.assertEqual(r["status"], "error")
         self.assertFalse(r["retry"])
         self.assertIn("measure_groups", r["error"])
+
+    def test_values_are_written_without_exponents(self):
+        import sys
+        sys.path.insert(0, str(REPO / "withings"))
+        from run import render
+
+        cases = {80.5: "80.5", 29.371: "29.371", 99.0: "99.0", 0.00001: "0.00001", 1e16: "10000000000000000.0",
+                 -0.5: "-0.5", 1.5e-07: "0.00000015"}
+        for value, want in cases.items():
+            self.assertEqual(render(value), want, value)
+        with self.assertRaises(ValueError):
+            render(float("nan"))
+
+    def test_a_tiny_value_still_conforms(self):
+        import sqlite3
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE measurements SET value = 0.00001 WHERE withings_id = 102")
+        conn.commit()
+        conn.close()
+        r = run_plugin(ENTRY, {"command": "poll", "config": self.config})
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(r["events"][0]["payload"]["envelopes"][2]["payload"]["value"], "0.00001")
+
+    def test_a_database_without_measurements_is_a_protocol_error(self):
+        import sqlite3
+        conn = sqlite3.connect(self.db)
+        conn.execute("DROP TABLE measurements")
+        conn.commit()
+        conn.close()
+        r = run_plugin(ENTRY, {"command": "poll", "config": self.config})
+        self.assertEqual(r["status"], "error", r)
+        self.assertFalse(r["retry"])
+        self.assertIn("measurements", r["error"])
+
+    def test_a_locked_database_is_retried(self):
+        import sqlite3
+        holder = sqlite3.connect(self.db, isolation_level=None)
+        holder.execute("PRAGMA journal_mode=DELETE")
+        holder.execute("BEGIN EXCLUSIVE")
+        try:
+            r = run_plugin(ENTRY, {"command": "poll", "config": {**self.config, "busy_timeout_ms": 100}})
+        finally:
+            holder.execute("ROLLBACK")
+            holder.close()
+        self.assertEqual(r["status"], "error", r)
+        self.assertTrue(r["retry"], r)
 
     def test_health(self):
         r = run_plugin(ENTRY, {"command": "health", "config": self.config})
