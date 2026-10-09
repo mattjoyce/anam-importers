@@ -7,6 +7,13 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `anam_submit` reads its token from the vault secret its instance config names in
+  `token_secret`, a new required key, instead of a fixed `ANAM_IMPORTER_TOKEN`. Vault secret
+  names are lowercase and global, so one fixed name could not serve two importers. For
+  Withings: `token_secret: anam_importer_token_withings`.
+
 ## [0.1.0] - 2026-10-10
 
 First release. Needs an Anam daemon with the importer routes (anam card 53).

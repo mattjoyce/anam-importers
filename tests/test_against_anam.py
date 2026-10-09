@@ -25,8 +25,8 @@ class AgainstAnamTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def submit(self, event):
-        return run_plugin(SUBMIT, {"command": "handle", "config": {"anam_url": self.daemon.url},
-                                   "secrets": {"ANAM_IMPORTER_TOKEN": self.daemon.token}, "event": event})
+        return run_plugin(SUBMIT, {"command": "handle", "config": {"anam_url": self.daemon.url, "token_secret": "anam_importer_token_test"},
+                                   "secrets": {"anam_importer_token_test": self.daemon.token}, "event": event})
 
     def test_withings_through_anam_submit(self):
         db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)

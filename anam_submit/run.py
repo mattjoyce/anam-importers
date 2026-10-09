@@ -23,15 +23,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from anam_importer import Client, Refused, ensure_published, parse  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-TOKEN_SECRET = "ANAM_IMPORTER_TOKEN"
-
-
 def client_of(request: Dict[str, Any]) -> Client:
+    """A client under the token in the secret config names. Vault secret names are
+    global, so each instance names its importer's own: token_secret."""
     config = request.get("config") or {}
-    secrets = request.get("secrets") or {}
-    token = secrets.get(TOKEN_SECRET, "")
+    name = str(config.get("token_secret", ""))
+    if not name:
+        raise ValueError("no token_secret in this instance's config")
+    token = (request.get("secrets") or {}).get(name, "")
     if not token:
-        raise ValueError(f"no {TOKEN_SECRET} secret granted to this instance")
+        raise ValueError(f"no {name} secret granted to this instance")
     return Client(str(config["anam_url"]), token, float(config.get("timeout", 30)))
 
 

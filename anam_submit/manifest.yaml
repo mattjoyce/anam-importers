@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Posts one batch of envelopes to Anam (POST /v1/envelopes) under one importer's token, after making sure Anam publishes the Definitions the batch was shaped to. Knows nothing about sources. Run one instance per importer (uses: anam_submit), each granted that importer's ANAM_IMPORTER_TOKEN."
+description: "Posts one batch of envelopes to Anam (POST /v1/envelopes) under one importer's token, after making sure Anam publishes the Definitions the batch was shaped to. Knows nothing about sources. Run one instance per importer (uses: anam_submit), each granted that importer's own token and naming it in token_secret."
 commands:
   - name: handle
     type: write
@@ -50,5 +50,5 @@ commands:
     output_schema:
       status: string
 config_keys:
-  required: [anam_url]
+  required: [anam_url, token_secret]
   optional: [timeout]

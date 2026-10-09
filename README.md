@@ -88,8 +88,10 @@ Not deployed. What it takes, in order:
        types: [health.measurement]
    ```
 
-   The token itself goes into the gateway's vault as `ANAM_IMPORTER_TOKEN`, granted to the
-   `anam_submit_withings` instance only.
+   The token itself goes into the gateway's vault as `anam_importer_token_withings`, granted
+   to the `anam_submit_withings` instance only. Vault secret names are lowercase and global,
+   so each importer's token has its own name, and its `anam_submit` instance names it in
+   `token_secret`.
 
 2. **Plugins.** This repo is a plugin root (the gateway image copies it in, as it does
    `ductile-withings`). Then:
@@ -117,6 +119,7 @@ Not deployed. What it takes, in order:
          max_attempts: 5        # a 503 while Anam ingests is retried
        config:
          anam_url: http://<anam host>:8787
+         token_secret: anam_importer_token_withings
    ```
 
 3. **Pipelines.**
