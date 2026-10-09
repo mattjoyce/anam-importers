@@ -1,0 +1,54 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_submit
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Posts one batch of envelopes to Anam (POST /v1/envelopes) under one importer's token, after making sure Anam publishes the Definitions the batch was shaped to. Knows nothing about sources. Run one instance per importer (uses: anam_submit), each granted that importer's ANAM_IMPORTER_TOKEN."
+commands:
+  - name: handle
+    type: write
+    description: "Submit the event's batch. A batch is admitted whole or refused whole; a refusal is not retried, a 503 or network failure is."
+    idempotent: true
+    retry_safe: true
+    input_schema:
+      type: object
+      properties:
+        envelopes:
+          type: array
+          maxItems: 49
+          description: "Envelopes as POST /v1/envelopes takes them: type, definition_version, payload, optional asserted_person."
+        definitions:
+          type: array
+          description: "The manifests the envelopes were shaped to, as JSON text. Registered if Anam does not hold them."
+        batch:
+          type: string
+          description: "Optional label carried through to anam.admitted, such as 3/113."
+      required: [envelopes]
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume:
+        - payload.envelopes
+        - payload.definitions
+        - payload.batch
+      emit:
+        - event: anam.admitted
+          values:
+            - payload.w
+            - payload.changed
+            - payload.outcomes
+            - payload.batch
+  - name: health
+    type: read
+    description: "Ask Anam for its Definitions under the token: proves the URL and the token."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [anam_url]
+  optional: [timeout]

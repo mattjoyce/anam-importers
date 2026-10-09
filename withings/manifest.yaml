@@ -1,0 +1,61 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_withings
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Shapes the withings plugin's measurements into Anam health.measurement envelopes and emits them as anam_withings.batch events, at most 49 to a batch, for anam_submit to post. Reads the withings database read-only; holds no token and writes nothing."
+commands:
+  - name: handle
+    type: read
+    description: "On withings.measurement_recorded: the batch for that one measure group."
+    idempotent: true
+    retry_safe: true
+    input_schema:
+      type: object
+      properties:
+        withings_id:
+          type: integer
+          description: "The measure group the withings plugin stored for the first time."
+      required: [withings_id]
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume:
+        - payload.withings_id
+      emit:
+        - event: anam_withings.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every measurement the database holds, in batches: the resend-everything mode, for a rebuild or after the withings plugin's reconcile. Idempotent in Anam: an unchanged measurement is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_withings.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "The database is readable, carries attribution, and every measurement conforms to the Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [db_path, person_id]
+  optional: []
