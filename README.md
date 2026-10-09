@@ -83,11 +83,9 @@ Not deployed. What it takes, in order:
        steps:
          - uses: anam_withings
      - name: anam-withings-after-reconcile
-       on: withings.reconciled
+       on: withings.reconciled     # handle resends everything: a reconcile can change old groups' attribution
        steps:
-         - id: resend
-           uses: anam_withings
-           command: poll           # a reconcile can change old groups' attribution
+         - uses: anam_withings
      - name: anam-withings-submit
        on: anam_withings.batch
        steps:

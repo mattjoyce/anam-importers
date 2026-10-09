@@ -9,7 +9,7 @@ description: "Shapes the withings plugin's measurements into Anam health.measure
 commands:
   - name: handle
     type: read
-    description: "On withings.measurement_recorded: the batch for that one measure group."
+    description: "On withings.measurement_recorded: the batch for that one measure group. On withings.reconciled: every measurement, since a reconcile can change old groups' attribution."
     idempotent: true
     retry_safe: true
     input_schema:
@@ -17,8 +17,7 @@ commands:
       properties:
         withings_id:
           type: integer
-          description: "The measure group the withings plugin stored for the first time."
-      required: [withings_id]
+          description: "The measure group the withings plugin stored for the first time. Absent on withings.reconciled."
     output_schema:
       status: string
       events: array

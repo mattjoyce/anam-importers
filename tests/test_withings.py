@@ -45,6 +45,12 @@ class WithingsTest(unittest.TestCase):
         envs = r["events"][0]["payload"]["envelopes"]
         self.assertEqual([e["payload"]["withings_id"] for e in envs], ["102"])
 
+    def test_a_reconcile_resends_everything(self):
+        r = run_plugin(ENTRY, {"command": "handle", "config": self.config,
+                               "event": {"type": "withings.reconciled", "payload": {"groups_held": 2}}})
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(len(r["events"][0]["payload"]["envelopes"]), 3)
+
     def test_a_database_without_attribution_is_refused(self):
         import sqlite3
         conn = sqlite3.connect(self.db)

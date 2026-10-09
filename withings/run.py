@@ -14,9 +14,11 @@ type), composed by Anam's gate from the Definition, so the same measurement from
 either path is the same facet.
 
 Commands:
-- handle : on withings.measurement_recorded, the batch for that one measure group
+- handle : on withings.measurement_recorded, the batch for that one measure group;
+           on withings.reconciled, every measurement, since a reconcile can change
+           old groups' attribution
 - poll   : every measurement the database holds, in batches: the resend-everything
-           mode, for a rebuild or after the withings plugin's reconcile
+           mode, for a schedule, a rebuild or a manual run
 - health : the database is readable and every row it holds conforms
 """
 
@@ -130,6 +132,9 @@ def batch_events(request: Dict[str, Any], withings_id: Optional[int]) -> Dict[st
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
+    event = request.get("event") or {}
+    if event.get("type") == "withings.reconciled":
+        return batch_events(request, None)
     withings_id = ductile.payload_of(request).get("withings_id")
     if withings_id is None:
         return ductile.error("the event names no withings_id", retry=False)
