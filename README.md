@@ -1,13 +1,23 @@
 # anam-importers
 
-Importers put a source's data into Anam. Each one is a ductile plugin that reads one
-source, shapes its rows to Facet Definitions it carries, and emits batches;
-`anam_submit` posts them to Anam under that importer's token. Anam keeps the
-Definitions, the gate and the record, and knows no vendor.
+Version 0.1.0 · [Changelog](CHANGELOG.md) · [How it fits together](docs/explainer.html)
 
-The contract every importer complies with is `docs/IMPORTERS.md` §8 in the anam repo.
+Importers put a source's data into [Anam](https://github.com/mattjoyce/anam), a personal
+longitudinal record. Each importer is a [ductile](https://github.com/mattjoyce/ductile)
+plugin that reads one source and shapes its rows to Facet Definitions it carries.
+`anam_submit` posts the result to Anam under that importer's own token. Anam keeps the
+Definitions, the admission gate and the record, and knows no vendor.
 
-## Layout
+```text
+source ──▶ importer (shape, validate) ──batch event──▶ anam_submit (publish, post) ──▶ Anam
+           anam_withings                                one instance per importer        POST /v1/envelopes
+```
+
+The contract every importer complies with is `docs/IMPORTERS.md` §8 in the anam repo: the
+wire format, tokens, all-or-nothing batches of at most 49, and what each status means.
+`docs/explainer.html` here walks through it with diagrams.
+
+## What is here
 
 ```text
 anam_importer/        the shared base: Definitions, validation, batches, the client, the ductile protocol
@@ -15,7 +25,17 @@ anam_submit/          posts a batch: makes sure Anam publishes its Definitions, 
 withings/             anam_withings: the withings plugin's measurements as health.measurement
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
+docs/explainer.html   how the pieces fit, for a reader new to it
 ```
+
+## Requirements
+
+- Python 3.10 or later, with `jsonschema` 4.18 or later. Importers that validate declare it
+  in a uv script header, so a gateway with `uv` resolves it; `anam_submit` needs only the
+  standard library.
+- An Anam daemon with the importer routes (anam card 53 and later), and a line for each
+  importer in its `importers_file`.
+- A ductile gateway to run the plugins (protocol 2).
 
 ## Writing an importer
 
@@ -28,13 +48,31 @@ tests/                unit tests, and tests against a real anam daemon (ANAM_BIN
 3. Each batch is an event `<plugin>.batch` with `envelopes`, `definitions` (the manifests as
    text) and a `batch` label. A pipeline routes it to that importer's `anam_submit` instance.
 4. Offer a resend-everything command. Anam makes it idempotent: an unchanged row is a no-op.
+5. Raise `anam_importer.ductile.Failure(message, retry=...)` when the source fails, so the
+   gateway knows whether trying again can help.
 
 ## Running the tests
 
 ```sh
-python3 -m unittest discover -s tests -t .                      # unit tests
+python3 -m unittest discover -s tests -t .                                     # unit tests
 ANAM_BIN=~/Projects/anam/bin/anam python3 -m unittest discover -s tests -t .   # and against a real daemon
 ```
+
+## Versioning and releases
+
+The repo has one [semantic version](https://semver.org/), in `VERSION`. The base,
+`anam_submit` and every importer release together, and each plugin manifest carries the same
+number; a test fails if any of them, or the changelog's newest release, disagrees.
+
+- **Major**: a change an existing importer or gateway config must follow, such as a renamed
+  event, a changed batch payload, or a base function removed.
+- **Minor**: a new importer, command or base function; a new Definition version an importer
+  emits.
+- **Patch**: a fix that changes no interface.
+
+To release: move the changelog's Unreleased entries under the new version, set `VERSION` and
+every manifest's `version`, commit, tag `vX.Y.Z`, push the tag. A gateway that runs these
+plugins then needs `ductile plugin lock` for each changed one.
 
 ## Wiring an importer into a gateway (Withings)
 
