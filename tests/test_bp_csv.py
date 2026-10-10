@@ -18,16 +18,16 @@ HEADER = ("Date (Excel),\tDate,\tSystolic,\tDiastolic,\tPulse,\tIrregular heartb
           "Dizzy / Light-headed,\tWeight [kg],\tTemperature [Celsius],\tBlood Glucose [mg/dL],\t"
           "Oxygen Saturation [%],\tLocation,\tPosture,\tComment,\tTags,\t\r\n")
 ROWS = [
-    "2026-1-24 06:36:00,\t 24 January 2026 6:36,\t 114.0,\t 80.0,\t 70.0,\t ,\t ,\t ,\t 96.3,\t ,\t ,\t ,\t "
+    "2001-1-24 06:36:00,\t 24 January 2001 6:36,\t 117.0,\t 77.0,\t 63.0,\t ,\t ,\t ,\t 88.8,\t ,\t ,\t ,\t "
     "\"Left Arm\",\t \"Seated\",\t \"No cofee\",\t ,\t \r\n",
-    "2026-2-10 05:04:00,\t 10 February 2026 5:04,\t 102.0,\t 72.0,\t 68.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t \r\n",
-    "2026-2-10 05:04:00,\t 10 February 2026 5:04,\t 101.0,\t 72.0,\t 66.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t \r\n",
+    "2001-2-10 05:04:00,\t 10 February 2001 5:04,\t 105.0,\t 72.0,\t 61.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t \r\n",
+    "2001-2-10 05:04:00,\t 10 February 2001 5:04,\t 104.0,\t 72.0,\t 59.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t \r\n",
 ]
 LATER = ("2026-3-01 07:10:00,\t 1 March 2026 7:10,\t 120.0,\t 78.0,\t 64.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t "
          "\"Left Arm\",\t \"Seated\",\t \"after coffee, short walk\",\t ,\t \r\n")
 # A reading with every column the app can fill, the checkboxes ticked (anam card 97).
 EVERY_COLUMN = ("2026-3-02 07:15:00,\t 2 March 2026 7:15,\t 131.0,\t 84.0,\t 72.0,\t \"Yes\",\t \"Yes\",\t \"Yes\",\t "
-                "96.1,\t 36.8,\t 101.0,\t 97.0,\t \"Left Arm\",\t \"Seated\",\t \"woke early\",\t \"stress, travel\",\t \r\n")
+                "96.1,\t 36.8,\t 104.0,\t 97.0,\t \"Left Arm\",\t \"Seated\",\t \"woke early\",\t \"stress, travel\",\t \r\n")
 
 
 def export(folder: Path, name: str, rows) -> Path:
@@ -57,18 +57,18 @@ class ShapeTest(unittest.TestCase):
     def test_readings_sharing_a_timestamp_are_told_apart_by_their_ordinal(self):
         p = self.payloads(ROWS)
         self.assertEqual([(x["date_excel"], x["reading"]) for x in p],
-                         [("2026-1-24 06:36:00", "1"), ("2026-2-10 05:04:00", "1"), ("2026-2-10 05:04:00", "2")])
-        self.assertEqual([x["systolic_blood_pressure"]["value"] for x in p], [114.0, 102.0, 101.0])
+                         [("2001-1-24 06:36:00", "1"), ("2001-2-10 05:04:00", "1"), ("2001-2-10 05:04:00", "2")])
+        self.assertEqual([x["systolic_blood_pressure"]["value"] for x in p], [117.0, 105.0, 104.0])
 
     def test_a_reading_is_the_omh_body_beside_the_export_s_own_text(self):
         first = self.payloads(ROWS)[0]
         self.assertEqual(first, {
-            "systolic_blood_pressure": {"value": 114.0, "unit": "mmHg"},
-            "diastolic_blood_pressure": {"value": 80.0, "unit": "mmHg"},
-            "effective_time_frame": {"date_time": "2026-01-24T06:36:00+11:00"},
+            "systolic_blood_pressure": {"value": 117.0, "unit": "mmHg"},
+            "diastolic_blood_pressure": {"value": 77.0, "unit": "mmHg"},
+            "effective_time_frame": {"date_time": "2001-01-24T06:36:00+11:00"},
             "body_posture": "sitting",
-            "date_excel": "2026-1-24 06:36:00", "date": "24 January 2026 6:36", "pulse": "70.0",
-            "weight_kg": "96.3", "location": "Left Arm", "comment": "No cofee", "reading": "1",
+            "date_excel": "2001-1-24 06:36:00", "date": "24 January 2001 6:36", "pulse": "63.0",
+            "weight_kg": "88.8", "location": "Left Arm", "comment": "No cofee", "reading": "1",
         })
 
     def test_a_posture_nobody_has_named_stops_the_run(self):
@@ -90,7 +90,7 @@ class ShapeTest(unittest.TestCase):
                                             "temperature_celsius", "blood_glucose_mg_dl", "oxygen_saturation_pct",
                                             "tags")},
                          {"irregular_heartbeat": "Yes", "missed_medication": "Yes", "dizzy_light_headed": "Yes",
-                          "temperature_celsius": "36.8", "blood_glucose_mg_dl": "101.0",
+                          "temperature_celsius": "36.8", "blood_glucose_mg_dl": "104.0",
                           "oxygen_saturation_pct": "97.0", "tags": "stress, travel"})
 
     def test_a_deleted_export_is_nothing_to_send(self):
@@ -116,7 +116,7 @@ class ShapeTest(unittest.TestCase):
         # quote, so under the worker's LazyQuotes it swallowed the next reading, and a
         # poll claimed a complete snapshot without it.
         unclosed = [LATER.replace('"after coffee, short walk"', '"after coffee, short walk'),
-                    ROWS[0].replace("2026-1-24", "2026-3-02")]
+                    ROWS[0].replace("2001-1-24", "2026-3-02")]
         cases = {
             "unclosed quote": (unclosed, "line 2: a quoted field holds a quote, on line 3,"),
             "never closed": ([LATER.replace('"after coffee, short walk",\t ,\t \r\n', '"after coffee\r\n')],

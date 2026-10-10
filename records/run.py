@@ -14,7 +14,7 @@ document: a lab report, a hand-kept log, a note made from email.
     extracted: {method: ..., version: ...}   # how; a parser, or a model reading
     records:
       - type: lab.result                     # a namespaced facet type
-        id: acl:39986323/sodium              # the row's identity, chosen once
+        id: acl:10000001/sodium              # the row's identity, chosen once
         ...fields                            # the payload, verbatim
 
 The payload is the record's fields and nothing else; `type` goes to the envelope.

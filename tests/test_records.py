@@ -26,13 +26,13 @@ document: {name: report.pdf, sha256: abc}
 extracted: {method: hand, version: 1}
 records:
   - type: lab.result
-    id: acl:39986323/sodium
-    collected: 2026-01-30 08:53
+    id: acl:10000001/sodium
+    collected: 2001-02-02 09:10
     analyte: Sodium
     value: "137"
     value_num: 137.0
     unit: mmol/L
-    lab_number: "39986323"
+    lab_number: "10000001"
     fasting: true
   - type: lab.result
     id: 20240916
@@ -116,7 +116,7 @@ class Files(unittest.TestCase):
         self.assertNotIn("type", sodium["payload"])
         self.assertNotIn("definition_version", sodium)
         self.assertEqual(sodium["asserted_person"], "person-a")
-        self.assertEqual(sodium["payload"]["collected"], "2026-01-30 08:53")
+        self.assertEqual(sodium["payload"]["collected"], "2001-02-02 09:10")
         self.assertEqual(sodium["payload"]["value_num"], 137)
         self.assertIs(sodium["payload"]["fasting"], True)
         self.assertEqual(ferritin["payload"]["id"], "20240916")
