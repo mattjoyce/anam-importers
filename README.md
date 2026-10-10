@@ -244,9 +244,10 @@ two, this importer registers its own Definition: Anam's binary does not bundle
 `sleep.cpap-session`, so the first batch makes `anam_submit` register it.
 
 It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
-which its uv script header pins to a tag. The card copy is refreshed every few months by copying
-the SD card again, so a `folder_watch` on the copy's `LAST.TXT` runs `handle`, and every run
-sends the whole card: the old sessions come back `no-op` and the new ones are admitted.
+which its uv script header pins to a tag, fetched as a zip archive so the gateway needs no git.
+The card copy is refreshed every few months by copying the SD card again, so a `folder_watch` on
+the copy's `LAST.TXT` runs `handle`, and every run sends the whole card: the old sessions come
+back `no-op` and the new ones are admitted.
 
 ```yaml
 plugins:

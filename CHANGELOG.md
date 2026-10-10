@@ -25,6 +25,9 @@ All notable changes to this repo. The format follows
 
 ### Fixed
 
+- `anam_dreamstation` fetches the decoder as the tag's zip archive, not `git+https`: the gateway
+  has no git, so uv could not resolve it.
+
 - The README's gateway examples set `timeouts:` per command. A flat `timeout:` is not a ductile
   plugin field: `config check` passes it, and the gateway then crash-loops at boot.
 

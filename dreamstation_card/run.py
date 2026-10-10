@@ -3,7 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #   "jsonschema>=4.18",
-#   "dreamstation @ git+https://github.com/mattjoyce/dreamstation@v0.1.0",
+#   "dreamstation @ https://github.com/mattjoyce/dreamstation/archive/refs/tags/v0.1.0.zip",
 # ]
 # ///
 """anam_dreamstation: shapes a Philips DreamStation SD card copy into
