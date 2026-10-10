@@ -1,0 +1,65 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_bp_csv
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Shapes a blood pressure app export (BloodPressure_<date>, CSV) into Anam health.blood-pressure envelopes and emits them as anam_bp_csv.batch events, at most 49 to a batch, for anam_submit to post. Reads the export; holds no token and writes nothing."
+commands:
+  - name: handle
+    type: read
+    description: "On a folder_watch per_file event: the export at payload.path. A deleted path is nothing to send."
+    idempotent: true
+    retry_safe: true
+    input_schema:
+      type: object
+      properties:
+        path:
+          type: string
+          description: "The export's absolute path, as folder_watch reports it."
+        change_type:
+          type: string
+          description: "created, modified or deleted."
+      required: [path]
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume:
+        - payload.path
+        - payload.change_type
+      emit:
+        - event: anam_bp_csv.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every export under export_dir, in batches: the resend-everything mode, for a rebuild or a manual run. Idempotent in Anam: an unchanged reading is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_bp_csv.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "export_dir is readable and every reading of every export conforms to the Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [person_id]
+  optional: [export_dir, pattern]

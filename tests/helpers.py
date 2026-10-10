@@ -14,7 +14,7 @@ import tempfile
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -50,7 +50,7 @@ class Daemon:
     """A real `anam daemon` on a new ledger under a temporary directory, with one
     importer. ANAM_BIN names the binary; tests that need it are skipped without it."""
 
-    def __init__(self, source: str, types: List[str]):
+    def __init__(self, source: str, types: List[str], imports: Optional[List[Tuple[str, Path]]] = None):
         self.dir = tempfile.TemporaryDirectory()
         d = Path(self.dir.name)
         self.token = secrets.token_hex(32)
@@ -70,6 +70,13 @@ class Daemon:
                     "ANAM_IMPORTERS_FILE": str(d / "importers.yaml"), "ANAM_ZONE": "UTC"}
         binary = os.environ["ANAM_BIN"]
         subprocess.run([binary, "init"], env=self.env, check=True, capture_output=True, timeout=30)
+        if imports:
+            # The built-in workers' ingest, before the daemon owns the ledger: what an
+            # importer that takes over a worker must agree with.
+            (d / "imports.yaml").write_text("imports:\n" + "".join(
+                f"  - source: {src}\n    path: {path}\n" for src, path in imports))
+            subprocess.run([binary, "ingest", "--imports", str(d / "imports.yaml")], env=self.env, check=True,
+                           capture_output=True, timeout=60)
         self.proc = subprocess.Popen([binary, "daemon"], env=self.env, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL)
         for _ in range(100):

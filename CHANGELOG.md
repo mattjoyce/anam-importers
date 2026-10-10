@@ -7,6 +7,13 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `anam_bp_csv`, the blood pressure importer: a phone app export (`BloodPressure_<date>`) as
+  `health.blood-pressure` v2, the built-in `bpcsv` worker's reading moved, so the same export
+  through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
+  every export under `export_dir`.
+
 ### Changed
 
 - `anam_submit` reads its token from the vault secret its instance config names in

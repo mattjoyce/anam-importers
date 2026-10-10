@@ -23,6 +23,7 @@ wire format, tokens, all-or-nothing batches of at most 49, and what each status 
 anam_importer/        the shared base: Definitions, validation, batches, the client, the ductile protocol
 anam_submit/          posts a batch: makes sure Anam publishes its Definitions, then submits it
 withings/             anam_withings: the withings plugin's measurements as health.measurement
+bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -151,6 +152,60 @@ under the same source, and the importer's batches come back `no-op`, except wher
 render a value differently (below). Once they agree, the worker and its `imports.yaml` entry
 go, and a later Anam release drops `health.measurement` from the binary so this folder's copy
 becomes the registered one.
+
+## Wiring an importer into a gateway (blood pressure)
+
+Not deployed. The same steps as Withings, with these differences:
+
+1. **Token.** Source `bp-csv` (the built-in worker's), types `[health.blood-pressure]`, secret
+   `anam_importer_token_bp_csv`, principal `anam-submit-bp-csv`.
+
+2. **Plugins.** The export arrives as a file, so `folder_watch` runs the importer, one event per
+   file:
+
+   ```yaml
+   plugins:
+     bp_export_watch:
+       uses: folder_watch
+       enabled: true
+       parallelism: 1
+       schedules:
+         - every: 5m
+       config:
+         watches:
+           - id: bp_exports
+             root: <the folder exports are dropped in>
+             event_type: bp.export
+             include_globs: ["BloodPressure_*"]
+             emit_mode: per_file
+     anam_bp_csv:
+       enabled: true
+       timeout: 60s
+       config:
+         person_id: <Anam's person_id>
+         export_dir: <the folder that keeps every export, for poll>
+     anam_submit_bp_csv:
+       uses: anam_submit
+       enabled: true
+       requires_vault: true
+       vault_principal: anam-submit-bp-csv
+       timeout: 60s
+       retry:
+         max_attempts: 5
+       config:
+         anam_url: http://<anam host>:8787
+         token_secret: anam_importer_token_bp_csv
+   ```
+
+3. **Pipelines.** `bp.export` to `anam_bp_csv`, and `anam_bp_csv.batch` to `anam_submit_bp_csv`.
+
+`poll` resends every export under `export_dir`, so a rebuild reruns them all. Keep every export
+there; an overlapping later export admits only its new readings. The importer reads the file and
+never moves or deletes it.
+
+Against the 234 readings of the July 2026 export already in the record, a resend through the
+importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so the worker and its
+`imports.yaml` entry can go as soon as it is live.
 
 ## Values: why `29.371`, not `29.371000000000002`
 

@@ -3,3 +3,4 @@ __pycache__/
 *.db
 *.token
 .env
+BloodPressure_*
