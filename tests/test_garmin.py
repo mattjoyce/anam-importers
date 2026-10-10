@@ -1,5 +1,5 @@
 """anam_garmin: heart rate alerts read from monitoring FIT files as the health ETL's
-fit_events.py read them. The plugin and the fixture writer run under uv, which
+fit_events.py read them, sessions from activity FIT files, and the days in garmin.db. The plugin and the fixture writer run under uv, which
 brings the FIT SDK; without uv the tests are skipped."""
 
 import json
@@ -69,13 +69,27 @@ NIGHT = ("2026-10-08", "2026-10-07 12:44:00.000000", "2026-10-07 18:42:00.000000
          "01:18:00.000000", "03:06:00.000000", "01:25:00.000000", "00:09:00.000000", None, 14.0, 19.0, 75, "FAIR")
 NO_SLEEP = ("2026-10-01", None, None, Z, Z, Z, Z, Z, None, None, None, None, None)
 
+# Sessions as a watch's activity FIT files hold them: a gym Cardio session, whose
+# zero distance means none measured; the Safety profile's walk, a sport the FIT SDK
+# has no name for; and a ten-second walk, the first of a multisport file.
+CARDIO = {"start_time": "2026-10-04T03:49:17+00:00", "sport": "training", "sub_sport": "cardio_training",
+          "sport_profile_name": "Cardio", "total_elapsed_time": 2171.196, "total_timer_time": 2100.5,
+          "total_distance": 0, "total_calories": 396, "avg_heart_rate": 163, "max_heart_rate": 194,
+          "total_training_effect": 5.0, "total_anaerobic_training_effect": 2.9, "training_load_peak": 215.5}
+SAFETY = {"start_time": "2025-01-06T16:16:51+00:00", "sport": 54, "sub_sport": 61, "total_elapsed_time": 2063.05,
+          "total_distance": 2825.63, "total_ascent": 12, "total_descent": 11}
+WALK = {"start_time": "2026-04-04T20:35:38+00:00", "sport": "walking", "sub_sport": "generic",
+        "sport_profile_name": "Walk", "total_elapsed_time": 10.819, "total_distance": 2.52, "total_calories": 1}
+
 
 def run(command, fit_dir, **config):
     db = Path(fit_dir).parent / "garmin.db"
     if not db.exists():
         garmin_db(db, [])
-    request = {"command": command, "config": {"fit_dir": str(fit_dir), "garmin_db": str(db), "person_id": "person-a",
-                                              **config}}
+    activities = Path(fit_dir).parent / "Activities"
+    activities.mkdir(exist_ok=True)
+    request = {"command": command, "config": {"fit_dir": str(fit_dir), "activities_dir": str(activities),
+                                              "garmin_db": str(db), "person_id": "person-a", **config}}
     out = subprocess.run([UV, "run", "-q", "--script", str(GARMIN)], input=json.dumps(request),
                          capture_output=True, text=True, check=True, timeout=120)
     return json.loads(out.stdout)
@@ -103,6 +117,20 @@ class ModuleTest(unittest.TestCase):
                 self.mod.modified_since([gone], 0)
         self.assertTrue(ctx.exception.retry)
         self.assertIn("a_WELLNESS.fit went while the run read it", str(ctx.exception))
+
+    def test_a_session_s_activity_name_is_google_fit_s_or_unknown(self):
+        cases = [(("walking", "generic"), "walking"), (("walking", None), "walking"),
+                 (("running", "treadmill"), "running.treadmill"), (("running", "trail"), "running"),
+                 (("rowing", "indoor_rowing"), "rowing.machine"), (("training", "cardio_training"), "other"),
+                 (("training", "strength_training"), "unknown"), (("54", "61"), "unknown"), ((None, None), "unknown")]
+        for (sport, sub_sport), want in cases:
+            with self.subTest(sport=sport, sub_sport=sub_sport):
+                self.assertEqual(self.mod.activity_name(sport, sub_sport), want)
+
+    def test_a_figure_the_watch_did_not_write_is_none(self):
+        for v, want in [(float("nan"), None), (None, None), (True, None), ("3", None), (215.5, 215.5), (396.0, 396)]:
+            with self.subTest(v=v):
+                self.assertEqual(self.mod.measure(v), want)
 
     def test_the_local_day_s_zone_is_the_definitions_and_they_agree(self):
         # Alerts and sleep are UTC instants; the types keyed on a day share one zone.
@@ -148,7 +176,7 @@ class AlertTest(unittest.TestCase):
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
         self.assertEqual(len(payloads(polled)), 2)
-        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
         handled = run("handle", self.dir)
         self.assertEqual([p["heart_rate"] for p in payloads(handled)], [117])
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
@@ -178,7 +206,7 @@ class AlertTest(unittest.TestCase):
             "wake_after_sleep_onset": {"value": 9, "unit": "min"},
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
 
     def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
         garmin_db(self.dir.parent / "garmin.db", [], resting=[("2026-10-09", 61.0)],
@@ -219,6 +247,54 @@ class AlertTest(unittest.TestCase):
             "bb_min": 13, "distance_km": 4.788, "moderate_activity_minutes": 24, "vigorous_activity_minutes": 0,
             "intensity_time_goal_minutes": 150}])
 
+    def test_a_session_is_the_ieee_body_at_its_utc_start_with_garmin_s_measures_beside_it(self):
+        write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [CARDIO]})
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(payloads(r), [{
+            "id": "garmin:session:2026-10-04T03:49:17Z", "activity_name": "other",
+            "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-04T03:49:17Z",
+                                                       "duration": {"value": 2171.196, "unit": "sec"}}},
+            "source": "Garmin", "fit_sport": "training", "fit_sub_sport": "cardio_training", "sport_profile": "Cardio",
+            "duration": {"value": 2100.5, "unit": "sec"}, "kcal_burned": {"value": 396, "unit": "kcal"},
+            "avg_hr_bpm": 163, "max_hr_bpm": 194, "training_effect_aerobic": 5, "training_effect_anaerobic": 2.9,
+            "training_load": 215.5,
+        }])
+
+    def test_each_session_in_a_file_is_one_and_a_sport_the_sdk_cannot_name_is_unknown(self):
+        write_fit(self.dir.parent / "Activities" / "2_ACTIVITY.fit", {"sessions": [WALK, SAFETY]})
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        got = {p["id"]: p for p in payloads(r)}
+        self.assertEqual(list(got), ["garmin:session:2025-01-06T16:16:51Z", "garmin:session:2026-04-04T20:35:38Z"])
+        self.assertEqual(got["garmin:session:2025-01-06T16:16:51Z"], {
+            "id": "garmin:session:2025-01-06T16:16:51Z", "activity_name": "unknown",
+            "effective_time_frame": {"time_interval": {"start_date_time": "2025-01-06T16:16:51Z",
+                                                       "duration": {"value": 2063.05, "unit": "sec"}}},
+            "source": "Garmin", "fit_sport": "54", "fit_sub_sport": "61",
+            "distance": {"value": 2825.63, "unit": "m"}, "cumulative_elevation_gain": {"value": 12, "unit": "m"},
+            "descent_m": 11})
+        self.assertEqual(got["garmin:session:2026-04-04T20:35:38Z"]["activity_name"], "walking")
+
+    def test_handle_reads_only_recent_activity_files(self):
+        acts = self.dir.parent / "Activities"
+        old = write_fit(acts / "1_ACTIVITY.fit", {"sessions": [SAFETY]})
+        write_fit(acts / "2_ACTIVITY.fit", {"sessions": [CARDIO]})
+        week_ago = time.time() - 7 * 86400
+        os.utime(old, (week_ago, week_ago))
+        self.assertEqual(len(payloads(run("poll", self.dir))), 2)
+        self.assertEqual([p["id"] for p in payloads(run("handle", self.dir))], ["garmin:session:2026-10-04T03:49:17Z"])
+
+    def test_an_activity_file_that_will_not_decode_is_logged_and_the_run_is_no_snapshot(self):
+        acts = self.dir.parent / "Activities"
+        write_fit(acts / "1_ACTIVITY.fit", {"sessions": [CARDIO]})
+        acts.joinpath("2_ACTIVITY.fit").write_bytes(b"not a FIT file")
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(len(payloads(r)), 1)
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
+        self.assertTrue(any("2_ACTIVITY.fit" in line["message"] for line in r.get("logs", [])), r.get("logs"))
+
     def test_a_missing_fit_dir_is_not_retried(self):
         r = run("poll", self.dir / "nowhere")
         self.assertEqual(r["status"], "error", r)
@@ -231,10 +307,11 @@ class AlertTest(unittest.TestCase):
         # The same date in sleep, steps, the day record and heart rate: five types under one
         # source, none of them one facet (anam card 55, identity across types).
         same_day = ("2026-10-09",) + NIGHT[1:]
+        write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [WALK, CARDIO]})
         garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2026-10-09", 61.0)],
                   daily=[DAY, EMPTY_DAY])
-        daemon = Daemon("garmin", ["garmin.day", "health.heart-rate-alert", "health.heart-rate-daily",
-                                   "health.step-count", "sleep.episode"])
+        daemon = Daemon("garmin", ["exercise.session", "garmin.day", "health.heart-rate-alert",
+                                   "health.heart-rate-daily", "health.step-count", "sleep.episode"])
         try:
             shaped = run("poll", self.dir)
             for want in ("admitted", "no-op"):
@@ -245,7 +322,7 @@ class AlertTest(unittest.TestCase):
                                             "secrets": {"anam_importer_token_test": daemon.token}})
                     self.assertEqual(r["status"], "ok", r)
                     got.append(r["events"][0]["payload"]["outcomes"])
-                self.assertEqual(got, [{want: 2}, {want: 2}, {want: 3}, {want: 1}, {want: 1}])
+                self.assertEqual(got, [{want: 2}, {want: 2}, {want: 3}, {want: 1}, {want: 1}, {want: 2}])
         finally:
             daemon.close()
 

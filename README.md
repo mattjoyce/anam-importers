@@ -26,7 +26,7 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
-garmin/               anam_garmin: a Garmin watch's alerts, sleep, heart rate, steps and days from GarminDB
+garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -308,8 +308,8 @@ is not reported absent.
 ## Wiring an importer into a gateway (Garmin)
 
 Not deployed, and not to be switched on alone. Source `garmin`, types
-`[health.heart-rate-alert, sleep.episode, health.heart-rate-daily, health.step-count,
-garmin.day]`, secret `anam_importer_token_garmin`, principal
+`[health.heart-rate-alert, exercise.session, sleep.episode, health.heart-rate-daily,
+health.step-count, garmin.day]`, secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
 runs would hold every alert twice. It goes live with the rest of anam card 55, when the
@@ -331,7 +331,15 @@ mHealth `heart-rate-2.0` body over the local day in Australia/Sydney. Steps are 
 `garmin.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost. None of
 these types is bundled in Anam, so the first batch of each makes `anam_submit` register it.
 
-Their ids name what they are: `sleep:2026-10-08`, `steps:2026-10-09`, `day:2026-10-09`. A
+Sessions come from the activity FIT files GarminDB downloads (`FitFiles/Activities`), one
+`exercise.session` per FIT session message, beside Technogym's and Strong's. The FIT file holds the
+start as a true UTC instant; `garmin_activities.db` holds it as wall clock, and not always the same
+wall clock, so the importer reads the file. The FIT sport and sub-sport map to Google Fit's names
+(Cardio, which Google Fit has no name for, is `other`; an unmapped pair is `unknown`), and the
+payload keeps both as the watch wrote them. `exercise.session` is bundled in Anam: the importer
+carries Anam's v4 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+
+Their ids name what they are: `garmin:session:2026-10-04T03:49:17Z`, `sleep:2026-10-08`, `steps:2026-10-09`, `day:2026-10-09`. A
 facet's id is the source plus its identity values, without the type, so two types keyed on a
 bare date would be one facet, the second superseding the first. `tests/conformance` pins the
 IEEE and Open mHealth schemas the payloads are tested against. Read against GarminDB
@@ -346,13 +354,16 @@ plugins:
       poll: 900s
     config:
       fit_dir: <GarminDB's FitFiles/Monitoring directory>
+      activities_dir: <GarminDB's FitFiles/Activities directory>
       garmin_db: <GarminDB's DBs/garmin.db>
       person_id: <Anam's person_id>
 ```
 
 A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
 fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
-holds, in 7 batches, 564 nights, 1,900 heart rate figures and 706 days of steps, every one passing its pinned schema. Read over a network share it took 9 minutes (160 s of CPU).
+holds, in 7 batches, 564 nights, 1,900 heart rate figures and 706 days of steps, every one passing its pinned schema. Its 199 activity files hold 200
+sessions, all conforming; with the rest they were admitted to a scratch daemon, 4,076 facets, and a
+resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU).
 
 ## Values: why `29.371`, not `29.371000000000002`
 

@@ -6,7 +6,7 @@
 """anam_garmin: shapes what a Garmin watch recorded into Anam envelopes, one batch
 event at a time.
 
-Five types. The abnormal high heart rate alert (health.heart-rate-alert), read
+Six types. The abnormal high heart rate alert (health.heart-rate-alert), read
 straight from the watch's monitoring FIT files under GarminDB's FitFiles/Monitoring:
 GarminDB downloads those files but drops their event messages on import, so nothing
 else holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
@@ -15,8 +15,11 @@ worker built from the ETL's events table. From GarminDB's garmin.db: each night'
 sleep (sleep.episode, the IEEE 1752 body with Garmin's score and averages beside
 it), each day's resting, minimum and maximum heart rate (health.heart-rate-daily,
 Open mHealth), steps (health.step-count, Open mHealth) and the rest of the day as
-Garmin wrote it (garmin.day). It keeps no state of its own: Anam makes a resend a
-no-op.
+Garmin wrote it (garmin.day). From the activity FIT files under GarminDB's
+FitFiles/Activities, each session the watch recorded (exercise.session, the IEEE
+1752 body with Garmin's measures beside it): the FIT file holds the start as a true
+UTC instant, where garmin_activities.db holds it as wall clock, not always the same
+one. It keeps no state of its own: Anam makes a resend a no-op.
 
 Commands:
 - handle : after a GarminDB sync, what changed in the last lookback_days
@@ -27,6 +30,7 @@ Commands:
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import sys
 import time
@@ -47,6 +51,7 @@ SLEEP_TYPE = "sleep.episode"
 HEART_TYPE = "health.heart-rate-daily"
 STEPS_TYPE = "health.step-count"
 DAY_TYPE = "garmin.day"
+SESSION_TYPE = "exercise.session"
 
 # DAY_COLUMNS are daily_summary's columns garmin.day keeps under the same name.
 # Steps and the heart rate columns are other types; the TIME columns are kept in
@@ -97,27 +102,17 @@ def alert(mesg: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def alerts_in(path: Path) -> List[Dict[str, Any]]:
-    """The alerts in one FIT file. A file the SDK cannot decode is a failure."""
-    try:
-        from garmin_fit_sdk import Decoder, Stream
-    except ImportError as exc:
-        raise ductile.Failure(f"the garmin-fit-sdk package is not installed: {exc}", retry=False) from exc
-    try:
-        msgs, errors = Decoder(Stream.from_file(str(path))).read(convert_types_to_strings=True)
-    except OSError as exc:
-        raise ductile.Failure(f"FIT file {path}: {exc}", retry=True) from exc
-    if errors:
-        raise ValueError("; ".join(str(e) for e in errors))
-    return [alert(m) for m in msgs.get("event_mesgs", [])
+    """The alerts in one monitoring FIT file."""
+    return [alert(m) for m in decode(path).get("event_mesgs", [])
             if m.get("event") == HR_HIGH_ALERT and m.get("timestamp") is not None and m.get("data") is not None]
 
 
-def fit_files(config: Dict[str, Any], since: Optional[float] = None) -> List[Path]:
-    """The FIT files under fit_dir, oldest name first; with since, only those
-    modified at or after it."""
-    root = Path(str(config["fit_dir"]))
+def fit_files(config: Dict[str, Any], key: str, since: Optional[float] = None) -> List[Path]:
+    """The FIT files under the directory config[key] names, oldest name first; with
+    since, only those modified at or after it."""
+    root = Path(str(config[key]))
     if not root.is_dir():
-        raise ductile.Failure(f"no fit_dir at {root}", retry=False)
+        raise ductile.Failure(f"no {key} at {root}", retry=False)
     files = sorted(p for p in root.rglob("*.fit") if p.is_file())
     return files if since is None else modified_since(files, since)
 
@@ -141,19 +136,128 @@ def alerts(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Every alert in files, once each, ordered by fact_time, and a log line per
     file that would not decode. The same alert in two files is one alert: the first
     file by name keeps it, as the ETL's INSERT OR IGNORE did."""
+    return each_once(files, alerts_in, "fact_time")
+
+
+def each_once(files: List[Path], read, key: str) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """What read finds in each of files, once per key, ordered by it, and a log line
+    per file that would not decode. The first file by name keeps a repeated key."""
     seen: Dict[str, Dict[str, Any]] = {}
     logs: List[str] = []
     for path in files:
         try:
-            found = alerts_in(path)
+            found = read(path)
         except FileNotFoundError as exc:
             raise vanished(exc) from exc
         except ValueError as exc:
             logs.append(f"skipped {path.name}: {exc}")
             continue
-        for a in found:
-            seen.setdefault(a["fact_time"], a)
+        for item in found:
+            seen.setdefault(item[key], item)
     return [seen[k] for k in sorted(seen)], logs
+
+
+def decode(path: Path) -> Dict[str, List[Dict[str, Any]]]:
+    """path's FIT messages. A file the SDK cannot decode is a ValueError."""
+    try:
+        from garmin_fit_sdk import Decoder, Stream
+    except ImportError as exc:
+        raise ductile.Failure(f"the garmin-fit-sdk package is not installed: {exc}", retry=False) from exc
+    try:
+        msgs, errors = Decoder(Stream.from_file(str(path))).read(convert_types_to_strings=True)
+    except OSError as exc:
+        if isinstance(exc, FileNotFoundError):
+            raise
+        raise ductile.Failure(f"FIT file {path}: {exc}", retry=True) from exc
+    if errors:
+        raise ValueError("; ".join(str(e) for e in errors))
+    return msgs
+
+
+# ACTIVITY_NAMES maps a FIT session's (sport, sub_sport) to the Definition's
+# activity name, Google Fit's vocabulary; (sport, None) stands for any sub-sport.
+# Cardio training has no Google Fit name. A pair not here is "unknown", and the
+# payload's fit_sport and fit_sub_sport keep what the watch wrote either way.
+ACTIVITY_NAMES = {
+    ("walking", None): "walking",
+    ("running", "treadmill"): "running.treadmill",
+    ("running", None): "running",
+    ("rowing", "indoor_rowing"): "rowing.machine",
+    ("rowing", None): "rowing",
+    ("training", "cardio_training"): "other",
+}
+
+
+def activity_name(sport: Optional[str], sub_sport: Optional[str]) -> str:
+    return ACTIVITY_NAMES.get((sport, sub_sport)) or ACTIVITY_NAMES.get((sport, None)) or "unknown"
+
+
+def fit_name(v: Any) -> Optional[str]:
+    """A FIT enum as the SDK names it, or its number when the SDK has no name."""
+    if isinstance(v, str) and v:
+        return v
+    if isinstance(v, int):
+        return str(v)
+    return None
+
+
+def measure(v: Any) -> Any:
+    """A FIT figure as a JSON number, or None when the watch wrote none: the SDK
+    reads an invalid float as NaN."""
+    if v is None or isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v):
+        return None
+    return number(v)
+
+
+# SESSION_MEASURES are the session message's figures a payload keeps as plain
+# numbers, by the Definition's name for them.
+SESSION_MEASURES = {"avg_hr_bpm": "avg_heart_rate", "max_hr_bpm": "max_heart_rate",
+                    "avg_power_w": "avg_power", "max_power_w": "max_power", "descent_m": "total_descent",
+                    "training_effect_aerobic": "total_training_effect",
+                    "training_effect_anaerobic": "total_anaerobic_training_effect",
+                    "training_load": "training_load_peak"}
+# SESSION_UNITS are the figures a payload keeps as IEEE unit values.
+SESSION_UNITS = {"duration": ("total_timer_time", "sec"), "kcal_burned": ("total_calories", "kcal"),
+                 "base_movement_quantity": ("total_strokes", "strokes"),
+                 "cumulative_elevation_gain": ("total_ascent", "m")}
+
+
+def session(mesg: Dict[str, Any]) -> Dict[str, Any]:
+    """One FIT session message as an exercise.session payload. A figure the watch
+    did not write is left out, and so is a zero distance, which is what the watch
+    writes for a session that measures none."""
+    start = mesg["start_time"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    sport, sub_sport = fit_name(mesg.get("sport")), fit_name(mesg.get("sub_sport"))
+    p: Dict[str, Any] = {
+        "id": f"garmin:session:{start}",
+        "activity_name": activity_name(sport, sub_sport),
+        "effective_time_frame": {"time_interval": {
+            "start_date_time": start, "duration": {"value": measure(mesg["total_elapsed_time"]), "unit": "sec"}}},
+        "source": "Garmin",
+    }
+    for key, v in (("fit_sport", sport), ("fit_sub_sport", sub_sport), ("sport_profile", mesg.get("sport_profile_name"))):
+        if v:
+            p[key] = v
+    for key, (field, unit) in SESSION_UNITS.items():
+        if measure(mesg.get(field)) is not None:
+            p[key] = {"value": measure(mesg[field]), "unit": unit}
+    if measure(mesg.get("total_distance")):
+        p["distance"] = {"value": measure(mesg["total_distance"]), "unit": "m"}
+    p.update({key: measure(mesg.get(field)) for key, field in SESSION_MEASURES.items()
+              if measure(mesg.get(field)) is not None})
+    return p
+
+
+def sessions_in(path: Path) -> List[Dict[str, Any]]:
+    """The sessions in one activity FIT file: most hold one, a multisport activity
+    one per sport. A session with no start or length is not one."""
+    return [session(m) for m in decode(path).get("session_mesgs", [])
+            if m.get("start_time") is not None and measure(m.get("total_elapsed_time")) is not None]
+
+
+def sessions(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Every session in files, once each, by id."""
+    return each_once(files, sessions_in, "id")
 
 
 def minutes(t: str) -> Any:
@@ -295,43 +399,50 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
     return events
 
 
-def run_over(config: Dict[str, Any], files: List[Path], since: Optional[date], snapshot: bool) -> Dict[str, Any]:
-    found, logs = alerts(files)
-    nights = sleeps(config, since)
-    hearts = heart_rates(config, since)
+def shape(config: Dict[str, Any], monitoring: List[Path], activities: List[Path],
+          since: Optional[date]) -> Tuple[Dict[str, List[Dict[str, Any]]], List[str]]:
+    """Every type's payloads from the given FIT files and garmin.db from since on,
+    and a log line per FIT file that would not decode."""
+    found, alert_logs = alerts(monitoring)
+    held, session_logs = sessions(activities)
     steps, records = days(config, since)
-    # A file that would not decode leaves its alerts out, so the run is not everything.
-    by_type = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts, STEPS_TYPE: steps, DAY_TYPE: records}
+    return ({ALERT_TYPE: found, SLEEP_TYPE: sleeps(config, since), HEART_TYPE: heart_rates(config, since),
+             STEPS_TYPE: steps, DAY_TYPE: records, SESSION_TYPE: held}, alert_logs + session_logs)
+
+
+def run_over(config: Dict[str, Any], monitoring: List[Path], activities: List[Path], since: Optional[date],
+             snapshot: bool) -> Dict[str, Any]:
+    by_type, logs = shape(config, monitoring, activities, since)
+    # A file that would not decode leaves its alerts or sessions out, so the run is not everything.
     events = batch_events(load(HERE), by_type, str(config["person_id"]), snapshot and not logs)
-    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep, "
-                      f"{len(hearts)} daily heart rate figure(s), {len(steps)} day(s) of steps and {len(records)} "
-                      f"day record(s), {len(events)} batch(es)", events=events, logs=logs)
+    n = {t: len(ps) for t, ps in by_type.items()}
+    return ductile.ok(f"{n[ALERT_TYPE]} alert(s) in {len(monitoring)} monitoring FIT file(s), {n[SESSION_TYPE]} "
+                      f"session(s) in {len(activities)} activity FIT file(s), {n[SLEEP_TYPE]} night(s) of sleep, "
+                      f"{n[HEART_TYPE]} daily heart rate figure(s), {n[STEPS_TYPE]} day(s) of steps and "
+                      f"{n[DAY_TYPE]} day record(s), {len(events)} batch(es)", events=events, logs=logs)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     days = float(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
     since = time.time() - days * 86400
-    return run_over(config, fit_files(config, since=since),
+    return run_over(config, fit_files(config, "fit_dir", since), fit_files(config, "activities_dir", since),
                     datetime.fromtimestamp(since, timezone.utc).date() - timedelta(days=1), snapshot=False)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    # Every monitoring file and every night GarminDB holds is everything, so poll's
-    # run is a snapshot, unless a file would not decode.
-    return run_over(config, fit_files(config), None, snapshot=True)
+    # Every FIT file and every night GarminDB holds is everything, so poll's run is
+    # a snapshot, unless a file would not decode.
+    return run_over(config, fit_files(config, "fit_dir"), fit_files(config, "activities_dir"), None, snapshot=True)
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     definitions = load(HERE)
-    files = fit_files(config)
-    found, logs = alerts(files)
-    nights = sleeps(config)
-    hearts = heart_rates(config)
-    steps, records = days(config)
-    shaped = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts, STEPS_TYPE: steps, DAY_TYPE: records}
+    monitoring, activities = fit_files(config, "fit_dir"), fit_files(config, "activities_dir")
+    files = monitoring + activities
+    shaped, logs = shape(config, monitoring, activities, None)
     check(definitions, [envelope(definitions[t], p) for t, ps in shaped.items() for p in ps])
     if logs:
         return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)
