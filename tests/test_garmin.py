@@ -26,13 +26,20 @@ def write_fit(path: Path, events) -> Path:
     return path
 
 
-def garmin_db(path: Path, nights) -> Path:
-    """A garmin.db holding nights in GarminDB 3.6.7's sleep table."""
+def garmin_db(path: Path, nights, resting=(), daily=()) -> Path:
+    """A garmin.db in GarminDB 3.6.7's shape: nights in its sleep table, (day, bpm)
+    in resting_hr, and (day, hr_min, hr_max) in daily_summary, its other columns
+    left empty."""
     conn = sqlite3.connect(path)
     conn.execute("""CREATE TABLE sleep (day DATE NOT NULL, start DATETIME, "end" DATETIME, total_sleep TIME NOT NULL,
         deep_sleep TIME NOT NULL, light_sleep TIME NOT NULL, rem_sleep TIME NOT NULL, awake TIME NOT NULL,
         avg_spo2 FLOAT, avg_rr FLOAT, avg_stress FLOAT, score INTEGER, qualifier VARCHAR, PRIMARY KEY (day))""")
+    conn.execute("CREATE TABLE resting_hr (day DATE NOT NULL, resting_heart_rate FLOAT, PRIMARY KEY (day))")
+    conn.execute("""CREATE TABLE daily_summary (day DATE NOT NULL, hr_min INTEGER, hr_max INTEGER, rhr INTEGER,
+        steps INTEGER, moderate_activity_time TIME NOT NULL DEFAULT '00:00:00.000000', PRIMARY KEY (day))""")
     conn.executemany("INSERT INTO sleep VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", nights)
+    conn.executemany("INSERT INTO resting_hr VALUES (?, ?)", resting)
+    conn.executemany("INSERT INTO daily_summary (day, hr_min, hr_max) VALUES (?, ?, ?)", daily)
     conn.commit()
     conn.close()
     return path
@@ -95,7 +102,7 @@ class AlertTest(unittest.TestCase):
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
         self.assertEqual(len(payloads(polled)), 2)
-        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["health.heart-rate-alert", "sleep.episode"])
+        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["health.heart-rate-alert", "health.heart-rate-daily", "sleep.episode"])
         handled = run("handle", self.dir)
         self.assertEqual([p["heart_rate"] for p in payloads(handled)], [117])
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
@@ -125,7 +132,27 @@ class AlertTest(unittest.TestCase):
             "wake_after_sleep_onset": {"value": 9, "unit": "min"},
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["health.heart-rate-alert", "sleep.episode"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["health.heart-rate-alert", "health.heart-rate-daily", "sleep.episode"])
+
+    def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
+        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2026-10-09", 61.0)],
+                  daily=[("2026-10-09", 59, 135), ("2026-04-05", None, 120)])
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        sydney_day = {"time_interval": {"start_date_time": "2026-10-09T00:00:00+11:00",
+                                        "end_date_time": "2026-10-10T00:00:00+11:00"}}
+        self.assertEqual(payloads(r), [
+            {"id": "2026-04-05", "statistic": "maximum", "heart_rate": {"value": 120, "unit": "beats/min"},
+             "effective_time_frame": {"time_interval": {"start_date_time": "2026-04-05T00:00:00+11:00",
+                                                        "end_date_time": "2026-04-06T00:00:00+10:00"}},
+             "descriptive_statistic": "maximum"},
+            {"id": "2026-10-09", "statistic": "resting", "heart_rate": {"value": 61, "unit": "beats/min"},
+             "effective_time_frame": sydney_day, "temporal_relationship_to_physical_activity": "at rest"},
+            {"id": "2026-10-09", "statistic": "minimum", "heart_rate": {"value": 59, "unit": "beats/min"},
+             "effective_time_frame": sydney_day, "descriptive_statistic": "minimum"},
+            {"id": "2026-10-09", "statistic": "maximum", "heart_rate": {"value": 135, "unit": "beats/min"},
+             "effective_time_frame": sydney_day, "descriptive_statistic": "maximum"},
+        ])
 
     def test_a_missing_fit_dir_is_not_retried(self):
         r = run("poll", self.dir / "nowhere")
@@ -133,11 +160,12 @@ class AlertTest(unittest.TestCase):
         self.assertFalse(r["retry"])
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
-    def test_alerts_and_nights_are_admitted_and_a_resend_is_no_op(self):
+    def test_every_type_is_admitted_and_a_resend_is_no_op(self):
         write_fit(self.dir / "a_WELLNESS.fit", [["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
                                                 ["2026-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
-        garmin_db(self.dir.parent / "garmin.db", [NIGHT, NO_SLEEP])
-        daemon = Daemon("garmin", ["health.heart-rate-alert", "sleep.episode"])
+        garmin_db(self.dir.parent / "garmin.db", [NIGHT, NO_SLEEP], resting=[("2026-10-09", 61.0)],
+                  daily=[("2026-10-09", 59, 135)])
+        daemon = Daemon("garmin", ["health.heart-rate-alert", "health.heart-rate-daily", "sleep.episode"])
         try:
             shaped = run("poll", self.dir)
             for want in ("admitted", "no-op"):
@@ -148,7 +176,7 @@ class AlertTest(unittest.TestCase):
                                             "secrets": {"anam_importer_token_test": daemon.token}})
                     self.assertEqual(r["status"], "ok", r)
                     got.append(r["events"][0]["payload"]["outcomes"])
-                self.assertEqual(got, [{want: 2}, {want: 1}])
+                self.assertEqual(got, [{want: 2}, {want: 1}, {want: 3}])
         finally:
             daemon.close()
 

@@ -53,6 +53,9 @@ All notable changes to this repo. The format follows
   own. Not to be enabled before the `health-db` facets retire. And `sleep.episode` v1, one per
   night of GarminDB's `sleep` table: the IEEE 1752 `sleep-episode-1.0` body with Garmin's score,
   qualifier and averages beside it, identity the source's `id` (Garmin's day). Registered through
+  the API; payloads tested against the pinned IEEE schemas in `tests/conformance`. And
+  `health.heart-rate-daily` v1: each day's resting, minimum and maximum heart rate, one facet each,
+  as the Open mHealth `heart-rate-2.0` body over the local day, identity `id` and `statistic`.
   the API; payloads tested against the pinned IEEE schemas in `tests/conformance`.
   own. Not to be enabled before the `health-db` facets retire.
 - `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill

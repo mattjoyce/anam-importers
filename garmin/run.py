@@ -27,6 +27,8 @@ import sqlite3
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
+from datetime import time as clock
+from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -38,7 +40,10 @@ from anam_importer import ductile  # noqa: E402
 
 ALERT_TYPE = "health.heart-rate-alert"
 SLEEP_TYPE = "sleep.episode"
-TYPES = (ALERT_TYPE, SLEEP_TYPE)
+HEART_TYPE = "health.heart-rate-daily"
+
+# ZONE is where Garmin's days are local days.
+ZONE = ZoneInfo("Australia/Sydney")
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
@@ -152,6 +157,15 @@ def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
 def sleeps(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[str, Any]]:
     """Every night garmin.db's sleep table holds, by day; with since, those from that
     day on. A day without a start is a day the watch saw no sleep: no episode."""
+    rows = query(config, 'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
+                         "avg_spo2, avg_rr, avg_stress, score, qualifier FROM sleep "
+                         'WHERE start IS NOT NULL AND "end" IS NOT NULL AND day >= ? ORDER BY day', since)
+    return [sleep_episode(r) for r in rows]
+
+
+def query(config: Dict[str, Any], sql: str, since: Optional[date]) -> List[sqlite3.Row]:
+    """sql's rows from garmin_db, opened read-only; its one parameter is the first
+    day wanted."""
     path = Path(str(config["garmin_db"]))
     if not path.is_file():
         raise ductile.Failure(f"no garmin_db at {path}", retry=False)
@@ -159,16 +173,42 @@ def sleeps(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[st
         conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
         conn.row_factory = sqlite3.Row
         try:
-            rows = conn.execute(
-                'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
-                "avg_spo2, avg_rr, avg_stress, score, qualifier FROM sleep "
-                "WHERE start IS NOT NULL AND \"end\" IS NOT NULL AND day >= ? ORDER BY day",
-                ((since or date.min).isoformat(),)).fetchall()
+            return conn.execute(sql, ((since or date.min).isoformat(),)).fetchall()
         finally:
             conn.close()
     except sqlite3.OperationalError as exc:
         raise ductile.Failure(f"garmin_db {path}: {exc}", retry=True) from exc
-    return [sleep_episode(r) for r in rows]
+
+
+def day_frame(day: str) -> Dict[str, Any]:
+    """A Garmin day as an OMH time interval: local midnight to the next."""
+    start = datetime.combine(date.fromisoformat(day), clock(0), ZONE)
+    end = datetime.combine(date.fromisoformat(day) + timedelta(days=1), clock(0), ZONE)
+    return {"time_interval": {"start_date_time": start.isoformat(), "end_date_time": end.isoformat()}}
+
+
+def heart_figure(day: str, statistic: str, bpm: float) -> Dict[str, Any]:
+    p: Dict[str, Any] = {"id": day, "statistic": statistic,
+                         "heart_rate": {"value": number(bpm), "unit": "beats/min"},
+                         "effective_time_frame": day_frame(day)}
+    if statistic == "resting":
+        p["temporal_relationship_to_physical_activity"] = "at rest"
+    else:
+        p["descriptive_statistic"] = statistic
+    return p
+
+
+def heart_rates(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[str, Any]]:
+    """Each day's resting heart rate (resting_hr) and its minimum and maximum
+    (daily_summary), by day. A figure Garmin left empty is no facet."""
+    figures = [heart_figure(r["day"], "resting", r["resting_heart_rate"])
+               for r in query(config, "SELECT day, resting_heart_rate FROM resting_hr "
+                                      "WHERE resting_heart_rate IS NOT NULL AND day >= ?", since)]
+    for r in query(config, "SELECT day, hr_min, hr_max FROM daily_summary WHERE day >= ?", since):
+        figures += [heart_figure(r["day"], stat, r[col]) for stat, col in (("minimum", "hr_min"), ("maximum", "hr_max"))
+                    if r[col] is not None]
+    order = {"resting": 0, "minimum": 1, "maximum": 2}
+    return sorted(figures, key=lambda f: (f["id"], order[f["statistic"]]))
 
 
 def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dict[str, Any]]], person: str,
@@ -195,11 +235,12 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
 def run_over(config: Dict[str, Any], files: List[Path], since: Optional[date], snapshot: bool) -> Dict[str, Any]:
     found, logs = alerts(files)
     nights = sleeps(config, since)
+    hearts = heart_rates(config, since)
     # A file that would not decode leaves its alerts out, so the run is not everything.
-    events = batch_events(load(HERE), {ALERT_TYPE: found, SLEEP_TYPE: nights}, str(config["person_id"]),
-                          snapshot and not logs)
-    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s) and {len(nights)} night(s) of sleep, "
-                      f"{len(events)} batch(es)", events=events, logs=logs)
+    by_type = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts}
+    events = batch_events(load(HERE), by_type, str(config["person_id"]), snapshot and not logs)
+    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep and "
+                      f"{len(hearts)} daily heart rate figure(s), {len(events)} batch(es)", events=events, logs=logs)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -223,13 +264,15 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     files = fit_files(config)
     found, logs = alerts(files)
     nights = sleeps(config)
+    hearts = heart_rates(config)
     check(definitions, [envelope(definitions[ALERT_TYPE], p) for p in found]
-          + [envelope(definitions[SLEEP_TYPE], p) for p in nights])
+          + [envelope(definitions[SLEEP_TYPE], p) for p in nights]
+          + [envelope(definitions[HEART_TYPE], p) for p in hearts])
     if logs:
         return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)
-    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s) and {len(nights)} night(s) of sleep, "
-                      f"every one conforming to {ALERT_TYPE} v{definitions[ALERT_TYPE].version} and "
-                      f"{SLEEP_TYPE} v{definitions[SLEEP_TYPE].version}")
+    versions = ", ".join(f"{t} v{definitions[t].version}" for t in (ALERT_TYPE, SLEEP_TYPE, HEART_TYPE))
+    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep and "
+                      f"{len(hearts)} daily heart rate figure(s), every one conforming to {versions}")
 
 
 if __name__ == "__main__":
