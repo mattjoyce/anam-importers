@@ -26,6 +26,7 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
+garmin/               anam_garmin: a Garmin watch's FIT files as health.heart-rate-alert
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -303,6 +304,37 @@ plugins:
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of the types it carries. A type whose every record is removed is not in the run, so it
 is not reported absent.
+
+## Wiring an importer into a gateway (Garmin)
+
+Not deployed, and not to be switched on alone. Source `garmin`, types
+`[health.heart-rate-alert]`, secret `anam_importer_token_garmin`, principal
+`anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
+`health-db`, and a facet's identity includes its source, so turning this on while that worker
+runs would hold every alert twice. It goes live with the rest of anam card 55, when the
+`health-db` facets retire.
+
+It reads the monitoring FIT files GarminDB downloads (`FitFiles/Monitoring`) with Garmin's FIT
+SDK, which its uv script header pins, and decodes FIT event 66, the abnormal high heart rate
+alert, as the health ETL's `fit_events.py` does. It keeps no state: `handle` reads the files
+modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sync event runs it;
+`poll` reads every file and labels the run a snapshot.
+
+```yaml
+plugins:
+  anam_garmin:
+    enabled: true
+    timeouts:
+      handle: 120s
+      poll: 900s
+    config:
+      fit_dir: <GarminDB's FitFiles/Monitoring directory>
+      person_id: <Anam's person_id>
+```
+
+A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
+fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
+holds, in 7 batches. Read over a network share it took 9 minutes (160 s of CPU).
 
 ## Values: why `29.371`, not `29.371000000000002`
 
