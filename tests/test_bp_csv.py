@@ -101,8 +101,8 @@ class ShapeTest(unittest.TestCase):
     def test_a_missing_export_or_a_row_without_its_timestamp_is_not_retried(self):
         cases = [
             ("missing", self.dir / "BloodPressure_missing", "no export"),
-            ("no date_excel", export(self.dir, "BloodPressure_bad", [",\t 1 March 2026,\t 120.0,\t 78.0\r\n"]),
-             "row 2 has no date_excel"),
+            ("no date_excel", export(self.dir, "BloodPressure_bad", [",\t" + ROWS[1].split(",", 1)[1]]),
+             "line 2 has no date_excel"),
         ]
         for name, path, want in cases:
             with self.subTest(name):
@@ -110,6 +110,38 @@ class ShapeTest(unittest.TestCase):
                 self.assertEqual(r["status"], "error", r)
                 self.assertFalse(r["retry"])
                 self.assertIn(want, r["error"])
+
+    def test_an_export_whose_records_cannot_be_told_apart_sends_nothing(self):
+        # The blue team's case (anam card 114): the first comment lost its closing
+        # quote, so under the worker's LazyQuotes it swallowed the next reading, and a
+        # poll claimed a complete snapshot without it.
+        unclosed = [LATER.replace('"after coffee, short walk"', '"after coffee, short walk'),
+                    ROWS[0].replace("2026-1-24", "2026-3-02")]
+        cases = {
+            "unclosed quote": (unclosed, "line 2: a quoted field holds a quote, on line 3,"),
+            "never closed": ([LATER.replace('"after coffee, short walk",\t ,\t \r\n', '"after coffee\r\n')],
+                             "line 2: a quoted field is never closed"),
+            "stray quote": ([LATER.replace('"after coffee, short walk"', '"after "coffee" walk"')],
+                            "line 2: a quoted field holds a quote, on line 2,"),
+            "short record": ([ROWS[0], "2026-3-03 07:00:00,\t 3 March 2026 7:00,\t 120.0,\t 80.0\r\n"],
+                             "line 3 has 4 fields and the header 17"),
+        }
+        for name, (rows, want) in cases.items():
+            with self.subTest(name):
+                folder = self.dir / name.replace(" ", "-")
+                folder.mkdir()
+                export(folder, "BloodPressure_10-October-2026", rows)
+                r = run_plugin(BP, {"command": "poll", "config": {"person_id": "p", "export_dir": str(folder)}})
+                self.assertEqual(r["status"], "error", r)
+                self.assertFalse(r["retry"])
+                self.assertIn(want, r["error"])
+                self.assertIn("nothing of it is sent", r["error"])
+
+    def test_a_closed_multiline_field_and_doubled_quotes_still_read(self):
+        row = LATER.replace('"after coffee, short walk"', '"after ""strong"" coffee,\r\nshort walk"')
+        p = self.payloads([row])
+        self.assertEqual(p[0]["comment"], 'after "strong" coffee,\nshort walk')
+        self.assertEqual(p[0]["date_excel"], "2026-3-01 07:10:00")
 
     def test_poll_sends_every_export_under_export_dir_and_nothing_else(self):
         export(self.dir, "BloodPressure_1", ROWS)

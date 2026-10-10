@@ -44,20 +44,29 @@ BATCH_EVENT = "anam_bp_csv.batch"
 DEFAULT_PATTERN = "BloodPressure_*"
 
 
-def records(text: str) -> Iterator[List[str]]:
-    """The export's records, split as Go's encoding/csv splits them with
-    TrimLeadingSpace and LazyQuotes, which is how the built-in worker read it.
+class Malformed(ValueError):
+    """An export whose record boundaries cannot be read for certain. Nothing of it is
+    sent: a reading swallowed into another's comment would be reported absent."""
+
+
+def records(text: str) -> Iterator[Tuple[int, List[str]]]:
+    """The export's records, each with the line it starts on, split as Go's
+    encoding/csv splits them with TrimLeadingSpace, which is how the built-in worker
+    read it.
 
     Leading whitespace of a field is dropped, so a field the export pads before its
-    opening quote is still a quoted field. Inside one, "" is a quote, and a quote not
-    followed by a comma or the line's end is kept as it stands. A blank line is no
-    record. CRLF is LF.
+    opening quote is still a quoted field. Inside one, "" is a quote, and a field may
+    span lines. A blank line is no record. CRLF is LF. The worker also read with
+    LazyQuotes, keeping a quote that neither closes the field nor doubles; that is how
+    a comment that lost its closing quote swallows the next reading, so here it is
+    Malformed, as is a quote still open at the end (anam card 114).
     """
     lines = text.replace("\r\n", "\n").split("\n")
     i = 0
     while i < len(lines):
         line = lines[i]
         i += 1
+        start = i
         if line == "":
             continue
         record: List[str] = []
@@ -67,14 +76,14 @@ def records(text: str) -> Iterator[List[str]]:
                 pos += 1
             if pos < len(line) and line[pos] == '"':
                 pos += 1
+                opened = i
                 field: List[str] = []
                 while True:
                     q = line.find('"', pos)
                     if q < 0:
                         field.append(line[pos:])
-                        if i >= len(lines):  # an unclosed quote runs to the end
-                            pos = len(line)
-                            break
+                        if i >= len(lines):
+                            raise Malformed(f"line {opened}: a quoted field is never closed")
                         field.append("\n")  # a quoted field spans lines
                         line = lines[i]
                         i += 1
@@ -88,7 +97,8 @@ def records(text: str) -> Iterator[List[str]]:
                     elif pos >= len(line) or line[pos] == ",":
                         break
                     else:
-                        field.append('"')
+                        raise Malformed(f"line {opened}: a quoted field holds a quote, on line {i}, that neither "
+                                        "closes it nor doubles")
                 record.append("".join(field))
             else:
                 end = line.find(",", pos)
@@ -102,7 +112,7 @@ def records(text: str) -> Iterator[List[str]]:
             if pos == len(line):
                 record.append("")
                 break
-        yield record
+        yield start, record
 
 
 def slug(header: str) -> str:
@@ -139,13 +149,19 @@ def payloads(path: Path) -> List[Dict[str, str]]:
         raise ductile.Failure(f"no export at {path}", retry=False) from exc
     except OSError as exc:
         raise ductile.Failure(f"export {path}: {exc}", retry=True) from exc
-    rows = list(records(text))
+    try:
+        rows = list(records(text))
+    except Malformed as exc:
+        raise ductile.Failure(f"export {path}: {exc}; nothing of it is sent", retry=False) from exc
     if not rows:
         raise ductile.Failure(f"export {path} has no header row", retry=False)
-    keys = [slug(h) for h in rows[0]]
+    keys = [slug(h) for h in rows[0][1]]
     out: List[Dict[str, str]] = []
     ordinal: Dict[str, int] = {}
-    for n, rec in enumerate(rows[1:], start=2):
+    for n, rec in rows[1:]:
+        if len(rec) != len(keys):
+            raise ductile.Failure(f"export {path}: line {n} has {len(rec)} fields and the header {len(keys)}; "
+                                  "nothing of it is sent", retry=False)
         row = {}
         for key, cell in zip(keys, rec):
             v = clean(cell)
@@ -155,7 +171,7 @@ def payloads(path: Path) -> List[Dict[str, str]]:
             continue  # a blank line, not a reading
         ts = row.get("date_excel")
         if ts is None:
-            raise ductile.Failure(f"export {path}: row {n} has no date_excel", retry=False)
+            raise ductile.Failure(f"export {path}: line {n} has no date_excel", retry=False)
         ordinal[ts] = ordinal.get(ts, 0) + 1
         row["reading"] = str(ordinal[ts])
         out.append(row)

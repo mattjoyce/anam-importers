@@ -30,6 +30,12 @@ All notable changes to this repo. The format follows
 - `timeout` bounds the whole call (anam card 116): connect, headers and body, with answers capped
   at 8 MiB. A server trickling bytes held the worker past it. `Anam-Timeout` keeps fractions
   (`250ms`, not `0s`).
+- `anam_bp_csv` refuses an export whose records cannot be told apart (anam card 114): a quote
+  still open at the end, a quote inside a quoted field that neither closes nor doubles it, or a
+  record with another field count than the header. Under the worker's LazyQuotes, a comment that
+  lost its closing quote swallowed the next reading and a poll still claimed a complete snapshot,
+  so Anam reported that reading absent. Padded fields, doubled quotes and closed multi-line
+  fields still read; the real export of 11 July has none of the refused shapes.
 - A request that is JSON but not an object gets a structured error, not a traceback (anam card
   117).
 
