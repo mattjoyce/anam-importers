@@ -9,6 +9,12 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `records/extract` (anam card 58): the one-off extractors moved out of Anam's `scripts/`
+  (Fitbit weights, Strong, Technogym indoor sessions, pathology PDFs, the blood pressure diary
+  reshape). On the same exports they write the same records. The zone a script reads a wall
+  clock in is now `--zone`, not a constant.
+- `records/extract/fitbit_sleep.py`: Fitbit's `Sleep Logs.xlsx` as `sleep.episode` records, ids
+  `fitbit:sleep:<local start>`. Only the columns whose arithmetic proves them are read.
 - `anam_records` (anam card 118): Anam's built-in records worker, moved out. It reads YAML and
   JSON records files with Go's yaml.v3 scalar rules and writes numbers as Go wrote them, so
   every record the worker admitted resends as no-op. Every run is one snapshot of the types it

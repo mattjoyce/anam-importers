@@ -26,6 +26,7 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
+  extract/            one-off extractors that turn an export into a records file
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -303,6 +304,26 @@ plugins:
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of the types it carries. A type whose every record is removed is not in the run, so it
 is not reported absent.
+
+## One-off exports: `records/extract`
+
+An export that will never be sent again (a Fitbit Takeout, a Strong CSV, a Technogym zip, a
+pathology PDF) gets no importer. A script in `records/extract` turns it into a records file
+once, the file goes in the records folder, and `anam_records` sends it. Each script is
+deterministic, so a rerun on the same export writes the same records and the resend is no-op.
+Reshaping to a new Definition version is a rerun with the same ids, which supersedes in place.
+
+| Script | Export | Records |
+|---|---|---|
+| `fitbit_weight.py` | Fitbit `Weight Logs.xlsx` | `health.weight` |
+| `fitbit_sleep.py --zone Z` | Fitbit `Sleep Logs.xlsx` | `sleep.episode` (IEEE 1752) |
+| `strong_csv.py --zone Z` | Strong app CSV | `exercise.session` (IEEE 1752) |
+| `technogym_json.py` | Technogym mywellness zip, indoor sessions | `exercise.session` (IEEE 1752) |
+| `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `lab.result`, `lab.panel` |
+| `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
+
+`--zone` is the IANA zone the export's wall clock reads in. The scripts moved from Anam's
+`scripts/` (anam card 58) and write the same records; only `extracted.method` changed.
 
 ## Values: why `29.371`, not `29.371000000000002`
 
