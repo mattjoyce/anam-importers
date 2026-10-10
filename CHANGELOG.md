@@ -50,6 +50,10 @@ All notable changes to this repo. The format follows
 - `anam_garmin` (anam card 55): the abnormal high heart rate alert from a Garmin watch's
   monitoring FIT files as `health.heart-rate-alert` v3, the payload Anam's `health-db` worker
   builds today, under source `garmin`. The health ETL's `fit_events.py`, moved, with no state of its
+  own. Not to be enabled before the `health-db` facets retire. And `sleep.episode` v1, one per
+  night of GarminDB's `sleep` table: the IEEE 1752 `sleep-episode-1.0` body with Garmin's score,
+  qualifier and averages beside it, identity the source's `id` (Garmin's day). Registered through
+  the API; payloads tested against the pinned IEEE schemas in `tests/conformance`.
   own. Not to be enabled before the `health-db` facets retire.
 - `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill
   that v4 did not name (irregular heartbeat, dizzy / light-headed, temperature, blood glucose,

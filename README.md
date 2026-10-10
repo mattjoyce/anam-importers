@@ -27,6 +27,7 @@ bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-p
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
 garmin/               anam_garmin: a Garmin watch's FIT files as health.heart-rate-alert
+garmin/               anam_garmin: a Garmin watch's alerts and sleep (OMH) from GarminDB
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -308,7 +309,7 @@ is not reported absent.
 ## Wiring an importer into a gateway (Garmin)
 
 Not deployed, and not to be switched on alone. Source `garmin`, types
-`[health.heart-rate-alert]`, secret `anam_importer_token_garmin`, principal
+`[health.heart-rate-alert, sleep.episode]`, secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
 runs would hold every alert twice. It goes live with the rest of anam card 55, when the
@@ -320,6 +321,13 @@ alert, as the health ETL's `fit_events.py` does. It keeps no state: `handle` rea
 modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sync event runs it;
 `poll` reads every file and labels the run a snapshot.
 
+Sleep comes from GarminDB's `garmin.db`, opened read-only: one `sleep.episode` per day its `sleep`
+table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (time interval in UTC, the
+stage durations in minutes) with Garmin's score, its word for it and the averages beside it.
+`sleep.episode` is not bundled in Anam, so the first batch makes `anam_submit` register it.
+`tests/conformance` pins the IEEE schemas the payloads are tested against. Read against GarminDB
+3.6.7's schema; its 4.0 upgrade rebuilds the databases, so re-run the tests after it.
+
 ```yaml
 plugins:
   anam_garmin:
@@ -329,12 +337,13 @@ plugins:
       poll: 900s
     config:
       fit_dir: <GarminDB's FitFiles/Monitoring directory>
+      garmin_db: <GarminDB's DBs/garmin.db>
       person_id: <Anam's person_id>
 ```
 
 A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
 fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
-holds, in 7 batches. Read over a network share it took 9 minutes (160 s of CPU).
+holds, in 7 batches, and 564 nights, every one passing the pinned schema. Read over a network share it took 9 minutes (160 s of CPU).
 
 ## Values: why `29.371`, not `29.371000000000002`
 

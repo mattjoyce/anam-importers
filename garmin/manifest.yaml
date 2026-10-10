@@ -5,11 +5,11 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Today: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66). Reads the files; holds no token and writes nothing."
+description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Today: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66), and sleep.episode, one per night of GarminDB's garmin.db sleep table. Reads both, garmin.db read-only; holds no token and writes nothing."
 commands:
   - name: handle
     type: read
-    description: "After a GarminDB sync: the alerts in the FIT files modified in the last lookback_days (default 3). Idempotent in Anam: an alert already held is a no-op."
+    description: "After a GarminDB sync: the alerts in the FIT files modified in the last lookback_days (default 3), and the nights of sleep from then on. Idempotent in Anam: what is already held is a no-op."
     idempotent: true
     retry_safe: true
     input_schema: {}
@@ -26,7 +26,7 @@ commands:
             - payload.batch
   - name: poll
     type: read
-    description: "Every alert in every FIT file under fit_dir, in batches: the resend-everything mode, labelled a snapshot unless a file would not decode."
+    description: "Every alert in every FIT file under fit_dir and every night of sleep in garmin_db, in batches: the resend-everything mode, labelled one snapshot unless a FIT file would not decode."
     idempotent: true
     retry_safe: true
     input_schema: {}
@@ -43,12 +43,12 @@ commands:
             - payload.batch
   - name: health
     type: read
-    description: "fit_dir is readable, every FIT file decodes, and every alert conforms to the Definition."
+    description: "fit_dir and garmin_db are readable, every FIT file decodes, and every alert and night conforms to its Definition."
     idempotent: true
     retry_safe: true
     input_schema: {}
     output_schema:
       status: string
 config_keys:
-  required: [fit_dir, person_id]
+  required: [fit_dir, garmin_db, person_id]
   optional: [lookback_days]

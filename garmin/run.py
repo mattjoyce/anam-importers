@@ -6,24 +6,27 @@
 """anam_garmin: shapes what a Garmin watch recorded into Anam envelopes, one batch
 event at a time.
 
-Today that is the abnormal high heart rate alert, read straight from the watch's
-monitoring FIT files under GarminDB's FitFiles/Monitoring. GarminDB downloads
-those files but drops their event messages on import, so nothing else holds the
-alert. This is the health ETL's fit_events.py (ductile-healthdata), moved: the same
-event decoded the same way, and the same payload the health-db worker built from
-the ETL's events table. It keeps no state of its own: Anam makes a resend a no-op.
+Two things today. The abnormal high heart rate alert, read straight from the
+watch's monitoring FIT files under GarminDB's FitFiles/Monitoring: GarminDB
+downloads those files but drops their event messages on import, so nothing else
+holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
+moved: the same event decoded the same way, and the same payload the health-db
+worker built from the ETL's events table. And each night's sleep, from GarminDB's
+garmin.db sleep table, as a sleep.episode: the IEEE 1752 body with Garmin's score
+and averages beside it. It keeps no state of its own: Anam makes a resend a no-op.
 
 Commands:
-- handle : after a GarminDB sync, the FIT files changed in the last lookback_days
-- poll   : every FIT file under fit_dir, in batches: the resend-everything mode
-- health : fit_dir is readable and every alert in it conforms
+- handle : after a GarminDB sync, what changed in the last lookback_days
+- poll   : everything, in batches: the resend-everything mode
+- health : the sources are readable and everything in them conforms
 """
 
 from __future__ import annotations
 
+import sqlite3
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -34,6 +37,8 @@ from anam_importer import Definition, batches, check, envelope, load, snapshot_p
 from anam_importer import ductile  # noqa: E402
 
 ALERT_TYPE = "health.heart-rate-alert"
+SLEEP_TYPE = "sleep.episode"
+TYPES = (ALERT_TYPE, SLEEP_TYPE)
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
@@ -111,54 +116,120 @@ def alerts(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
     return [seen[k] for k in sorted(seen)], logs
 
 
-def batch_events(definitions: Dict[str, Definition], payloads: List[Dict[str, Any]], person: str,
+def minutes(t: str) -> Any:
+    """GarminDB's TIME text, "05:49:00.000000", as minutes: 349."""
+    h, m, sec = t.split(":")
+    return number(int(h) * 60 + int(m) + float(sec) / 60)
+
+
+def instant(t: str) -> str:
+    """GarminDB's UTC DATETIME text, "2026-10-07 12:44:00.000000", as RFC 3339."""
+    return datetime.fromisoformat(t).replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
+    """One night of Garmin's sleep table as a sleep.episode payload."""
+    p: Dict[str, Any] = {
+        "id": row["day"],
+        "effective_time_frame": {"time_interval": {"start_date_time": instant(row["start"]),
+                                                   "end_date_time": instant(row["end"])}},
+        "total_sleep_time": {"value": minutes(row["total_sleep"]), "unit": "min"},
+        "light_sleep_duration": {"value": minutes(row["light_sleep"]), "unit": "min"},
+        "deep_sleep_duration": {"value": minutes(row["deep_sleep"]), "unit": "min"},
+        "rem_sleep_duration": {"value": minutes(row["rem_sleep"]), "unit": "min"},
+        "wake_after_sleep_onset": {"value": minutes(row["awake"]), "unit": "min"},
+        "is_main_sleep": True,
+    }
+    for key in ("score", "qualifier"):
+        if row[key] not in (None, ""):
+            p[key] = row[key]
+    for key in ("avg_spo2", "avg_rr", "avg_stress"):
+        if row[key] is not None:
+            p[key] = number(row[key])
+    return p
+
+
+def sleeps(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[str, Any]]:
+    """Every night garmin.db's sleep table holds, by day; with since, those from that
+    day on. A day without a start is a day the watch saw no sleep: no episode."""
+    path = Path(str(config["garmin_db"]))
+    if not path.is_file():
+        raise ductile.Failure(f"no garmin_db at {path}", retry=False)
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
+                "avg_spo2, avg_rr, avg_stress, score, qualifier FROM sleep "
+                "WHERE start IS NOT NULL AND \"end\" IS NOT NULL AND day >= ? ORDER BY day",
+                ((since or date.min).isoformat(),)).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.OperationalError as exc:
+        raise ductile.Failure(f"garmin_db {path}: {exc}", retry=True) from exc
+    return [sleep_episode(r) for r in rows]
+
+
+def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dict[str, Any]]], person: str,
                  snapshot: bool) -> List[Dict[str, Any]]:
-    definition = definitions[ALERT_TYPE]
-    envs = [envelope(definition, p, asserted_person=person) for p in payloads]
-    check(definitions, envs)
-    groups = list(batches(envs))
-    manifest = definition.body.decode()
-    parts = snapshot_parts(len(groups), [ALERT_TYPE]) if snapshot and groups else [None] * len(groups)
+    """Each type's payloads in batches of their own, labelled one snapshot across
+    them all when snapshot is set."""
+    shaped = []
+    for typ, payloads in by_type.items():
+        definition = definitions[typ]
+        envs = [envelope(definition, p, asserted_person=person) for p in payloads]
+        check(definitions, envs)
+        groups = list(batches(envs))
+        shaped += [(definition, g, f"{typ} {i + 1}/{len(groups)}") for i, g in enumerate(groups)]
+    parts = snapshot_parts(len(shaped), list(by_type)) if snapshot and shaped else [None] * len(shaped)
     events = []
-    for i, (g, part) in enumerate(zip(groups, parts)):
-        payload: Dict[str, Any] = {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"}
+    for (definition, g, label), part in zip(shaped, parts):
+        payload: Dict[str, Any] = {"envelopes": g, "definitions": [definition.body.decode()], "batch": label}
         if part is not None:
             payload["snapshot"] = part
         events.append(ductile.event(BATCH_EVENT, payload))
     return events
 
 
-def run_over(config: Dict[str, Any], files: List[Path], snapshot: bool) -> Dict[str, Any]:
-    payloads, logs = alerts(files)
+def run_over(config: Dict[str, Any], files: List[Path], since: Optional[date], snapshot: bool) -> Dict[str, Any]:
+    found, logs = alerts(files)
+    nights = sleeps(config, since)
     # A file that would not decode leaves its alerts out, so the run is not everything.
-    events = batch_events(load(HERE), payloads, str(config["person_id"]), snapshot and not logs)
-    return ductile.ok(f"{len(payloads)} alert(s) in {len(files)} FIT file(s), {len(events)} batch(es)",
-                      events=events, logs=logs)
+    events = batch_events(load(HERE), {ALERT_TYPE: found, SLEEP_TYPE: nights}, str(config["person_id"]),
+                          snapshot and not logs)
+    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s) and {len(nights)} night(s) of sleep, "
+                      f"{len(events)} batch(es)", events=events, logs=logs)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     days = float(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
-    return run_over(config, fit_files(config, since=time.time() - days * 86400), snapshot=False)
+    since = time.time() - days * 86400
+    return run_over(config, fit_files(config, since=since),
+                    datetime.fromtimestamp(since, timezone.utc).date() - timedelta(days=1), snapshot=False)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    # Every monitoring file the watch has given GarminDB is every alert, so poll's run
-    # is a snapshot, unless a file would not decode.
-    return run_over(config, fit_files(config), snapshot=True)
+    # Every monitoring file and every night GarminDB holds is everything, so poll's
+    # run is a snapshot, unless a file would not decode.
+    return run_over(config, fit_files(config), None, snapshot=True)
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     definitions = load(HERE)
     files = fit_files(config)
-    payloads, logs = alerts(files)
-    check(definitions, [envelope(definitions[ALERT_TYPE], p) for p in payloads])
+    found, logs = alerts(files)
+    nights = sleeps(config)
+    check(definitions, [envelope(definitions[ALERT_TYPE], p) for p in found]
+          + [envelope(definitions[SLEEP_TYPE], p) for p in nights])
     if logs:
         return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)
-    return ductile.ok(f"{len(payloads)} alert(s) in {len(files)} FIT file(s), every one conforming to "
-                      f"{ALERT_TYPE} v{definitions[ALERT_TYPE].version}")
+    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s) and {len(nights)} night(s) of sleep, "
+                      f"every one conforming to {ALERT_TYPE} v{definitions[ALERT_TYPE].version} and "
+                      f"{SLEEP_TYPE} v{definitions[SLEEP_TYPE].version}")
 
 
 if __name__ == "__main__":
