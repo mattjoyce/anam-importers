@@ -25,6 +25,9 @@ ROWS = [
 ]
 LATER = ("2026-3-01 07:10:00,\t 1 March 2026 7:10,\t 120.0,\t 78.0,\t 64.0,\t ,\t ,\t ,\t ,\t ,\t ,\t ,\t "
          "\"Left Arm\",\t \"Seated\",\t \"after coffee, short walk\",\t ,\t \r\n")
+# A reading with every column the app can fill, the checkboxes ticked (anam card 97).
+EVERY_COLUMN = ("2026-3-02 07:15:00,\t 2 March 2026 7:15,\t 131.0,\t 84.0,\t 72.0,\t \"Yes\",\t \"Yes\",\t \"Yes\",\t "
+                "96.1,\t 36.8,\t 101.0,\t 97.0,\t \"Left Arm\",\t \"Seated\",\t \"woke early\",\t \"stress, travel\",\t \r\n")
 
 
 def export(folder: Path, name: str, rows) -> Path:
@@ -81,6 +84,15 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(later["comment"], "after coffee, short walk")
         self.assertEqual(later["location"], "Left Arm")
 
+    def test_every_column_the_app_can_fill_is_kept_as_written(self):
+        p = self.payloads(ROWS + [EVERY_COLUMN])[-1]
+        self.assertEqual({k: p[k] for k in ("irregular_heartbeat", "missed_medication", "dizzy_light_headed",
+                                            "temperature_celsius", "blood_glucose_mg_dl", "oxygen_saturation_pct",
+                                            "tags")},
+                         {"irregular_heartbeat": "Yes", "missed_medication": "Yes", "dizzy_light_headed": "Yes",
+                          "temperature_celsius": "36.8", "blood_glucose_mg_dl": "101.0",
+                          "oxygen_saturation_pct": "97.0", "tags": "stress, travel"})
+
     def test_a_deleted_export_is_nothing_to_send(self):
         r = self.handle({"path": str(self.dir / "BloodPressure_gone"), "change_type": "deleted"})
         self.assertEqual(r["status"], "ok", r)
@@ -134,7 +146,7 @@ class ShapeTest(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
 class AgainstAnamTest(unittest.TestCase):
-    """Readings reach Anam as health.blood-pressure v4: an export is admitted once and
+    """Readings reach Anam as health.blood-pressure v5: an export is admitted once and
     a resend is no-op; a later export that overlaps admits only its new reading."""
 
     def setUp(self):
@@ -184,6 +196,11 @@ class AgainstAnamTest(unittest.TestCase):
                 for outcome, n in r["events"][0]["payload"]["outcomes"].items():
                     outcomes[outcome] = outcomes.get(outcome, 0) + n
             self.assertEqual(outcomes, want)
+
+    def test_a_reading_with_every_column_filled_is_admitted(self):
+        path = export(self.dir, "BloodPressure_3-March-2026", ROWS + [EVERY_COLUMN])
+        self.assertEqual(self.send(path), {"admitted": 4})
+        self.assertEqual(self.send(path), {"no-op": 4})
 
 if __name__ == "__main__":
     unittest.main()

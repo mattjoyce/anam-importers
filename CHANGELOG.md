@@ -17,6 +17,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill
+  that v4 did not name (irregular heartbeat, dizzy / light-headed, temperature, blood glucose,
+  oxygen saturation, tags), kept as the export's text. Under v4 one ticked checkbox stopped that
+  export and every later one. Needs the Anam release with v5.
+
 - `anam_bp_csv` emits `health.blood-pressure` v4 (anam card 83): the Open mHealth
   `blood-pressure-4.0` body, systolic and diastolic as numbers in mmHg and the time with Sydney's
   offset, with `date_excel`, `reading` and the export's other fields beside it as written. The
