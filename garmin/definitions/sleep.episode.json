@@ -245,6 +245,30 @@
         "examples": [
           19.0
         ]
+      },
+      "awake_count": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Fitbit's count of times awake in the episode, as its sleep log (written by an IFTTT applet) reports it. Absent for other sources.",
+        "examples": [
+          3
+        ]
+      },
+      "restless_count": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "Fitbit's count of restless spells in the episode, as its sleep log reports it. Absent for other sources.",
+        "examples": [
+          11
+        ]
+      },
+      "restless_minutes": {
+        "type": "number",
+        "minimum": 0,
+        "description": "Fitbit's time restless in the episode, in minutes, as its sleep log reports it. Absent for other sources.",
+        "examples": [
+          5
+        ]
       }
     }
   }
