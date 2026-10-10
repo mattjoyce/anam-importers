@@ -24,6 +24,7 @@ anam_importer/        the shared base: Definitions, validation, batches, the cli
 anam_submit/          posts a batch: makes sure Anam publishes its Definitions, then submits it
 withings/             anam_withings: the withings plugin's measurements as health.measurement
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure
+dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -212,6 +213,33 @@ never moves or deletes it.
 Against the 234 readings of the July 2026 export already in the record, a resend through the
 importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so the worker and its
 `imports.yaml` entry can go as soon as it is live.
+
+## Wiring an importer into a gateway (DreamStation)
+
+Not deployed. Source `dreamstation`, types `[sleep.cpap-session]`, secret
+`anam_importer_token_dreamstation`, principal `anam-submit-dreamstation`. Unlike the other
+two, this importer registers its own Definition: Anam's binary does not bundle
+`sleep.cpap-session`, so the first batch makes `anam_submit` register it.
+
+It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
+which its uv script header pins to a tag. The card copy is refreshed every few months by copying
+the SD card again, so a `folder_watch` on the copy's `LAST.TXT` runs `handle`, and every run
+sends the whole card: the old sessions come back `no-op` and the new ones are admitted.
+
+```yaml
+plugins:
+  anam_dreamstation:
+    enabled: true
+    timeouts:
+      handle: 120s
+      poll: 120s
+    config:
+      card_path: <the card copy's P-SERIES directory>
+      person_id: <Anam's person_id>
+```
+
+A card of 1,317 sessions is 27 batches and about 1.9 MB on stdout. Read over a network share
+it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
 
 ## Values: why `29.371`, not `29.371000000000002`
 

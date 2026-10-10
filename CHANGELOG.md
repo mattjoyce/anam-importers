@@ -9,6 +9,10 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_dreamstation`, the CPAP importer: a Philips DreamStation SD card copy as
+  `sleep.cpap-session` v1, one facet per therapy session, holding only what the device wrote
+  (times, mask-on spans, settings, its pressure summary and counts, a tally of the events
+  file). Its Definition is registered through the API. Needs the `dreamstation` decoder.
 - `anam_bp_csv`, the blood pressure importer: a phone app export (`BloodPressure_<date>`) as
   `health.blood-pressure` v2, the built-in `bpcsv` worker's reading moved, so the same export
   through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
