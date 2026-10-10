@@ -28,13 +28,17 @@ class OMHTest(unittest.TestCase):
 
     def test_identity_and_the_export_s_own_fields_stay_as_written(self):
         p = bp.omh(ROW)
-        for key in ("date_excel", "reading", "pulse", "location", "posture", "date"):
+        for key in ("date_excel", "reading", "pulse", "location", "date"):
             self.assertEqual(p[key], ROW[key])
 
     def test_posture_maps_only_when_known_and_location_never(self):
-        self.assertEqual(bp.omh(ROW)["body_posture"], "sitting")
-        self.assertNotIn("body_posture", bp.omh({**ROW, "posture": "Reclined"}))
-        self.assertNotIn("measurement_location", bp.omh(ROW))
+        p = bp.omh(ROW)
+        self.assertEqual(p["body_posture"], "sitting")
+        self.assertNotIn("posture", p)
+        unknown = bp.omh({**ROW, "posture": "Reclined"})
+        self.assertNotIn("body_posture", unknown)
+        self.assertEqual(unknown["posture"], "Reclined")  # v4 refuses it: a person names it
+        self.assertNotIn("measurement_location", p)
 
 
 if __name__ == "__main__":

@@ -23,7 +23,7 @@ wire format, tokens, all-or-nothing batches of at most 49, and what each status 
 anam_importer/        the shared base: Definitions, validation, batches, the client, the ductile protocol
 anam_submit/          posts a batch: makes sure Anam publishes its Definitions, then submits it
 withings/             anam_withings: the withings plugin's measurements as health.measurement
-bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure
+bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)

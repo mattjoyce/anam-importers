@@ -164,9 +164,10 @@ def payloads(path: Path) -> List[Dict[str, str]]:
 # ZONE is where the app's wall clock reads, as the Definition's fact_time says.
 ZONE = "Australia/Sydney"
 
-# POSTURES maps the app's posture to Open mHealth's body_posture. Only Seated has
-# been seen; any other is kept as the source wrote it and given no OMH posture.
-POSTURES = {"Seated": "sitting", "Standing": "standing", "Lying": "lying down"}
+# POSTURES maps the app's posture to Open mHealth's body_posture. Seated is the only
+# one the app has written. Any other stays as the source's posture, which v4 does not
+# admit, so the run stops for a person to name it rather than dropping it.
+POSTURES = {"Seated": "sitting"}
 
 
 def omh(row: Dict[str, str]) -> Dict[str, Any]:
@@ -183,10 +184,11 @@ def omh(row: Dict[str, str]) -> Dict[str, Any]:
         "diastolic_blood_pressure": {"value": number(row["diastolic"]), "unit": "mmHg"},
         "effective_time_frame": {"date_time": at.isoformat()},
     }
-    posture = POSTURES.get(row.get("posture", ""))
+    rest = {k: v for k, v in row.items() if k not in ("systolic", "diastolic")}
+    posture = POSTURES.get(rest.get("posture", ""))
     if posture:
         body["body_posture"] = posture
-    rest = {k: v for k, v in row.items() if k not in ("systolic", "diastolic")}
+        del rest["posture"]
     return {**body, **rest}
 
 
@@ -209,7 +211,7 @@ def batch_events(definitions: Dict[str, Definition], path: Path, person: str) ->
     """The export at path as batch events. Batches never span two exports, so no
     batch carries one reading twice."""
     definition = definitions[TYPE]
-    envs = [envelope(definition, p, asserted_person=person) for p in payloads(path)]
+    envs = [envelope(definition, omh(p), asserted_person=person) for p in payloads(path)]
     check(definitions, envs)
     manifest = definition.body.decode()
     groups = list(batches(envs))

@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_bp_csv` emits `health.blood-pressure` v4 (anam card 83): the Open mHealth
+  `blood-pressure-4.0` body, systolic and diastolic as numbers in mmHg and the time with Sydney's
+  offset, with `date_excel`, `reading` and the export's other fields beside it as written. The
+  app's `Seated` is `sitting`; an unknown posture stops the run. Needs the Anam release with v4.
+
 - Snapshots (anam card 78): every resend-everything run labels its batches as one snapshot, and
   `anam_submit` raises `anam.snapshot_absent` when the part that completes it finds facets Anam
   holds live that the run did not carry. Nothing is retracted automatically. Needs Anam a14ee51

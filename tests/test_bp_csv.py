@@ -55,15 +55,26 @@ class ShapeTest(unittest.TestCase):
         p = self.payloads(ROWS)
         self.assertEqual([(x["date_excel"], x["reading"]) for x in p],
                          [("2026-1-24 06:36:00", "1"), ("2026-2-10 05:04:00", "1"), ("2026-2-10 05:04:00", "2")])
-        self.assertEqual([x["systolic"] for x in p], ["114.0", "102.0", "101.0"])
+        self.assertEqual([x["systolic_blood_pressure"]["value"] for x in p], [114.0, 102.0, 101.0])
 
-    def test_values_are_the_exports_own_strings_and_empty_cells_are_absent(self):
+    def test_a_reading_is_the_omh_body_beside_the_export_s_own_text(self):
         first = self.payloads(ROWS)[0]
         self.assertEqual(first, {
-            "date_excel": "2026-1-24 06:36:00", "date": "24 January 2026 6:36", "systolic": "114.0",
-            "diastolic": "80.0", "pulse": "70.0", "weight_kg": "96.3", "location": "Left Arm",
-            "posture": "Seated", "comment": "No cofee", "reading": "1",
+            "systolic_blood_pressure": {"value": 114.0, "unit": "mmHg"},
+            "diastolic_blood_pressure": {"value": 80.0, "unit": "mmHg"},
+            "effective_time_frame": {"date_time": "2026-01-24T06:36:00+11:00"},
+            "body_posture": "sitting",
+            "date_excel": "2026-1-24 06:36:00", "date": "24 January 2026 6:36", "pulse": "70.0",
+            "weight_kg": "96.3", "location": "Left Arm", "comment": "No cofee", "reading": "1",
         })
+
+    def test_a_posture_nobody_has_named_stops_the_run(self):
+        row = ROWS[0].replace('"Seated"', '"Reclined"')
+        path = export(self.dir, "BloodPressure_reclined", [row])
+        r = self.handle({"path": str(path), "change_type": "created"})
+        self.assertEqual(r["status"], "error", r)
+        self.assertFalse(r["retry"])
+        self.assertIn("posture", r["error"])
 
     def test_a_quoted_comma_stays_in_its_field(self):
         later = self.payloads(ROWS + [LATER])[-1]
@@ -100,16 +111,14 @@ class ShapeTest(unittest.TestCase):
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
-class AgainstBuiltInWorkerTest(unittest.TestCase):
-    """The importer takes over the built-in worker's facets: the same export through
-    both is the same facets, so cut-over admits nothing and supersedes nothing."""
+class AgainstAnamTest(unittest.TestCase):
+    """Readings reach Anam as health.blood-pressure v4: an export is admitted once and
+    a resend is no-op; a later export that overlaps admits only its new reading."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
-        first = export(self.dir, "BloodPressure_24-February-2026", ROWS)
-        self.daemon = Daemon("bp-csv", ["health.blood-pressure"], imports=[("bp-csv", first)])
-        self.first = first
+        self.daemon = Daemon("bp-csv", ["health.blood-pressure"])
 
     def tearDown(self):
         self.daemon.close()
@@ -129,14 +138,15 @@ class AgainstBuiltInWorkerTest(unittest.TestCase):
                 outcomes[outcome] = outcomes.get(outcome, 0) + n
         return outcomes
 
-    def test_the_worker_s_export_through_the_importer_is_all_no_op(self):
-        self.assertEqual(self.send(self.first), {"no-op": 3})
+    def test_an_export_is_admitted_once(self):
+        first = export(self.dir, "BloodPressure_24-February-2026", ROWS)
+        self.assertEqual(self.send(first), {"admitted": 3})
+        self.assertEqual(self.send(first), {"no-op": 3})
 
     def test_a_later_overlapping_export_admits_only_its_new_reading(self):
+        self.send(export(self.dir, "BloodPressure_24-February-2026", ROWS))
         later = export(self.dir, "BloodPressure_10-March-2026", ROWS + [LATER])
         self.assertEqual(self.send(later), {"admitted": 1, "no-op": 3})
-        self.assertEqual(self.send(later), {"no-op": 4})
-
 
 if __name__ == "__main__":
     unittest.main()
