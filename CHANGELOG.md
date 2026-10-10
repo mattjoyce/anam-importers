@@ -18,6 +18,21 @@ All notable changes to this repo. The format follows
 
 ### Fixed
 
+- The client never follows a redirect (anam card 112). It used urllib's default handler, which
+  sent the importer's bearer token to whatever origin a 3xx named. A redirect is now an error
+  naming the target, and `anam_url` may not carry credentials, a query or a fragment.
+- `anam_submit` acknowledges a batch only on a whole admission receipt (anam card 113): W, the
+  change count, and a known outcome for every index. A 200 holding anything else, an HTML page
+  or `{}`, was reported ok with an `anam.admitted` event; now it is a retryable error and no
+  event. The Definitions listing, a registration and a snapshot report are checked the same way.
+- A truncated answer is retryable (anam card 115). The batch may or may not have been written,
+  and a resend settles which.
+- `timeout` bounds the whole call (anam card 116): connect, headers and body, with answers capped
+  at 8 MiB. A server trickling bytes held the worker past it. `Anam-Timeout` keeps fractions
+  (`250ms`, not `0s`).
+- A request that is JSON but not an object gets a structured error, not a traceback (anam card
+  117).
+
 - `anam_bp_csv` sends exports oldest first by the date in their name, not in path-string order,
   and sends a reading two exports hold once, from the newer (anam card 98). Before, the 9th's
   export sorted after the 10th's, so a resend put an older comment back over a correction.

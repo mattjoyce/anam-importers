@@ -68,6 +68,9 @@ def run(handlers: Dict[str, Handler]) -> None:
     except json.JSONDecodeError as exc:
         json.dump(error(f"invalid request JSON: {exc}", retry=False), sys.stdout)
         return
+    if not isinstance(request, dict):
+        json.dump(error(f"invalid request: a JSON object, not {type(request).__name__}", retry=False), sys.stdout)
+        return
     command = str(request.get("command", "")).strip().lower()
     handler = handlers.get(command)
     if handler is None:
