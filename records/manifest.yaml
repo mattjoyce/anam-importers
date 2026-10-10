@@ -1,0 +1,56 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_records
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Shapes records files (YAML or JSON facts written down from a source document) into Anam envelopes of the types Anam bundles, and emits them as anam_records.batch events, at most 49 to a batch, for anam_submit to post at each type's current version. Every run sends the whole folder. Reads the folder; holds no token and writes nothing."
+commands:
+  - name: handle
+    type: read
+    description: "On a folder_watch event for records_dir: every record in the folder. A record can move between files, so one file alone is never sent."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_records.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.current_versions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every record in records_dir, in batches, as one snapshot: the resend-everything mode."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_records.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.current_versions
+            - payload.batch
+  - name: health
+    type: read
+    description: "records_dir is readable and every file in it reads, with no identity claimed twice."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [records_dir, person_id]
+  optional: []

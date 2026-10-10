@@ -45,6 +45,8 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     client = client_of(request)
     definitions = [parse(m.encode() if isinstance(m, str) else m) for m in batch.get("definitions") or []]
     ensure_published(client, definitions)
+    if batch.get("current_versions"):
+        stamp_current(client, envelopes)
     snapshot = batch.get("snapshot") or None
     try:
         admission = client.submit(envelopes, snapshot)
@@ -66,6 +68,18 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
         if report.get("absent"):
             events.append(absent_event(snapshot, report))
     return ductile.ok(f"{summary} at W {admission.get('w')}", events=events)
+
+
+def stamp_current(client: Client, envelopes: List[Dict[str, Any]]) -> None:
+    """Shape each envelope that names no version to its type's current one, as Anam
+    publishes it. Only a batch that asks for it (current_versions) gets this: a source
+    with no version of its own, such as a records file, which Anam's built-in worker
+    always admitted at the current version. A type Anam does not publish is left to
+    the gate to refuse."""
+    current = {d["type"]: d["current"] for d in client.definitions()}
+    for env in envelopes:
+        if "definition_version" not in env and env.get("type") in current:
+            env["definition_version"] = current[env["type"]]
 
 
 # ABSENT_IDS_SHOWN is how many absent facet ids the alert carries; the report holds

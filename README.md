@@ -25,6 +25,7 @@ anam_submit/          posts a batch: makes sure Anam publishes its Definitions, 
 withings/             anam_withings: the withings plugin's measurements as health.measurement
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
+records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -271,6 +272,37 @@ is not on the card is part of a session the run cannot send, so that run carries
 
 A card of 1,317 sessions is 27 batches and about 1.9 MB on stdout. Read over a network share
 it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
+
+## Wiring an importer into a gateway (records)
+
+Not deployed. Source `records`, the same name Anam's built-in worker used, so the cut-over is
+no-op. Types are the ones the worker's scope named: `lab.result`, `lab.panel`, `condition.noted`,
+`donation.blood`, `health.weight`, the `med.*`, `illness.*` and `travel.*` types, `visit.clinic`,
+`gym.visit`, `exercise.session`, `health.blood-pressure` and `note.annotation`. Secret
+`anam_importer_token_records`, principal `anam-submit-records`.
+
+A records file names no Definition version, and every type it carries is bundled in Anam, so the
+importer carries no Definitions. Each batch sets `current_versions`, and `anam_submit` shapes its
+envelopes to the version Anam publishes as current, which is what the built-in worker did.
+
+The records are read as the worker read them, with Go's yaml.v3 rules rather than YAML 1.1:
+`yes` stays text, `0777` is 511, `1_000` is 1000, and a date is the text that was written. A number
+Python would write differently from Go (`0.00001`, which Go writes plain and Python as `1e-05`)
+stops the run and names the record, since the gate keeps a number's text and a different one
+would supersede.
+
+```yaml
+plugins:
+  anam_records:
+    enabled: true
+    config:
+      records_dir: <the records folder>
+      person_id: <Anam's person_id>
+```
+
+A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
+snapshot of the types it carries. A type whose every record is removed is not in the run, so it
+is not reported absent.
 
 ## Values: why `29.371`, not `29.371000000000002`
 

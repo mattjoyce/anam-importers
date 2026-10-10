@@ -7,6 +7,15 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `anam_records` (anam card 118): Anam's built-in records worker, moved out. It reads YAML and
+  JSON records files with Go's yaml.v3 scalar rules and writes numbers as Go wrote them, so
+  every record the worker admitted resends as no-op. Every run is one snapshot of the types it
+  carries.
+- `anam_submit` stamps each type's current version on the envelopes of a batch that sets
+  `current_versions` and names none. Any other envelope without a version is still refused.
+
 ### Fixed
 
 - `anam_bp_csv` sends exports oldest first by the date in their name, not in path-string order,
