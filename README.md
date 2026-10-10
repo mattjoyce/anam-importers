@@ -230,7 +230,11 @@ Not deployed. The same steps as Withings, with these differences:
 
 `poll` resends every export under `export_dir`, so a rebuild reruns them all. Keep every export
 there; an overlapping later export admits only its new readings. The importer reads the file and
-never moves or deletes it.
+never moves or deletes it. Exports are ordered by the date the app writes into the name
+(`BloodPressure_9-October-2026`), and a reading two exports hold is sent once, from the newer, so
+a comment corrected in a later export stands and a resend stays `no-op`. With `export_dir` in its
+config, `handle` also leaves alone the readings a newer export holds, so an old export dropped in
+late cannot undo a correction.
 
 Against the 234 readings of the July 2026 export already in the record, a resend through the
 importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so the worker and its
@@ -260,6 +264,10 @@ plugins:
       card_path: <the card copy's P-SERIES directory>
       person_id: <Anam's person_id>
 ```
+
+Every run is labelled a snapshot, unless the decoder skipped a file: an events file whose summary
+is not on the card is part of a session the run cannot send, so that run carries no label and
+`health` says why. A file the decoder cannot read fails the run instead.
 
 A card of 1,317 sessions is 27 batches and about 1.9 MB on stdout. Read over a network share
 it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.

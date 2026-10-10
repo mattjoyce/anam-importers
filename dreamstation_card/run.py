@@ -93,13 +93,18 @@ def batch_events(request: Dict[str, Any]) -> Dict[str, Any]:
     check(definitions, envs)
     groups = list(batches(envs))
     manifest = definition.body.decode()
-    # The card holds every session the device recorded, so every run is a snapshot.
-    parts = snapshot_parts(len(groups), [TYPE]) if groups else []
-    events = [
-        ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}",
-                                    "snapshot": part})
-        for i, (g, part) in enumerate(zip(groups, parts))
-    ]
+    # The card holds every session the device recorded, so a run is a snapshot, unless
+    # the decoder skipped a file. A skipped file is an events file whose summary is not
+    # on the card: part of a session this run cannot send, which Anam would otherwise
+    # call absent. (A file the decoder cannot read fails the whole run instead.)
+    whole = not card.skipped_files
+    parts = snapshot_parts(len(groups), [TYPE]) if groups and whole else [None] * len(groups)
+    events = []
+    for i, (g, part) in enumerate(zip(groups, parts)):
+        batch: Dict[str, Any] = {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"}
+        if part is not None:
+            batch["snapshot"] = part
+        events.append(ductile.event(BATCH_EVENT, batch))
     logs: List[str] = [f"skipped {f}" for f in card.skipped_files]
     return ductile.ok(f"{len(envs)} session(s) in {len(groups)} batch(es)", events=events, logs=logs)
 
@@ -118,8 +123,10 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     card = read(str(config["card_path"]))
     envs = [envelope(definitions[TYPE], payload(card.device, s)) for s in card.sessions]
     check(definitions, envs)
+    skipped = (f"; {len(card.skipped_files)} events file(s) without a summary, so a run is no snapshot: "
+               + ", ".join(card.skipped_files[:5])) if card.skipped_files else ""
     return ductile.ok(f"{len(envs)} session(s) from {card.device.model}, every one conforming to "
-                      f"{TYPE} v{definitions[TYPE].version}")
+                      f"{TYPE} v{definitions[TYPE].version}{skipped}")
 
 
 if __name__ == "__main__":

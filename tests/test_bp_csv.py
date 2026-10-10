@@ -106,8 +106,30 @@ class ShapeTest(unittest.TestCase):
         (self.dir / "notes.txt").write_text("not an export")
         r = run_plugin(BP, {"command": "poll", "config": {"person_id": "person-a", "export_dir": str(self.dir)}})
         self.assertEqual(r["status"], "ok", r)
-        self.assertEqual([e["payload"]["batch"] for e in r["events"]], ["BloodPressure_1 1/1", "BloodPressure_2 1/1"])
-        self.assertEqual(sum(len(e["payload"]["envelopes"]) for e in r["events"]), 7)
+        # BloodPressure_2 holds every reading BloodPressure_1 does, so each is sent once, from it.
+        self.assertEqual([e["payload"]["batch"] for e in r["events"]], ["BloodPressure_2 1/1"])
+        self.assertEqual(sum(len(e["payload"]["envelopes"]) for e in r["events"]), 4)
+
+    def test_exports_go_oldest_first_by_the_date_in_their_name_and_a_reading_goes_once_from_the_newest(self):
+        corrected = LATER.replace("after coffee, short walk", "after tea, short walk")
+        export(self.dir, "BloodPressure_10-October-2026", ROWS + [corrected])
+        export(self.dir, "BloodPressure_9-October-2026", ROWS + [LATER])
+        export(self.dir, "BloodPressure_1-September-2026", ROWS[:1])
+        r = run_plugin(BP, {"command": "poll", "config": {"person_id": "person-a", "export_dir": str(self.dir)}})
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual([e["payload"]["batch"] for e in r["events"]], ["BloodPressure_10-October-2026 1/1"])
+        sent = [e["payload"] for ev in r["events"] for e in ev["payload"]["envelopes"]]
+        self.assertEqual(len(sent), 4)
+        self.assertEqual(sent[-1]["comment"], "after tea, short walk")
+
+    def test_an_older_export_dropped_late_leaves_a_newer_one_s_readings_alone(self):
+        corrected = LATER.replace("after coffee, short walk", "after tea, short walk")
+        export(self.dir, "BloodPressure_10-October-2026", ROWS + [corrected])
+        old = export(self.dir, "BloodPressure_9-October-2026", ROWS + [LATER])
+        r = run_plugin(BP, {"command": "handle", "config": {"person_id": "person-a", "export_dir": str(self.dir)},
+                            "event": {"type": "bp.export", "payload": {"path": str(old), "change_type": "created"}}})
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(r["events"], [])
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
@@ -147,6 +169,21 @@ class AgainstAnamTest(unittest.TestCase):
         self.send(export(self.dir, "BloodPressure_24-February-2026", ROWS))
         later = export(self.dir, "BloodPressure_10-March-2026", ROWS + [LATER])
         self.assertEqual(self.send(later), {"admitted": 1, "no-op": 3})
+
+    def test_a_correction_in_a_newer_export_stands_through_a_resend(self):
+        corrected = LATER.replace("after coffee, short walk", "after tea, short walk")
+        export(self.dir, "BloodPressure_9-October-2026", ROWS + [LATER])
+        export(self.dir, "BloodPressure_10-October-2026", ROWS + [corrected])
+        for want in ({"admitted": 4}, {"no-op": 4}):
+            shaped = run_plugin(BP, {"command": "poll", "config": {"person_id": "person-a", "export_dir": str(self.dir)}})
+            outcomes = {}
+            for ev in shaped["events"]:
+                r = run_plugin(SUBMIT, {"command": "handle", "event": ev,
+                                        "config": {"anam_url": self.daemon.url, "token_secret": "anam_importer_token_test"},
+                                        "secrets": {"anam_importer_token_test": self.daemon.token}})
+                for outcome, n in r["events"][0]["payload"]["outcomes"].items():
+                    outcomes[outcome] = outcomes.get(outcome, 0) + n
+            self.assertEqual(outcomes, want)
 
 if __name__ == "__main__":
     unittest.main()

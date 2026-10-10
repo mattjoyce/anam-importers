@@ -26,8 +26,9 @@ Commands:
 from __future__ import annotations
 
 import sys
+from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, Iterator, List, Set, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -198,20 +199,52 @@ def number(text: str) -> Any:
     return int(text) if text.lstrip("-").isdigit() else float(text)
 
 
+def exported_on(path: Path) -> date:
+    """The day an export was made: the date the app writes into its name
+    (BloodPressure_9-October-2026), or the file's modification day when the name
+    holds none."""
+    try:
+        return datetime.strptime(path.name.split("_", 1)[1], "%d-%B-%Y").date()
+    except (IndexError, ValueError):
+        return datetime.fromtimestamp(path.stat().st_mtime).date()
+
+
 def exports(config: Dict[str, Any]) -> List[Path]:
-    """Every export under export_dir, oldest name first."""
+    """Every export under export_dir, oldest first by exported_on, then by name.
+    Order matters: on a resend the gate keeps the last payload it is sent for a
+    reading, so the newest export, which holds any correction, is sent last."""
     root = Path(str(config["export_dir"]))
     if not root.is_dir():
         raise ductile.Failure(f"no export_dir at {root}", retry=False)
     pattern = str(config.get("pattern", DEFAULT_PATTERN))
-    return sorted(p for p in root.rglob(pattern) if p.is_file())
+    return sorted((p for p in root.rglob(pattern) if p.is_file()), key=lambda p: (exported_on(p), p.name, str(p)))
 
 
-def batch_events(definitions: Dict[str, Definition], path: Path, person: str) -> List[Dict[str, Any]]:
-    """The export at path as batch events. Batches never span two exports, so no
-    batch carries one reading twice."""
+def identity(row: Dict[str, str]) -> Tuple[str, str]:
+    """A reading's identity, as the Definition's identity_key composes it."""
+    return row["date_excel"], row["reading"]
+
+
+def newest(files: List[Path]) -> List[Tuple[Path, List[Dict[str, str]]]]:
+    """Each export with the readings it is the newest holder of, oldest export
+    first (files as exports orders them). A reading two exports hold is sent once,
+    from the newer, so a correction stands and a resend is a no-op rather than a
+    supersede back and forth."""
+    seen: Set[Tuple[str, str]] = set()
+    out: List[Tuple[Path, List[Dict[str, str]]]] = []
+    for path in reversed(files):
+        rows = [r for r in payloads(path) if identity(r) not in seen]
+        seen.update(identity(r) for r in rows)
+        out.append((path, rows))
+    return out[::-1]
+
+
+def batch_events(definitions: Dict[str, Definition], path: Path, rows: List[Dict[str, str]],
+                 person: str) -> List[Dict[str, Any]]:
+    """The readings of the export at path as batch events. Batches never span two
+    exports, so no batch carries one reading twice."""
     definition = definitions[TYPE]
-    envs = [envelope(definition, omh(p), asserted_person=person) for p in payloads(path)]
+    envs = [envelope(definition, omh(p), asserted_person=person) for p in rows]
     check(definitions, envs)
     manifest = definition.body.decode()
     groups = list(batches(envs))
@@ -229,16 +262,25 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     path = event.get("path")
     if not path:
         return ductile.error("the event names no path", retry=False)
-    events = batch_events(load(HERE), Path(str(path)), str(config["person_id"]))
+    path = Path(str(path))
+    rows = payloads(path)
+    # An older export dropped in late must not undo a newer one's correction: with
+    # export_dir known, readings a newer export holds are left to it.
+    if config.get("export_dir"):
+        files = exports(config)
+        later = files[files.index(path) + 1:] if path in files else [f for f in files if exported_on(f) > exported_on(path)]
+        held = {identity(r) for f in later for r in payloads(f)}
+        rows = [r for r in rows if identity(r) not in held]
+    events = batch_events(load(HERE), path, rows, str(config["person_id"]))
     readings = sum(len(e["payload"]["envelopes"]) for e in events)
-    return ductile.ok(f"{readings} reading(s) of {Path(str(path)).name} in {len(events)} batch(es)", events=events)
+    return ductile.ok(f"{readings} reading(s) of {path.name} in {len(events)} batch(es)", events=events)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     definitions = load(HERE)
     files = exports(config)
-    events = [e for f in files for e in batch_events(definitions, f, str(config["person_id"]))]
+    events = [e for f, rows in newest(files) for e in batch_events(definitions, f, rows, str(config["person_id"]))]
     # Every export kept under export_dir together is everything the app has given us,
     # so poll's run is a snapshot. One export alone (handle) is not.
     if events:
@@ -252,7 +294,7 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     definitions = load(HERE)
     files = exports(config)
-    events = [e for f in files for e in batch_events(definitions, f, "health-check")]
+    events = [e for f in files for e in batch_events(definitions, f, payloads(f), "health-check")]
     readings = sum(len(e["payload"]["envelopes"]) for e in events)
     return ductile.ok(f"{readings} reading(s) in {len(files)} export(s), every one conforming to "
                       f"{TYPE} v{definitions[TYPE].version}")

@@ -4,6 +4,7 @@ need a card are skipped without both, and those that need Anam without ANAM_BIN.
 
 import importlib.util
 import os
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -44,6 +45,20 @@ class CardTest(unittest.TestCase):
     def test_health_says_every_session_conforms(self):
         r = run("health", CARD)
         self.assertEqual(r["status"], "ok", r)
+
+    def test_a_whole_card_is_a_snapshot_and_one_with_an_orphaned_events_file_is_not(self):
+        r = run("poll", CARD)
+        self.assertTrue(all("snapshot" in ev["payload"] for ev in r["events"]))
+        with tempfile.TemporaryDirectory() as d:
+            copy = Path(d) / "P-SERIES"
+            shutil.copytree(CARD, copy, ignore=shutil.ignore_patterns("*.005"))
+            summary = next(f for f in sorted(copy.rglob("*.001")) if f.with_suffix(".002").exists())
+            summary.unlink()  # its events file stays: part of a session the run cannot send
+            r = run("poll", copy)
+            self.assertEqual(r["status"], "ok", r)
+            self.assertTrue(r["events"])
+            self.assertFalse(any("snapshot" in ev["payload"] for ev in r["events"]))
+            self.assertIn("so a run is no snapshot", run("health", copy)["result"])
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
     def test_the_card_registers_its_definition_and_a_resend_is_all_no_op(self):

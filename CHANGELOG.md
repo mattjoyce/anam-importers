@@ -7,6 +7,14 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- `anam_bp_csv` sends exports oldest first by the date in their name, not in path-string order,
+  and sends a reading two exports hold once, from the newer (anam card 98). Before, the 9th's
+  export sorted after the 10th's, so a resend put an older comment back over a correction.
+- `anam_dreamstation` labels no snapshot when the card holds an events file without its summary
+  (anam card 99): the run cannot carry that session, so Anam must not be told it is absent.
+
 ### Added
 
 - `anam_bp_csv` emits `health.blood-pressure` v4 (anam card 83): the Open mHealth
