@@ -30,9 +30,9 @@
       "id": {
         "type": "string",
         "minLength": 1,
-        "description": "The source's key for the episode. For Garmin, the sleep table's day: the date Garmin files the night under, the day you woke.",
+        "description": "The source's key for the episode, prefixed with what it is. For Garmin, \"sleep:\" and the sleep table's day: the date Garmin files the night under, the day you woke. Under one source no two types share an id: a facet's id is the source plus its identity values, without the type.",
         "examples": [
-          "2026-10-08"
+          "sleep:2026-10-08"
         ]
       },
       "effective_time_frame": {

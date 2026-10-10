@@ -41,6 +41,21 @@ from anam_importer import ductile  # noqa: E402
 ALERT_TYPE = "health.heart-rate-alert"
 SLEEP_TYPE = "sleep.episode"
 HEART_TYPE = "health.heart-rate-daily"
+STEPS_TYPE = "health.step-count"
+DAY_TYPE = "garmin.day"
+
+# DAY_COLUMNS are daily_summary's columns garmin.day keeps under the same name.
+# Steps and the heart rate columns are other types; the TIME columns are kept in
+# minutes (DAY_MINUTES); distance is renamed for its unit.
+DAY_COLUMNS = ("step_goal", "floors_up", "floors_down", "floors_goal", "calories_goal", "calories_total",
+               "calories_bmr", "calories_active", "calories_consumed", "hydration_goal", "hydration_intake",
+               "sweat_loss", "stress_avg", "spo2_avg", "spo2_min", "rr_waking_avg", "rr_max", "rr_min",
+               "bb_charged", "bb_max", "bb_min", "description")
+DAY_MINUTES = {"moderate_activity_time": "moderate_activity_minutes",
+               "vigorous_activity_time": "vigorous_activity_minutes",
+               "intensity_time_goal": "intensity_time_goal_minutes"}
+# DAY_GOALS are what Garmin writes on a day the watch recorded nothing.
+DAY_GOALS = {"step_goal", "floors_goal", "calories_goal", "hydration_goal", "intensity_time_goal_minutes"}
 
 # ZONE is where Garmin's days are local days.
 ZONE = ZoneInfo("Australia/Sydney")
@@ -135,7 +150,7 @@ def instant(t: str) -> str:
 def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
     """One night of Garmin's sleep table as a sleep.episode payload."""
     p: Dict[str, Any] = {
-        "id": row["day"],
+        "id": f"sleep:{row['day']}",
         "effective_time_frame": {"time_interval": {"start_date_time": instant(row["start"]),
                                                    "end_date_time": instant(row["end"])}},
         "total_sleep_time": {"value": minutes(row["total_sleep"]), "unit": "min"},
@@ -211,6 +226,32 @@ def heart_rates(config: Dict[str, Any], since: Optional[date] = None) -> List[Di
     return sorted(figures, key=lambda f: (f["id"], order[f["statistic"]]))
 
 
+def days(config: Dict[str, Any], since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Each day of daily_summary as a health.step-count and a garmin.day. A day
+    holding only goals and zero times is a day the watch recorded nothing: neither."""
+    cols = ", ".join(("day", "steps", "distance") + DAY_COLUMNS + tuple(DAY_MINUTES))
+    steps: List[Dict[str, Any]] = []
+    records: List[Dict[str, Any]] = []
+    for r in query(config, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since):
+        if r["steps"] is not None:
+            steps.append({"id": f"steps:{r['day']}", "step_count": {"value": int(r["steps"]), "unit": "steps"},
+                          "effective_time_frame": day_frame(r["day"])})
+        rec: Dict[str, Any] = {k: number(r[k]) if isinstance(r[k], float) else r[k]
+                               for k in DAY_COLUMNS if r[k] not in (None, "")}
+        if r["distance"] is not None:
+            rec["distance_km"] = number(r["distance"])
+        rec.update({name: minutes(r[col]) for col, name in DAY_MINUTES.items() if r[col]})
+        measured = {k for k, v in rec.items() if k not in DAY_GOALS and v != 0}
+        if measured or r["steps"] is not None:
+            records.append({"id": f"day:{r['day']}", "day": r["day"], **rec})
+    return steps, records
+
+
+# Ids name what they are ("sleep:", "steps:", "day:") because a facet's id is the
+# source plus its identity values, without the type: two of this importer's types
+# keyed on a bare date would be one facet (Matt, 2026-10-10, option A).
+
+
 def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dict[str, Any]]], person: str,
                  snapshot: bool) -> List[Dict[str, Any]]:
     """Each type's payloads in batches of their own, labelled one snapshot across
@@ -236,11 +277,13 @@ def run_over(config: Dict[str, Any], files: List[Path], since: Optional[date], s
     found, logs = alerts(files)
     nights = sleeps(config, since)
     hearts = heart_rates(config, since)
+    steps, records = days(config, since)
     # A file that would not decode leaves its alerts out, so the run is not everything.
-    by_type = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts}
+    by_type = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts, STEPS_TYPE: steps, DAY_TYPE: records}
     events = batch_events(load(HERE), by_type, str(config["person_id"]), snapshot and not logs)
-    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep and "
-                      f"{len(hearts)} daily heart rate figure(s), {len(events)} batch(es)", events=events, logs=logs)
+    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep, "
+                      f"{len(hearts)} daily heart rate figure(s), {len(steps)} day(s) of steps and {len(records)} "
+                      f"day record(s), {len(events)} batch(es)", events=events, logs=logs)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -265,14 +308,13 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     found, logs = alerts(files)
     nights = sleeps(config)
     hearts = heart_rates(config)
-    check(definitions, [envelope(definitions[ALERT_TYPE], p) for p in found]
-          + [envelope(definitions[SLEEP_TYPE], p) for p in nights]
-          + [envelope(definitions[HEART_TYPE], p) for p in hearts])
+    steps, records = days(config)
+    shaped = {ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: hearts, STEPS_TYPE: steps, DAY_TYPE: records}
+    check(definitions, [envelope(definitions[t], p) for t, ps in shaped.items() for p in ps])
     if logs:
         return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)
-    versions = ", ".join(f"{t} v{definitions[t].version}" for t in (ALERT_TYPE, SLEEP_TYPE, HEART_TYPE))
-    return ductile.ok(f"{len(found)} alert(s) in {len(files)} FIT file(s), {len(nights)} night(s) of sleep and "
-                      f"{len(hearts)} daily heart rate figure(s), every one conforming to {versions}")
+    counts = ", ".join(f"{len(ps)} {t} v{definitions[t].version}" for t, ps in shaped.items())
+    return ductile.ok(f"{counts} from {len(files)} FIT file(s), every one conforming")
 
 
 if __name__ == "__main__":

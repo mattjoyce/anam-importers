@@ -47,17 +47,21 @@ All notable changes to this repo. The format follows
 
 ### Added
 
-- `anam_garmin` (anam card 55): the abnormal high heart rate alert from a Garmin watch's
-  monitoring FIT files as `health.heart-rate-alert` v3, the payload Anam's `health-db` worker
-  builds today, under source `garmin`. The health ETL's `fit_events.py`, moved, with no state of its
-  own. Not to be enabled before the `health-db` facets retire. And `sleep.episode` v1, one per
-  night of GarminDB's `sleep` table: the IEEE 1752 `sleep-episode-1.0` body with Garmin's score,
-  qualifier and averages beside it, identity the source's `id` (Garmin's day). Registered through
-  the API; payloads tested against the pinned IEEE schemas in `tests/conformance`. And
-  `health.heart-rate-daily` v1: each day's resting, minimum and maximum heart rate, one facet each,
-  as the Open mHealth `heart-rate-2.0` body over the local day, identity `id` and `statistic`.
-  the API; payloads tested against the pinned IEEE schemas in `tests/conformance`.
-  own. Not to be enabled before the `health-db` facets retire.
+- `anam_garmin` (anam card 55), under source `garmin`, from GarminDB's FIT files and `garmin.db`:
+  - `health.heart-rate-alert` v3, the abnormal high heart rate alert decoded from the monitoring
+    FIT files: the health ETL's `fit_events.py`, moved, with the payload Anam's `health-db` worker
+    builds today.
+  - `sleep.episode` v1, one per night: the IEEE 1752 `sleep-episode-1.0` body with Garmin's score,
+    qualifier and averages beside it.
+  - `health.heart-rate-daily` v1: each day's resting, minimum and maximum heart rate, one facet
+    each, as the Open mHealth `heart-rate-2.0` body over the local day.
+  - `health.step-count` v1, the Open mHealth `step-count-3.0` body, and `garmin.day` v1, the rest
+    of `daily_summary` as Garmin wrote it.
+
+  Ids name what they are (`sleep:`, `steps:`, `day:`): a facet's id is the source plus its
+  identity values, without the type, so two types keyed on a bare date would be one facet. The
+  new types are registered through the API; `tests/conformance` pins the IEEE and Open mHealth
+  schemas the payloads are tested against. Not to be enabled before the `health-db` facets retire.
 - `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill
   that v4 did not name (irregular heartbeat, dizzy / light-headed, temperature, blood glucose,
   oxygen saturation, tags), kept as the export's text. Under v4 one ticked checkbox stopped that

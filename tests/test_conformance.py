@@ -12,7 +12,7 @@ from jsonschema import Draft7Validator
 from referencing import Registry, Resource
 
 from tests.helpers import REPO
-from tests.test_garmin import NIGHT, NO_SLEEP, garmin_db
+from tests.test_garmin import DAY, EMPTY_DAY, NIGHT, NO_SLEEP, garmin_db
 
 CONFORMANCE = Path(__file__).resolve().parent / "conformance"
 # Where each family's schemas say they live; their relative $refs resolve against it.
@@ -80,6 +80,23 @@ class HeartRateDailyTest(unittest.TestCase):
         bad = {"heart_rate": {"value": 61, "unit": "beats/min"}, "descriptive_statistic": "resting",
                "effective_time_frame": {"date_time": "2026-10-09T00:00:00+11:00"}}
         self.assertTrue(list(pinned("omh/heart-rate-2.0").iter_errors(bad)))
+
+
+class StepCountTest(unittest.TestCase):
+    def test_garmin_s_daily_steps_pass_the_pinned_step_count_schema(self):
+        definition = json.loads((REPO / "garmin" / "definitions" / "health.step-count.json").read_text())
+        validator = pinned(definition["meta"]["source_schema"])
+        garmin = module(REPO / "garmin" / "run.py")
+        with tempfile.TemporaryDirectory() as d:
+            steps, _ = garmin.days({"garmin_db": str(garmin_db(Path(d) / "garmin.db", [], daily=[DAY, EMPTY_DAY]))})
+        self.assertEqual(len(steps), 1)
+        self.assertEqual([e.message for e in validator.iter_errors(steps[0])], [], steps[0])
+
+    def test_the_pinned_schema_refuses_steps_counted_in_another_unit(self):
+        bad = {"step_count": {"value": 6219, "unit": "paces"},
+               "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-09T00:00:00+11:00",
+                                                          "end_date_time": "2026-10-10T00:00:00+11:00"}}}
+        self.assertTrue(list(pinned("omh/step-count-3.0").iter_errors(bad)))
 
 
 if __name__ == "__main__":
