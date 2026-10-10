@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- Snapshots (anam card 78): every resend-everything run labels its batches as one snapshot, and
+  `anam_submit` raises `anam.snapshot_absent` when the part that completes it finds facets Anam
+  holds live that the run did not carry. Nothing is retracted automatically. Needs Anam a14ee51
+  or later. `anam_importer.snapshot_parts` labels a run; `ductile.event` takes a `dedupe_key`.
+
 - `anam_dreamstation`, the CPAP importer: a Philips DreamStation SD card copy as
   `sleep.cpap-session` v1, one facet per therapy session, holding only what the device wrote
   (times, mask-on spans, settings, its pressure summary and counts, a tally of the events

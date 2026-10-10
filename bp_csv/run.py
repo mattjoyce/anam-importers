@@ -32,7 +32,7 @@ from typing import Any, Dict, Iterator, List
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from anam_importer import Definition, batches, check, envelope, load  # noqa: E402
+from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "health.blood-pressure"
@@ -202,6 +202,11 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     definitions = load(HERE)
     files = exports(config)
     events = [e for f in files for e in batch_events(definitions, f, str(config["person_id"]))]
+    # Every export kept under export_dir together is everything the app has given us,
+    # so poll's run is a snapshot. One export alone (handle) is not.
+    if events:
+        for ev, part in zip(events, snapshot_parts(len(events), [TYPE])):
+            ev["payload"]["snapshot"] = part
     readings = sum(len(e["payload"]["envelopes"]) for e in events)
     return ductile.ok(f"{readings} reading(s) of {len(files)} export(s) in {len(events)} batch(es)", events=events)
 

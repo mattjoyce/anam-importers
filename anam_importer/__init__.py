@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .client import AnamError, Client, Refused
 from .definitions import Definition, ensure_published, load, parse
-from .envelopes import MAX_BATCH, Invalid, batches, check, envelope
+from .envelopes import MAX_BATCH, Invalid, batches, check, envelope, snapshot_parts
 
 # __version__ is the repo's version (VERSION): the base, anam_submit and every importer
 # release together, and each plugin manifest carries the same number.
@@ -28,5 +28,6 @@ __all__ = [
     "ensure_published",
     "envelope",
     "load",
+    "snapshot_parts",
     "parse",
 ]

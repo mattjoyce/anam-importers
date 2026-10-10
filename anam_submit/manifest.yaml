@@ -25,6 +25,9 @@ commands:
         batch:
           type: string
           description: "Optional label carried through to anam.admitted, such as 3/113."
+        snapshot:
+          type: object
+          description: "Set by a resend-everything run: {id, part, parts, types}. Passed to Anam as is; the part that completes the snapshot reads Anam's report."
       required: [envelopes]
     output_schema:
       status: string
@@ -34,6 +37,7 @@ commands:
         - payload.envelopes
         - payload.definitions
         - payload.batch
+        - payload.snapshot
       emit:
         - event: anam.admitted
           values:
@@ -41,6 +45,14 @@ commands:
             - payload.changed
             - payload.outcomes
             - payload.batch
+        - event: anam.snapshot_absent
+          values:
+            - payload.snapshot
+            - payload.types
+            - payload.absent
+            - payload.live
+            - payload.carried
+            - payload.absent_ids
   - name: health
     type: read
     description: "Ask Anam for its Definitions under the token: proves the URL and the token."

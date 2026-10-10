@@ -32,7 +32,7 @@ from typing import Any, Dict, List
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from anam_importer import Definition, batches, check, envelope, load  # noqa: E402
+from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "sleep.cpap-session"
@@ -93,9 +93,12 @@ def batch_events(request: Dict[str, Any]) -> Dict[str, Any]:
     check(definitions, envs)
     groups = list(batches(envs))
     manifest = definition.body.decode()
+    # The card holds every session the device recorded, so every run is a snapshot.
+    parts = snapshot_parts(len(groups), [TYPE]) if groups else []
     events = [
-        ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"})
-        for i, g in enumerate(groups)
+        ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}",
+                                    "snapshot": part})
+        for i, (g, part) in enumerate(zip(groups, parts))
     ]
     logs: List[str] = [f"skipped {f}" for f in card.skipped_files]
     return ductile.ok(f"{len(envs)} session(s) in {len(groups)} batch(es)", events=events, logs=logs)

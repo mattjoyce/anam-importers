@@ -35,8 +35,8 @@ docs/explainer.html   how the pieces fit, for a reader new to it
 - Python 3.10 or later, with `jsonschema` 4.18 or later. Importers that validate declare it
   in a uv script header, so a gateway with `uv` resolves it; `anam_submit` needs only the
   standard library.
-- An Anam daemon with the importer routes (anam card 53 and later), and a line for each
-  importer in its `importers_file`.
+- An Anam daemon with the importer routes and snapshots (anam card 78, a14ee51 and later), and a
+  line for each importer in its `importers_file`.
 - A ductile gateway to run the plugins (protocol 2).
 
 ## Writing an importer
@@ -75,6 +75,28 @@ number; a test fails if any of them, or the changelog's newest release, disagree
 To release: move the changelog's Unreleased entries under the new version, set `VERSION` and
 every manifest's `version`, commit, tag `vX.Y.Z`, push the tag. A gateway that runs these
 plugins then needs `ductile plugin lock` for each changed one.
+
+## Snapshots and the absent alert
+
+A resend-everything run (Withings' `poll` and its resend after a reconcile, blood pressure's
+`poll` over every export, every DreamStation run) labels its batches as the parts of one
+snapshot. Anam then knows what the source still holds, and reports what it holds live from that
+source that the run did not carry (`docs/IMPORTERS.md` §8.6 in the anam repo). Nothing is ever
+retracted on its own: the operator runs `anam retract <source>`.
+
+When the part that completes a snapshot finds facets absent, `anam_submit` raises
+`anam.snapshot_absent` with the counts and up to 20 facet ids, keyed on the snapshot so a resent
+part does not alert twice. Route it to whatever tells the operator:
+
+```yaml
+pipelines:
+  - name: anam-snapshot-absent
+    on: anam.snapshot_absent
+    steps:
+      - uses: <the gateway's notifier, such as discord>
+```
+
+Needs an Anam with card 78 (anam a14ee51 or later). An older one refuses the `snapshot` field.
 
 ## Wiring an importer into a gateway (Withings)
 

@@ -33,9 +33,13 @@ def error(message: str, retry: bool, logs: Optional[List[str]] = None) -> Dict[s
     return {"status": "error", "error": message, "retry": retry, "logs": _logs(logs)}
 
 
-def event(event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    """An event for the core to route."""
-    return {"type": event_type, "payload": payload}
+def event(event_type: str, payload: Dict[str, Any], dedupe_key: Optional[str] = None) -> Dict[str, Any]:
+    """An event for the core to route. The core drops one whose dedupe_key matches an
+    event it already handled within its window."""
+    ev: Dict[str, Any] = {"type": event_type, "payload": payload}
+    if dedupe_key:
+        ev["dedupe_key"] = dedupe_key
+    return ev
 
 
 def payload_of(request: Dict[str, Any]) -> Dict[str, Any]:

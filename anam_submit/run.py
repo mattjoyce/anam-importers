@@ -8,7 +8,8 @@ importer, each holding that importer's token, so a token never leaves the plugin
 that uses it.
 
 Commands:
-- handle : submit the triggering event's batch
+- handle : submit the triggering event's batch; when it is the part that completes a
+           snapshot and Anam reports facets absent, raise anam.snapshot_absent
 - health : ask Anam for its Definitions under the token
 """
 
@@ -44,8 +45,9 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     client = client_of(request)
     definitions = [parse(m.encode() if isinstance(m, str) else m) for m in batch.get("definitions") or []]
     ensure_published(client, definitions)
+    snapshot = batch.get("snapshot") or None
     try:
-        admission = client.submit(envelopes)
+        admission = client.submit(envelopes, snapshot)
     except Refused as exc:
         reasons = [f"envelope {r.get('index')} ({r.get('type')}): {r.get('reason')}" for r in exc.refused]
         return ductile.error(f"batch refused, nothing admitted: {len(reasons)} envelope(s)", retry=False, logs=reasons)
@@ -54,13 +56,32 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     for r in admission.get("results", []):
         outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
     summary = ", ".join(f"{n} {o}" for o, n in sorted(outcomes.items()))
-    return ductile.ok(
-        f"{summary} at W {admission.get('w')}",
-        events=[ductile.event("anam.admitted", {
-            "w": admission.get("w"), "changed": admission.get("changed"), "outcomes": outcomes,
-            "batch": batch.get("batch"),
-        })],
-    )
+    events = [ductile.event("anam.admitted", {
+        "w": admission.get("w"), "changed": admission.get("changed"), "outcomes": outcomes,
+        "batch": batch.get("batch"),
+    })]
+    if snapshot and (admission.get("snapshot") or {}).get("complete"):
+        report = client.snapshot(str(snapshot["id"]))
+        summary += f"; snapshot complete, {report.get('absent', 0)} of {report.get('live', 0)} live absent"
+        if report.get("absent"):
+            events.append(absent_event(snapshot, report))
+    return ductile.ok(f"{summary} at W {admission.get('w')}", events=events)
+
+
+# ABSENT_IDS_SHOWN is how many absent facet ids the alert carries; the report holds
+# up to 1,000, and anam retract lists them all.
+ABSENT_IDS_SHOWN = 20
+
+
+def absent_event(snapshot: Dict[str, Any], report: Dict[str, Any]) -> Dict[str, Any]:
+    """The alert that a complete resend did not carry facets Anam holds live. Nothing
+    is retracted: the operator decides, with anam retract. Keyed on the snapshot, so
+    a resent last part does not alert twice."""
+    return ductile.event("anam.snapshot_absent", {
+        "snapshot": snapshot["id"], "types": snapshot.get("types", []),
+        "absent": report.get("absent"), "live": report.get("live"), "carried": report.get("carried"),
+        "absent_ids": (report.get("absent_ids") or [])[:ABSENT_IDS_SHOWN],
+    }, dedupe_key=f"anam.snapshot_absent:{snapshot['id']}")
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:

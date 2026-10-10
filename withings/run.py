@@ -34,7 +34,7 @@ from typing import Any, Dict, List, Optional
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from anam_importer import Definition, batches, check, envelope, load  # noqa: E402
+from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "health.measurement"
@@ -150,6 +150,11 @@ def batch_events(request: Dict[str, Any], withings_id: Optional[int]) -> Dict[st
         ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"})
         for i, g in enumerate(groups)
     ]
+    if withings_id is None and events:
+        # Every measurement the database holds: a snapshot, so Anam can report what
+        # it holds live that Withings no longer does.
+        for ev, part in zip(events, snapshot_parts(len(events), [TYPE])):
+            ev["payload"]["snapshot"] = part
     what = "every measurement" if withings_id is None else f"group {withings_id}"
     return ductile.ok(f"{len(envs)} measurement(s) of {what} in {len(groups)} batch(es)", events=events)
 

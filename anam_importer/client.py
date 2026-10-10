@@ -80,16 +80,28 @@ class Client:
             raise _error("POST /v1/definitions", status, body)
         return body
 
-    def submit(self, envelopes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Submit one batch. It is admitted whole, or Refused is raised and nothing
-        was written."""
-        payload = json.dumps({"envelopes": envelopes}, separators=(",", ":")).encode()
+    def submit(self, envelopes: List[Dict[str, Any]], snapshot: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Submit one batch, as one part of snapshot when given. It is admitted whole,
+        or Refused is raised and nothing was written."""
+        body: Dict[str, Any] = {"envelopes": envelopes}
+        if snapshot:
+            body["snapshot"] = snapshot
+        payload = json.dumps(body, separators=(",", ":")).encode()
         status, body = self._call("POST", "/v1/envelopes", payload)
         if status == 200:
             return body
         if status == 422 and isinstance(body, dict):
             raise Refused(str(body.get("error", "batch refused")), list(body.get("refused", [])))
         raise _error("POST /v1/envelopes", status, body)
+
+    def snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """What Anam knows of one of this importer's snapshots: complete, and once it
+        is, live, absent and absent_ids."""
+        path = "/v1/snapshots/" + urllib.parse.quote(snapshot_id, safe="")
+        status, body = self._call("GET", path)
+        if status != 200:
+            raise _error("GET " + path, status, body)
+        return body
 
 
 def _decode(raw: bytes) -> Any:

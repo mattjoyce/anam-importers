@@ -37,6 +37,44 @@ class AgainstAnamTest(unittest.TestCase):
         again = self.submit(shaped["events"][0])
         self.assertEqual(again["events"][0]["payload"]["outcomes"], {"no-op": 3})
 
+    def test_a_complete_resend_reports_what_the_source_no_longer_holds(self):
+        db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)
+        config = {"db_path": str(db), "person_id": "person-a"}
+
+        def resend():
+            shaped = run_plugin(WITHINGS, {"command": "poll", "config": config})
+            return [self.submit(ev) for ev in shaped["events"]]
+
+        first = resend()
+        self.assertTrue(all(r["status"] == "ok" for r in first), first)
+        self.assertIn("snapshot complete, 0 of 3 live absent", first[-1]["result"])
+        self.assertEqual([e["type"] for r in first for e in r["events"]], ["anam.admitted"])
+
+        # Withings drops group 102 (one measurement): the next complete resend says so,
+        # once, and retracts nothing.
+        import sqlite3
+        conn = sqlite3.connect(db)
+        conn.execute("DELETE FROM measurements WHERE withings_id = 102")
+        conn.commit()
+        conn.close()
+        second = resend()
+        alerts = [e for r in second for e in r["events"] if e["type"] == "anam.snapshot_absent"]
+        self.assertEqual(len(alerts), 1, second)
+        self.assertEqual(alerts[0]["payload"]["absent"], 1)
+        self.assertEqual(alerts[0]["payload"]["live"], 3)
+        self.assertEqual(alerts[0]["payload"]["types"], ["health.measurement"])
+        self.assertEqual(len(alerts[0]["payload"]["absent_ids"]), 1)
+        self.assertEqual(alerts[0]["dedupe_key"], "anam.snapshot_absent:" + alerts[0]["payload"]["snapshot"])
+
+    def test_an_incremental_run_is_no_snapshot(self):
+        db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)
+        shaped = run_plugin(WITHINGS, {"command": "handle", "config": {"db_path": str(db), "person_id": "person-a"},
+                                       "event": {"type": "withings.measurement_recorded", "payload": {"withings_id": 101}}})
+        self.assertNotIn("snapshot", shaped["events"][0]["payload"])
+        r = self.submit(shaped["events"][0])
+        self.assertEqual(r["status"], "ok", r)
+        self.assertNotIn("snapshot", r["result"])
+
     def test_a_refused_batch_is_not_retried(self):
         d = load(REPO / "withings")["health.measurement"]
         bad = {"envelopes": [{"type": d.type, "definition_version": d.version, "payload": {"withings_id": "1"}}],
