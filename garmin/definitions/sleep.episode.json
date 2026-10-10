@@ -30,14 +30,14 @@
       "id": {
         "type": "string",
         "minLength": 1,
-        "description": "The source's key for the episode, prefixed with what it is. For Garmin, \"sleep:\" and the sleep table's day: the date Garmin files the night under, the day you woke. Under one source no two types share an id: a facet's id is the source plus its identity values, without the type.",
+        "description": "The source's key for the episode, prefixed with what it is. For Garmin, \"sleep:\" and the sleep table's day: the date Garmin files the night under, the day you woke. For Fitbit, \"fitbit:sleep:\" and the local start. Under one source no two types share an id: a facet's id is the source plus its identity values, without the type.",
         "examples": [
           "sleep:2026-10-08"
         ]
       },
       "effective_time_frame": {
         "type": "object",
-        "description": "When the episode ran, as an IEEE 1752 time interval. Garmin writes start and end in UTC; the start is the fact time.",
+        "description": "When the episode ran, as an IEEE 1752 time interval. Start and end in UTC; the start is the fact time.",
         "required": [
           "time_interval"
         ],
@@ -73,7 +73,7 @@
       },
       "total_sleep_time": {
         "type": "object",
-        "description": "Time asleep within the episode as an IEEE 1752 duration-unit-value in minutes, from Garmin's sleep table.",
+        "description": "Time asleep within the episode as an IEEE 1752 duration-unit-value in minutes, as the source reports it.",
         "required": [
           "value",
           "unit"
@@ -99,7 +99,7 @@
       },
       "light_sleep_duration": {
         "type": "object",
-        "description": "Time in light sleep as an IEEE 1752 duration-unit-value in minutes, from Garmin's sleep table.",
+        "description": "Time in light sleep as an IEEE 1752 duration-unit-value in minutes, as the source reports it.",
         "required": [
           "value",
           "unit"
@@ -125,7 +125,7 @@
       },
       "deep_sleep_duration": {
         "type": "object",
-        "description": "Time in deep sleep as an IEEE 1752 duration-unit-value in minutes, from Garmin's sleep table.",
+        "description": "Time in deep sleep as an IEEE 1752 duration-unit-value in minutes, as the source reports it.",
         "required": [
           "value",
           "unit"
@@ -151,7 +151,7 @@
       },
       "rem_sleep_duration": {
         "type": "object",
-        "description": "Time in REM sleep as an IEEE 1752 duration-unit-value in minutes, from Garmin's sleep table.",
+        "description": "Time in REM sleep as an IEEE 1752 duration-unit-value in minutes, as the source reports it.",
         "required": [
           "value",
           "unit"
@@ -177,7 +177,7 @@
       },
       "wake_after_sleep_onset": {
         "type": "object",
-        "description": "Time awake between falling asleep and the final waking, Garmin's awake as an IEEE 1752 duration-unit-value in minutes, from Garmin's sleep table.",
+        "description": "Time awake between falling asleep and the final waking, as an IEEE 1752 duration-unit-value in minutes, as the source reports it.",
         "required": [
           "value",
           "unit"
@@ -203,7 +203,7 @@
       },
       "is_main_sleep": {
         "type": "boolean",
-        "description": "Whether this is the main sleep rather than a nap. Garmin's sleep table holds one sleep per day, its main one, so Garmin's are true.",
+        "description": "Whether this is the main sleep rather than a nap, as the importer judges it. Garmin's sleep table holds one sleep per day, its main one, so Garmin's are true.",
         "examples": [
           true
         ]
