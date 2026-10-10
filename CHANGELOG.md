@@ -25,6 +25,11 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `anam_bp_csv` emits `health.blood-pressure` v3, the body Anam bundles from its card 71
+  (descriptions and examples added, no contract change). It needs an Anam with that release:
+  an older one refuses v3 as a bundled type it does not hold, and the new one refuses v2 as not
+  current, so the importer and Anam deploy together.
+
 - `anam_submit` reads its token from the vault secret its instance config names in
   `token_secret`, a new required key, instead of a fixed `ANAM_IMPORTER_TOKEN`. Vault secret
   names are lowercase and global, so one fixed name could not serve two importers. For
