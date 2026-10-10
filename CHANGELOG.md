@@ -16,6 +16,57 @@ All notable changes to this repo. The format follows
 - `anam_submit` stamps each type's current version on the envelopes of a batch that sets
   `current_versions` and names none. Any other envelope without a version is still refused.
 
+- `anam_garmin` (anam card 55), under source `garmin`, from GarminDB's FIT files and `garmin.db`:
+  - `health.heart-rate-alert` v3, the abnormal high heart rate alert decoded from the monitoring
+    FIT files: the health ETL's `fit_events.py`, moved, with the payload Anam's `health-db` worker
+    builds today.
+  - `sleep.episode` v1, one per night: the IEEE 1752 `sleep-episode-1.0` body with Garmin's score,
+    qualifier and averages beside it.
+  - `health.heart-rate-daily` v1: each day's resting, minimum and maximum heart rate, one facet
+    each, as the Open mHealth `heart-rate-2.0` body over the local day.
+  - `health.step-count` v1, the Open mHealth `step-count-3.0` body, and `garmin.day` v1, the rest
+    of `daily_summary` as Garmin wrote it.
+
+  Ids name what they are (`sleep:`, `steps:`, `day:`): a facet's id is the source plus its
+  identity values, without the type, so two types keyed on a bare date would be one facet. The
+  new types are registered through the API; `tests/conformance` pins the IEEE and Open mHealth
+  schemas the payloads are tested against. Not to be enabled before the `health-db` facets retire.
+- `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill
+  that v4 did not name (irregular heartbeat, dizzy / light-headed, temperature, blood glucose,
+  oxygen saturation, tags), kept as the export's text. Under v4 one ticked checkbox stopped that
+  export and every later one. Needs the Anam release with v5.
+
+- `anam_bp_csv` emits `health.blood-pressure` v4 (anam card 83): the Open mHealth
+  `blood-pressure-4.0` body, systolic and diastolic as numbers in mmHg and the time with Sydney's
+  offset, with `date_excel`, `reading` and the export's other fields beside it as written. The
+  app's `Seated` is `sitting`; an unknown posture stops the run. Needs the Anam release with v4.
+
+- Snapshots (anam card 78): every resend-everything run labels its batches as one snapshot, and
+  `anam_submit` raises `anam.snapshot_absent` when the part that completes it finds facets Anam
+  holds live that the run did not carry. Nothing is retracted automatically. Needs Anam a14ee51
+  or later. `anam_importer.snapshot_parts` labels a run; `ductile.event` takes a `dedupe_key`.
+
+- `anam_dreamstation`, the CPAP importer: a Philips DreamStation SD card copy as
+  `sleep.cpap-session` v1, one facet per therapy session, holding only what the device wrote
+  (times, mask-on spans, settings, its pressure summary and counts, a tally of the events
+  file). Its Definition is registered through the API. Needs the `dreamstation` decoder.
+- `anam_bp_csv`, the blood pressure importer: a phone app export (`BloodPressure_<date>`) as
+  `health.blood-pressure` v2, the built-in `bpcsv` worker's reading moved, so the same export
+  through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
+  every export under `export_dir`.
+
+### Changed
+
+- `anam_bp_csv` emits `health.blood-pressure` v3, the body Anam bundles from its card 71
+  (descriptions and examples added, no contract change). It needs an Anam with that release:
+  an older one refuses v3 as a bundled type it does not hold, and the new one refuses v2 as not
+  current, so the importer and Anam deploy together.
+
+- `anam_submit` reads its token from the vault secret its instance config names in
+  `token_secret`, a new required key, instead of a fixed `ANAM_IMPORTER_TOKEN`. Vault secret
+  names are lowercase and global, so one fixed name could not serve two importers. For
+  Withings: `token_secret: anam_importer_token_withings`.
+
 ### Fixed
 
 - The client never follows a redirect (anam card 112). It used urllib's default handler, which
@@ -45,51 +96,11 @@ All notable changes to this repo. The format follows
 - `anam_dreamstation` labels no snapshot when the card holds an events file without its summary
   (anam card 99): the run cannot carry that session, so Anam must not be told it is absent.
 
-### Added
-
-- `anam_bp_csv` emits `health.blood-pressure` v5 (anam card 97): the six columns the app can fill
-  that v4 did not name (irregular heartbeat, dizzy / light-headed, temperature, blood glucose,
-  oxygen saturation, tags), kept as the export's text. Under v4 one ticked checkbox stopped that
-  export and every later one. Needs the Anam release with v5.
-
-- `anam_bp_csv` emits `health.blood-pressure` v4 (anam card 83): the Open mHealth
-  `blood-pressure-4.0` body, systolic and diastolic as numbers in mmHg and the time with Sydney's
-  offset, with `date_excel`, `reading` and the export's other fields beside it as written. The
-  app's `Seated` is `sitting`; an unknown posture stops the run. Needs the Anam release with v4.
-
-- Snapshots (anam card 78): every resend-everything run labels its batches as one snapshot, and
-  `anam_submit` raises `anam.snapshot_absent` when the part that completes it finds facets Anam
-  holds live that the run did not carry. Nothing is retracted automatically. Needs Anam a14ee51
-  or later. `anam_importer.snapshot_parts` labels a run; `ductile.event` takes a `dedupe_key`.
-
-- `anam_dreamstation`, the CPAP importer: a Philips DreamStation SD card copy as
-  `sleep.cpap-session` v1, one facet per therapy session, holding only what the device wrote
-  (times, mask-on spans, settings, its pressure summary and counts, a tally of the events
-  file). Its Definition is registered through the API. Needs the `dreamstation` decoder.
-- `anam_bp_csv`, the blood pressure importer: a phone app export (`BloodPressure_<date>`) as
-  `health.blood-pressure` v2, the built-in `bpcsv` worker's reading moved, so the same export
-  through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
-  every export under `export_dir`.
-
-### Fixed
-
 - `anam_dreamstation` fetches the decoder as the tag's zip archive, not `git+https`: the gateway
   has no git, so uv could not resolve it.
 
 - The README's gateway examples set `timeouts:` per command. A flat `timeout:` is not a ductile
   plugin field: `config check` passes it, and the gateway then crash-loops at boot.
-
-### Changed
-
-- `anam_bp_csv` emits `health.blood-pressure` v3, the body Anam bundles from its card 71
-  (descriptions and examples added, no contract change). It needs an Anam with that release:
-  an older one refuses v3 as a bundled type it does not hold, and the new one refuses v2 as not
-  current, so the importer and Anam deploy together.
-
-- `anam_submit` reads its token from the vault secret its instance config names in
-  `token_secret`, a new required key, instead of a fixed `ANAM_IMPORTER_TOKEN`. Vault secret
-  names are lowercase and global, so one fixed name could not serve two importers. For
-  Withings: `token_secret: anam_importer_token_withings`.
 
 ## [0.1.0] - 2026-10-10
 

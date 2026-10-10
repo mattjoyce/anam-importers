@@ -1,0 +1,54 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_garmin
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Six types: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66); exercise.session, one per session in the activity FIT files it downloads; sleep.episode, health.heart-rate-daily, health.step-count and garmin.day, from GarminDB's garmin.db. Reads them all, garmin.db read-only; holds no token and writes nothing."
+commands:
+  - name: handle
+    type: read
+    description: "After a GarminDB sync: the alerts and sessions in the FIT files modified in the last lookback_days (default 3), and garmin.db's days from then on. Idempotent in Anam: what is already held is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_garmin.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every alert in every FIT file under fit_dir, every session under activities_dir and every day in garmin_db, in batches: the resend-everything mode, labelled one snapshot unless a FIT file would not decode."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_garmin.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "fit_dir, activities_dir and garmin_db are readable, every FIT file decodes, and everything in them conforms to its Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [fit_dir, activities_dir, garmin_db, person_id]
+  optional: [lookback_days]

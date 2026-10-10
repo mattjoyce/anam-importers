@@ -26,6 +26,7 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
+garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -303,6 +304,66 @@ plugins:
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of the types it carries. A type whose every record is removed is not in the run, so it
 is not reported absent.
+
+## Wiring an importer into a gateway (Garmin)
+
+Not deployed, and not to be switched on alone. Source `garmin`, types
+`[health.heart-rate-alert, exercise.session, sleep.episode, health.heart-rate-daily,
+health.step-count, garmin.day]`, secret `anam_importer_token_garmin`, principal
+`anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
+`health-db`, and a facet's identity includes its source, so turning this on while that worker
+runs would hold every alert twice. It goes live with the rest of anam card 55, when the
+`health-db` facets retire.
+
+It reads the monitoring FIT files GarminDB downloads (`FitFiles/Monitoring`) with Garmin's FIT
+SDK, which its uv script header pins, and decodes FIT event 66, the abnormal high heart rate
+alert, as the health ETL's `fit_events.py` does. It keeps no state: `handle` reads the files
+modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sync event runs it;
+`poll` reads every file and labels the run a snapshot.
+
+Sleep comes from GarminDB's `garmin.db`, opened read-only: one `sleep.episode` per day its `sleep`
+table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (time interval in UTC, the
+stage durations in minutes) with Garmin's score, its word for it and the averages beside it.
+Daily heart rate comes from the same file: each day's resting figure (`resting_hr`) and its
+minimum and maximum (`daily_summary`), one `health.heart-rate-daily` facet each, as the Open
+mHealth `heart-rate-2.0` body over the local day in Australia/Sydney. Steps are a
+`health.step-count` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
+`garmin.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost. None of
+these types is bundled in Anam, so the first batch of each makes `anam_submit` register it.
+
+Sessions come from the activity FIT files GarminDB downloads (`FitFiles/Activities`), one
+`exercise.session` per FIT session message, beside Technogym's and Strong's. The FIT file holds the
+start as a true UTC instant; `garmin_activities.db` holds it as wall clock, and not always the same
+wall clock, so the importer reads the file. The FIT sport and sub-sport map to Google Fit's names
+(Cardio, which Google Fit has no name for, is `other`; an unmapped pair is `unknown`), and the
+payload keeps both as the watch wrote them. `exercise.session` is bundled in Anam: the importer
+carries Anam's v4 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+
+Their ids name what they are: `garmin:session:2026-10-04T03:49:17Z`, `sleep:2026-10-08`, `steps:2026-10-09`, `day:2026-10-09`. A
+facet's id is the source plus its identity values, without the type, so two types keyed on a
+bare date would be one facet, the second superseding the first. `tests/conformance` pins the
+IEEE and Open mHealth schemas the payloads are tested against. Read against GarminDB
+3.6.7's schema; its 4.0 upgrade rebuilds the databases, so re-run the tests after it.
+
+```yaml
+plugins:
+  anam_garmin:
+    enabled: true
+    timeouts:
+      handle: 120s
+      poll: 900s
+    config:
+      fit_dir: <GarminDB's FitFiles/Monitoring directory>
+      activities_dir: <GarminDB's FitFiles/Activities directory>
+      garmin_db: <GarminDB's DBs/garmin.db>
+      person_id: <Anam's person_id>
+```
+
+A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
+fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
+holds, in 7 batches, 564 nights, 1,900 heart rate figures and 706 days of steps, every one passing its pinned schema. Its 199 activity files hold 200
+sessions, all conforming; with the rest they were admitted to a scratch daemon, 4,076 facets, and a
+resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU).
 
 ## Values: why `29.371`, not `29.371000000000002`
 
