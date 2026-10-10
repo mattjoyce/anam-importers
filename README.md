@@ -102,7 +102,9 @@ Not deployed. What it takes, in order:
    plugins:
      anam_withings:
        enabled: true
-       timeout: 120s
+       timeouts:                # per command; ductile has no flat timeout
+         handle: 120s
+         poll: 120s
        retry:
          max_attempts: 3        # a locked withings database is retried
        schedules:
@@ -118,7 +120,8 @@ Not deployed. What it takes, in order:
        enabled: true
        requires_vault: true                  # fail closed: no token, no spawn
        vault_principal: anam-submit-withings # the principal granted the token
-       timeout: 60s
+       timeouts:
+         handle: 60s
        retry:
          max_attempts: 5        # a 503 while Anam ingests is retried
        config:
@@ -180,7 +183,9 @@ Not deployed. The same steps as Withings, with these differences:
              emit_mode: per_file
      anam_bp_csv:
        enabled: true
-       timeout: 60s
+       timeouts:
+         handle: 60s
+         poll: 60s
        config:
          person_id: <Anam's person_id>
          export_dir: <the folder that keeps every export, for poll>
@@ -189,7 +194,8 @@ Not deployed. The same steps as Withings, with these differences:
        enabled: true
        requires_vault: true
        vault_principal: anam-submit-bp-csv
-       timeout: 60s
+       timeouts:
+         handle: 60s
        retry:
          max_attempts: 5
        config:

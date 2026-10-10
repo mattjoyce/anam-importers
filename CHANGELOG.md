@@ -14,6 +14,11 @@ All notable changes to this repo. The format follows
   through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
   every export under `export_dir`.
 
+### Fixed
+
+- The README's gateway examples set `timeouts:` per command. A flat `timeout:` is not a ductile
+  plugin field: `config check` passes it, and the gateway then crash-loops at boot.
+
 ### Changed
 
 - `anam_submit` reads its token from the vault secret its instance config names in
