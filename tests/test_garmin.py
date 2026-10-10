@@ -85,6 +85,33 @@ def payloads(r):
     return [e["payload"] for ev in r["events"] for e in ev["payload"]["envelopes"]]
 
 
+class ModuleTest(unittest.TestCase):
+    """What the plugin decides without the FIT SDK, loaded as a module."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location("garmin_run", GARMIN)
+        cls.mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.mod)
+
+    def test_a_file_gone_mid_run_is_retried_not_skipped(self):
+        with tempfile.TemporaryDirectory() as d:
+            gone = Path(d) / "a_WELLNESS.fit"
+            with self.assertRaises(self.mod.ductile.Failure) as ctx:
+                self.mod.modified_since([gone], 0)
+        self.assertTrue(ctx.exception.retry)
+        self.assertIn("a_WELLNESS.fit went while the run read it", str(ctx.exception))
+
+    def test_the_local_day_s_zone_is_the_definitions_and_they_agree(self):
+        # Alerts and sleep are UTC instants; the types keyed on a day share one zone.
+        zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
+                 ["meta"]["time_semantics"]["fact_time"]["zone"]
+                 for t in ("garmin.day", "health.heart-rate-daily", "health.step-count")}
+        self.assertEqual(zones, {str(self.mod.ZONE)})
+
+
 @unittest.skipUnless(UV, "no uv to run the plugin under")
 class AlertTest(unittest.TestCase):
     def setUp(self):

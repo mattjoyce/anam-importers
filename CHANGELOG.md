@@ -16,37 +16,6 @@ All notable changes to this repo. The format follows
 - `anam_submit` stamps each type's current version on the envelopes of a batch that sets
   `current_versions` and names none. Any other envelope without a version is still refused.
 
-### Fixed
-
-- The client never follows a redirect (anam card 112). It used urllib's default handler, which
-  sent the importer's bearer token to whatever origin a 3xx named. A redirect is now an error
-  naming the target, and `anam_url` may not carry credentials, a query or a fragment.
-- `anam_submit` acknowledges a batch only on a whole admission receipt (anam card 113): W, the
-  change count, and a known outcome for every index. A 200 holding anything else, an HTML page
-  or `{}`, was reported ok with an `anam.admitted` event; now it is a retryable error and no
-  event. The Definitions listing, a registration and a snapshot report are checked the same way.
-- A truncated answer is retryable (anam card 115). The batch may or may not have been written,
-  and a resend settles which.
-- `timeout` bounds the whole call (anam card 116): connect, headers and body, with answers capped
-  at 8 MiB. A server trickling bytes held the worker past it. `Anam-Timeout` keeps fractions
-  (`250ms`, not `0s`).
-- `anam_bp_csv` refuses an export whose records cannot be told apart (anam card 114): a quote
-  still open at the end, a quote inside a quoted field that neither closes nor doubles it, or a
-  record with another field count than the header. Under the worker's LazyQuotes, a comment that
-  lost its closing quote swallowed the next reading and a poll still claimed a complete snapshot,
-  so Anam reported that reading absent. Padded fields, doubled quotes and closed multi-line
-  fields still read; the real export of 11 July has none of the refused shapes.
-- A request that is JSON but not an object gets a structured error, not a traceback (anam card
-  117).
-
-- `anam_bp_csv` sends exports oldest first by the date in their name, not in path-string order,
-  and sends a reading two exports hold once, from the newer (anam card 98). Before, the 9th's
-  export sorted after the 10th's, so a resend put an older comment back over a correction.
-- `anam_dreamstation` labels no snapshot when the card holds an events file without its summary
-  (anam card 99): the run cannot carry that session, so Anam must not be told it is absent.
-
-### Added
-
 - `anam_garmin` (anam card 55), under source `garmin`, from GarminDB's FIT files and `garmin.db`:
   - `health.heart-rate-alert` v3, the abnormal high heart rate alert decoded from the monitoring
     FIT files: the health ETL's `fit_events.py`, moved, with the payload Anam's `health-db` worker
@@ -86,14 +55,6 @@ All notable changes to this repo. The format follows
   through either is the same facets. Runs on a `folder_watch` per-file event; `poll` resends
   every export under `export_dir`.
 
-### Fixed
-
-- `anam_dreamstation` fetches the decoder as the tag's zip archive, not `git+https`: the gateway
-  has no git, so uv could not resolve it.
-
-- The README's gateway examples set `timeouts:` per command. A flat `timeout:` is not a ductile
-  plugin field: `config check` passes it, and the gateway then crash-loops at boot.
-
 ### Changed
 
 - `anam_bp_csv` emits `health.blood-pressure` v3, the body Anam bundles from its card 71
@@ -105,6 +66,41 @@ All notable changes to this repo. The format follows
   `token_secret`, a new required key, instead of a fixed `ANAM_IMPORTER_TOKEN`. Vault secret
   names are lowercase and global, so one fixed name could not serve two importers. For
   Withings: `token_secret: anam_importer_token_withings`.
+
+### Fixed
+
+- The client never follows a redirect (anam card 112). It used urllib's default handler, which
+  sent the importer's bearer token to whatever origin a 3xx named. A redirect is now an error
+  naming the target, and `anam_url` may not carry credentials, a query or a fragment.
+- `anam_submit` acknowledges a batch only on a whole admission receipt (anam card 113): W, the
+  change count, and a known outcome for every index. A 200 holding anything else, an HTML page
+  or `{}`, was reported ok with an `anam.admitted` event; now it is a retryable error and no
+  event. The Definitions listing, a registration and a snapshot report are checked the same way.
+- A truncated answer is retryable (anam card 115). The batch may or may not have been written,
+  and a resend settles which.
+- `timeout` bounds the whole call (anam card 116): connect, headers and body, with answers capped
+  at 8 MiB. A server trickling bytes held the worker past it. `Anam-Timeout` keeps fractions
+  (`250ms`, not `0s`).
+- `anam_bp_csv` refuses an export whose records cannot be told apart (anam card 114): a quote
+  still open at the end, a quote inside a quoted field that neither closes nor doubles it, or a
+  record with another field count than the header. Under the worker's LazyQuotes, a comment that
+  lost its closing quote swallowed the next reading and a poll still claimed a complete snapshot,
+  so Anam reported that reading absent. Padded fields, doubled quotes and closed multi-line
+  fields still read; the real export of 11 July has none of the refused shapes.
+- A request that is JSON but not an object gets a structured error, not a traceback (anam card
+  117).
+
+- `anam_bp_csv` sends exports oldest first by the date in their name, not in path-string order,
+  and sends a reading two exports hold once, from the newer (anam card 98). Before, the 9th's
+  export sorted after the 10th's, so a resend put an older comment back over a correction.
+- `anam_dreamstation` labels no snapshot when the card holds an events file without its summary
+  (anam card 99): the run cannot carry that session, so Anam must not be told it is absent.
+
+- `anam_dreamstation` fetches the decoder as the tag's zip archive, not `git+https`: the gateway
+  has no git, so uv could not resolve it.
+
+- The README's gateway examples set `timeouts:` per command. A flat `timeout:` is not a ductile
+  plugin field: `config check` passes it, and the gateway then crash-loops at boot.
 
 ## [0.1.0] - 2026-10-10
 

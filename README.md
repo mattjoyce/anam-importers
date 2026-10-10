@@ -26,10 +26,6 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
-garmin/               anam_garmin: a Garmin watch's FIT files as health.heart-rate-alert
-garmin/               anam_garmin: a Garmin watch's alerts and sleep (OMH) from GarminDB
-garmin/               anam_garmin: a Garmin watch's alerts, sleep and daily heart rate (OMH) from GarminDB
-
 garmin/               anam_garmin: a Garmin watch's alerts, sleep, heart rate, steps and days from GarminDB
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)

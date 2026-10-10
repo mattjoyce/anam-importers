@@ -6,14 +6,17 @@
 """anam_garmin: shapes what a Garmin watch recorded into Anam envelopes, one batch
 event at a time.
 
-Two things today. The abnormal high heart rate alert, read straight from the
-watch's monitoring FIT files under GarminDB's FitFiles/Monitoring: GarminDB
-downloads those files but drops their event messages on import, so nothing else
-holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
+Five types. The abnormal high heart rate alert (health.heart-rate-alert), read
+straight from the watch's monitoring FIT files under GarminDB's FitFiles/Monitoring:
+GarminDB downloads those files but drops their event messages on import, so nothing
+else holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
 moved: the same event decoded the same way, and the same payload the health-db
-worker built from the ETL's events table. And each night's sleep, from GarminDB's
-garmin.db sleep table, as a sleep.episode: the IEEE 1752 body with Garmin's score
-and averages beside it. It keeps no state of its own: Anam makes a resend a no-op.
+worker built from the ETL's events table. From GarminDB's garmin.db: each night's
+sleep (sleep.episode, the IEEE 1752 body with Garmin's score and averages beside
+it), each day's resting, minimum and maximum heart rate (health.heart-rate-daily,
+Open mHealth), steps (health.step-count, Open mHealth) and the rest of the day as
+Garmin wrote it (garmin.day). It keeps no state of its own: Anam makes a resend a
+no-op.
 
 Commands:
 - handle : after a GarminDB sync, what changed in the last lookback_days
@@ -23,6 +26,7 @@ Commands:
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import sys
 import time
@@ -57,12 +61,13 @@ DAY_MINUTES = {"moderate_activity_time": "moderate_activity_minutes",
 # DAY_GOALS are what Garmin writes on a day the watch recorded nothing.
 DAY_GOALS = {"step_goal", "floors_goal", "calories_goal", "hydration_goal", "intensity_time_goal_minutes"}
 
-# ZONE is where Garmin's days are local days.
-ZONE = ZoneInfo("Australia/Sydney")
+# ZONE is where Garmin's days are local days. The Definitions say so, in their
+# fact_time; it is read from there so it is stated once.
+ZONE = ZoneInfo(json.loads((HERE / "definitions" / "garmin.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
-# heart rate alert. Garmin does not document it; it was read from Matt's watch.
+# heart rate alert. Garmin does not document it; it was read from a watch's files.
 HR_HIGH_ALERT = 66
 
 # DEFAULT_LOOKBACK_DAYS bounds handle to the files a sync can have touched. A
@@ -114,9 +119,22 @@ def fit_files(config: Dict[str, Any], since: Optional[float] = None) -> List[Pat
     if not root.is_dir():
         raise ductile.Failure(f"no fit_dir at {root}", retry=False)
     files = sorted(p for p in root.rglob("*.fit") if p.is_file())
-    if since is not None:
-        files = [p for p in files if p.stat().st_mtime >= since]
-    return files
+    return files if since is None else modified_since(files, since)
+
+
+def modified_since(files: List[Path], since: float) -> List[Path]:
+    """files modified at or after since."""
+    try:
+        return [p for p in files if p.stat().st_mtime >= since]
+    except FileNotFoundError as exc:
+        raise vanished(exc) from exc
+
+
+def vanished(exc: FileNotFoundError) -> ductile.Failure:
+    """A file listed and then gone, as a GarminDB sync rewrites its folder. The next
+    run lists it again or not at all, so it is worth retrying; skipping it instead
+    would let a snapshot report its alerts absent."""
+    return ductile.Failure(f"{exc.filename} went while the run read it", retry=True)
 
 
 def alerts(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -128,6 +146,8 @@ def alerts(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
     for path in files:
         try:
             found = alerts_in(path)
+        except FileNotFoundError as exc:
+            raise vanished(exc) from exc
         except ValueError as exc:
             logs.append(f"skipped {path.name}: {exc}")
             continue
@@ -158,6 +178,8 @@ def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
         "deep_sleep_duration": {"value": minutes(row["deep_sleep"]), "unit": "min"},
         "rem_sleep_duration": {"value": minutes(row["rem_sleep"]), "unit": "min"},
         "wake_after_sleep_onset": {"value": minutes(row["awake"]), "unit": "min"},
+        # Garmin's sleep table holds one sleep a day, its main one; the importer
+        # says so, Garmin does not, and the Definition's description records that.
         "is_main_sleep": True,
     }
     for key in ("score", "qualifier"):
@@ -249,7 +271,7 @@ def days(config: Dict[str, Any], since: Optional[date] = None) -> Tuple[List[Dic
 
 # Ids name what they are ("sleep:", "steps:", "day:") because a facet's id is the
 # source plus its identity values, without the type: two of this importer's types
-# keyed on a bare date would be one facet (Matt, 2026-10-10, option A).
+# keyed on a bare date would be one facet (anam card 55).
 
 
 def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dict[str, Any]]], person: str,
