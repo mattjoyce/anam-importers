@@ -161,6 +161,41 @@ def payloads(path: Path) -> List[Dict[str, str]]:
     return out
 
 
+# ZONE is where the app's wall clock reads, as the Definition's fact_time says.
+ZONE = "Australia/Sydney"
+
+# POSTURES maps the app's posture to Open mHealth's body_posture. Only Seated has
+# been seen; any other is kept as the source wrote it and given no OMH posture.
+POSTURES = {"Seated": "sitting", "Standing": "standing", "Lying": "lying down"}
+
+
+def omh(row: Dict[str, str]) -> Dict[str, Any]:
+    """A reading as an Open mHealth blood-pressure-4.0 body (anam card 83), with the
+    export's own fields beside it. date_excel and reading stay, since identity and
+    fact time point at them; every other field keeps the export's text. Location is
+    not mapped: OMH distinguishes upper arm from wrist and the app does not say."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    at = datetime.strptime(row["date_excel"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(ZONE))
+    body: Dict[str, Any] = {
+        "systolic_blood_pressure": {"value": number(row["systolic"]), "unit": "mmHg"},
+        "diastolic_blood_pressure": {"value": number(row["diastolic"]), "unit": "mmHg"},
+        "effective_time_frame": {"date_time": at.isoformat()},
+    }
+    posture = POSTURES.get(row.get("posture", ""))
+    if posture:
+        body["body_posture"] = posture
+    rest = {k: v for k, v in row.items() if k not in ("systolic", "diastolic")}
+    return {**body, **rest}
+
+
+def number(text: str) -> Any:
+    """The export's numeral as a JSON number: an integer when it has no fraction,
+    so "137.0" is 137.0 and "137" is 137, nothing rounded."""
+    return int(text) if text.lstrip("-").isdigit() else float(text)
+
+
 def exports(config: Dict[str, Any]) -> List[Path]:
     """Every export under export_dir, oldest name first."""
     root = Path(str(config["export_dir"]))
