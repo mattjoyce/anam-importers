@@ -9,6 +9,12 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_concept2` (anam card 122), under source `concept2`: each workout the Concept2 Logbook
+  holds as `exercise.session` v5, splits or intervals and every stroke beside the IEEE 1752 body.
+  `fetch` reads the Logbook API under a personal token from the vault and caches each result as
+  a JSON file; `handle` and `poll` shape the cache and never touch the network. `anam_garmin`
+  carries the same v5 body.
+
 - `anam_records` (anam card 118): Anam's built-in records worker, moved out. It reads YAML and
   JSON records files with Go's yaml.v3 scalar rules and writes numbers as Go wrote them, so
   every record the worker admitted resends as no-op. Every run is one snapshot of the types it

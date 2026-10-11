@@ -337,7 +337,7 @@ start as a true UTC instant; `garmin_activities.db` holds it as wall clock, and 
 wall clock, so the importer reads the file. The FIT sport and sub-sport map to Google Fit's names
 (Cardio, which Google Fit has no name for, is `other`; an unmapped pair is `unknown`), and the
 payload keeps both as the watch wrote them. `exercise.session` is bundled in Anam: the importer
-carries Anam's v4 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+carries Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
 Their ids name what they are: `garmin:session:2026-10-04T03:49:17Z`, `sleep:2026-10-08`, `steps:2026-10-09`, `day:2026-10-09`. A
 facet's id is the source plus its identity values, without the type, so two types keyed on a
@@ -364,6 +364,69 @@ fails on it. Against a real archive of 7,738 files, `poll` found the same 302 al
 holds, in 7 batches, 564 nights, 1,900 heart rate figures and 706 days of steps, every one passing its pinned schema. Its 199 activity files hold 200
 sessions, all conforming; with the rest they were admitted to a scratch daemon, 4,076 facets, and a
 resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU).
+
+## Wiring an importer into a gateway (Concept2)
+
+Not deployed. Source `concept2`, type `[exercise.session]`, secret `anam_importer_token_concept2`,
+principal `anam-submit-concept2`, and a second secret, the Logbook's own token, below.
+
+ErgData syncs each workout the monitor records to the Concept2 Online Logbook, and its API
+(`log.concept2.com/developers/documentation`) is where it reads back whole: the result, its
+splits or intervals, and every stroke. A result entered by hand on the website is there too,
+with totals only. The Google Fit copy ErgData also writes carries less and is on its way out, so
+the importer reads the Logbook.
+
+Two concerns, two commands. `fetch` is the source's reader: under a personal token (made on the
+Logbook site under Edit Profile, Applications) it lists every result the user has, caches each
+one that is new or changed as `<cache_dir>/<result id>.json` with its strokes, and drops the
+cache of a result the Logbook no longer lists. It compares the listing to the cache, so an
+unchanged result costs one listing call and nothing more, and it asks for strokes only where the
+result says it has them. `handle` and `poll` shape what the cache holds and never touch the
+network, as the garmin importer reads the files GarminDB downloaded: `handle` the files written
+in the last `lookback_days` (default 3), `poll` everything, labelled a snapshot. The token is a
+vault secret the gateway hands `fetch` under the name `token_secret` gives, never config.
+
+Each workout is one `exercise.session`, the IEEE 1752 body with the Logbook's measures beside
+it: `rower` is `rowing.machine`, `bike` is `biking.stationary`, `water` is `rowing`, any other erg
+is `other`, and `erg_type` keeps the Logbook's word. The start is the result's `date_utc`, the
+monitor's end of workout, minus its time; a result entered on the web has neither, so its start
+is the day it names at Sydney midnight and `start_time_known` is false. The Logbook's tenths of
+a second and decimetres are written in seconds and metres; a heart rate of zero, the monitor's
+figure for no belt, is left out. `exercise.session` is bundled in Anam: the importer carries
+Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+
+```yaml
+plugins:
+  anam_concept2:
+    enabled: true
+    requires_vault: true                  # fetch needs the Logbook token
+    vault_principal: anam-concept2        # the principal granted it
+    timeouts:
+      fetch: 300s
+      handle: 60s
+      poll: 120s
+    schedules:
+      - id: fetch
+        command: fetch
+        every: 6h
+    config:
+      cache_dir: <a folder of the importer's own>
+      person_id: <Anam's person_id>
+      token_secret: concept2_logbook_token
+pipelines:
+  - name: anam-concept2-after-fetch
+    on: anam_concept2.fetched
+    steps:
+      - uses: anam_concept2             # handle: the results the fetch wrote
+  - name: anam-concept2-submit
+    on: anam_concept2.batch
+    steps:
+      - uses: anam_submit_concept2
+```
+
+Against a real logbook of 19 results, 5 synced by ErgData (up to 752 strokes, 72 KB a payload) and
+14 entered on the web, `fetch` took 10 s, every workout conformed, and all 19 were admitted to a
+scratch daemon with a resend all no-op.
 
 ## Values: why `29.371`, not `29.371000000000002`
 

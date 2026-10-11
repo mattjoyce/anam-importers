@@ -1,0 +1,70 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_concept2
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: false
+description: "Shapes the workouts the Concept2 Logbook holds into Anam envelopes, one exercise.session each, and emits them as anam_concept2.batch events, at most 49 to a batch, for anam_submit to post. Two concerns, two commands: fetch reads the Logbook API under the personal token the vault hands it and keeps each result, strokes included, as a JSON file under cache_dir, the source in its own shape; handle and poll shape what the cache holds and never touch the network. Holds no Anam token."
+commands:
+  - name: fetch
+    type: write
+    description: "List every result the Logbook holds for the user and cache each one that is new or changed, with its stroke data when it has any; drop the cache of a result the Logbook no longer lists. Idempotent: an unchanged result is not fetched again. Needs the secret token_secret names."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_concept2.fetched
+          values:
+            - payload.fetched
+            - payload.removed
+  - name: handle
+    type: read
+    description: "After a fetch: the cached results written in the last lookback_days (default 3), shaped and batched. Idempotent in Anam: what is already held is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_concept2.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every cached result, in batches: the resend-everything mode, labelled one snapshot unless a cached file would not read."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_concept2.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "cache_dir is readable, every cached result reads, and every one conforms to the Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [cache_dir, person_id, token_secret]
+  optional: [logbook_url, logbook_user, timeout, lookback_days]
