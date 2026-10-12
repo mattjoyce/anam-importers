@@ -27,6 +27,8 @@ bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-p
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
 garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
+concept2/             anam_concept2: Concept2 Logbook workouts as exercise.session
+owntracks/            anam_owntracks: a phone's OwnTracks positions as location.track, one facet per hour
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -427,6 +429,56 @@ pipelines:
 Against a real logbook of 19 results, 5 synced by ErgData (up to 752 strokes, 72 KB a payload) and
 14 entered on the web, `fetch` took 10 s, every workout conformed, and all 19 were admitted to a
 scratch daemon with a resend all no-op.
+
+## Wiring an importer into a gateway (OwnTracks)
+
+Not deployed. Source `owntracks`, type `[location.track]`, secret `anam_importer_token_owntracks`,
+principal `anam-submit-owntracks`.
+
+The phone runs OwnTracks in HTTP mode and posts each fix to a receiver at the edge, which keeps
+it until the gateway's `owntracks` plugin (in ductile-plugins) pulls it into a spool:
+`<spool_dir>/<device>/<YYYY-MM>.jsonl`, one line per message, the body exactly as the phone
+posted it. The spool is the source. `anam_owntracks` reads it and never touches the network:
+`handle` after a pull, `poll` for everything, labelled a snapshot.
+
+Each phone's UTC hour is one `location.track`: the hour's fixes, oldest first, with the
+coordinates, accuracy, speed, battery, WiFi network and regions the phone wrote, never snapped,
+smoothed or joined to a place. The hour is the fix time's (`tst`), not the receipt's, so a phone
+that was offline fills in its hours when it reconnects. A facet replaces the last one sent for its
+hour, so an hour always goes whole: `handle` reads the whole spool and sends every hour that
+gained a message received in the last `lookback_days` (default 2). OwnTracks reports one fix as
+several messages with the same `tst` (a manual publish and a ping, or a ping repeating the last
+fix every 15 minutes while the phone is still); they are one point, with every trigger kept. A
+second message at the same `tst` with a different fix is dropped and counted. Messages that are
+not locations (status, transition, waypoint) and empty posts are skipped and counted.
+
+No coordinates leave the payload. Logs and results carry counts, file names and line numbers,
+because the gateway's logs are shipped elsewhere.
+
+```yaml
+plugins:
+  anam_owntracks:
+    enabled: true
+    timeouts:
+      handle: 60s
+      poll: 120s
+    config:
+      spool_dir: <the owntracks plugin's spool_dir>
+      person_id: <Anam's person_id>
+pipelines:
+  - name: anam-owntracks-after-pull
+    on: location.new_data              # the owntracks plugin, when a pull found rows
+    steps:
+      - uses: anam_owntracks           # handle: the hours that gained messages
+  - name: anam-owntracks-submit
+    on: anam_owntracks.batch
+    steps:
+      - uses: anam_submit_owntracks
+```
+
+Against the live spool on its first day (18 lines: 16 locations, 1 status), `health` conformed
+and `poll` shaped 2 points in one hour. The 16 locations were two fixes, one of them repeated by
+15 pings over three hours while the phone sat still.
 
 ## Values: why `29.371`, not `29.371000000000002`
 

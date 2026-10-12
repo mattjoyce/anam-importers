@@ -1,0 +1,54 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_owntracks
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: false
+description: "Shapes the positions OwnTracks reported, as the owntracks plugin spools them, into Anam envelopes, one location.track per phone per UTC hour, and emits them as anam_owntracks.batch events, at most 49 to a batch, for anam_submit to post. Reads the spool only, never the network, and logs no coordinates. Holds no Anam token."
+commands:
+  - name: handle
+    type: read
+    description: "After a pull: every hour that gained a message received in the last lookback_days (default 2), each sent whole. Idempotent in Anam: an hour already held is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_owntracks.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every hour the spool holds, in batches: the resend-everything mode, labelled one snapshot unless a spool line would not read."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_owntracks.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "spool_dir is readable, every spool line reads, and every hour conforms to the Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [spool_dir, person_id]
+  optional: [lookback_days]
