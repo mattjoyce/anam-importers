@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_owntracks` (anam card 130), under source `owntracks`: the positions a phone's OwnTracks
+  posted, from the spool the ductile `owntracks` plugin pulls, as `location.track` v1, one facet
+  per phone per UTC hour. Messages for one fix (same `tst`) are one point with every trigger;
+  `handle` sends each hour that gained a message whole. Logs carry no coordinates.
+
 - `anam_concept2` (anam card 122), under source `concept2`: each workout the Concept2 Logbook
   holds as `exercise.session` v5, splits or intervals and every stroke beside the IEEE 1752 body.
   `fetch` reads the Logbook API under a personal token from the vault and caches each result as
