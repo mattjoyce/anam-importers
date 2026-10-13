@@ -155,6 +155,16 @@ class Client:
             raise Refused(str(body.get("error", "batch refused")), list(body.get("refused", [])))
         raise _error("POST /v1/envelopes", status, body)
 
+    def store_document(self, path: str, data: bytes) -> Dict[str, Any]:
+        """Hand Anam one document's bytes for its library, at a library-relative path
+        (anam card 102). 201 stored and 200 already held both mean the library holds
+        these bytes there; 409 is other bytes at that path, which a retry will not mend."""
+        target = "/v1/documents?" + urllib.parse.urlencode({"path": path})
+        status, body = self._call("POST", target, data)
+        if status not in (200, 201):
+            raise _error("POST /v1/documents " + path, status, body)
+        return _object("POST /v1/documents", body)
+
     def snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """What Anam knows of one of this importer's snapshots: complete, and once it
         is, live, absent and absent_ids."""

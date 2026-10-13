@@ -9,6 +9,12 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `anam_documents` (anam card 103), under source `documents`: Anam's built-in documents worker,
+  moved out. A folder of files with `.meta.yaml` sidecars as `doc.reference`, with the same
+  payload the worker wrote, so the cut-over is no-op. `anam_submit` hands each file's bytes to
+  Anam's library (`POST /v1/documents`, anam card 102) before the envelopes, reading them from
+  the file named in the batch's `documents`; `Client.store_document` does the post.
+
 - `anam_owntracks` (anam card 130), under source `owntracks`: the positions a phone's OwnTracks
   posted, from the spool the ductile `owntracks` plugin pulls, as `location.track` v1, one facet
   per phone per UTC hour. Messages for one fix (same `tst`) are one point with every trigger;
