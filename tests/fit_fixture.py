@@ -23,7 +23,7 @@ def main() -> None:
     given = json.load(sys.stdin)
     enc = Encoder()
     enc.write_mesg({"mesg_num": MESG["FILE_ID"], "type": "activity" if isinstance(given, dict) else "monitoring_b",
-                    "manufacturer": "garmin", "time_created": datetime.fromisoformat("2026-09-25T00:00:00+00:00")})
+                    "manufacturer": "garmin", "time_created": datetime.fromisoformat("2015-09-25T00:00:00+00:00")})
     if isinstance(given, dict):
         for fields in given["sessions"]:
             start = datetime.fromisoformat(fields.pop("start_time"))

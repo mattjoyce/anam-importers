@@ -17,6 +17,12 @@ The contract every importer complies with is `docs/IMPORTERS.md` §8 in the anam
 wire format, tokens, all-or-nothing batches of at most 49, and what each status means.
 `docs/explainer.html` here walks through it with diagrams.
 
+These are one person's importers, for the sources one person has: a Garmin watch through
+GarminDB, Withings scales, a blood pressure phone app, a DreamStation CPAP card, Concept2's
+Logbook, OwnTracks on a phone, and records files written by hand. Times default to
+Australia/Sydney. They are offered as working patterns for your own sources, not as a product.
+Every value in `tests/` is made up.
+
 ## What is here
 
 ```text
@@ -42,7 +48,14 @@ docs/explainer.html   how the pieces fit, for a reader new to it
   standard library.
 - An Anam daemon with the importer routes and snapshots (anam card 78, a14ee51 and later), and a
   line for each importer in its `importers_file`.
-- A ductile gateway to run the plugins (protocol 2).
+- A ductile gateway to run the plugins on a schedule (protocol 2). Without one, a plugin is a
+  program that reads one JSON request on stdin and writes one JSON response on stdout, so you
+  can run it by hand:
+
+  ```sh
+  echo '{"command": "poll", "config": {"db_path": "withings.db", "person_id": "me"}}' \
+    | uv run withings/run.py
+  ```
 
 ## Writing an importer
 
@@ -362,7 +375,7 @@ wall clock, so the importer reads the file. The FIT sport and sub-sport map to G
 payload keeps both as the watch wrote them. `exercise.session` is bundled in Anam: the importer
 carries Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
-Their ids name what they are: `garmin:session:2026-10-04T03:49:17Z`, `sleep:2026-10-08`, `steps:2026-10-09`, `day:2026-10-09`. A
+Their ids name what they are: `garmin:session:2015-10-04T03:49:17Z`, `sleep:2015-10-08`, `steps:2015-10-09`, `day:2015-10-09`. A
 facet's id is the source plus its identity values, without the type, so two types keyed on a
 bare date would be one facet, the second superseding the first. `tests/conformance` pins the
 IEEE and Open mHealth schemas the payloads are tested against. Read against GarminDB
@@ -509,3 +522,7 @@ with 17 significant digits when 15 do not round-trip (`29.371000000000002`); SQL
 later render the shortest form (`29.371`). `anam_withings` writes the shortest decimal that
 reads back as the same double (`repr`), which IEEE 754 fixes whatever reads it. Against the
 live record that is 222 of 5,531 measurements written differently, each the same number.
+
+## Licence
+
+Apache License 2.0. See `LICENSE` and `NOTICE`.
