@@ -267,7 +267,7 @@ def minutes(t: str) -> Any:
 
 
 def instant(t: str) -> str:
-    """GarminDB's UTC DATETIME text, "2026-10-07 12:44:00.000000", as RFC 3339."""
+    """GarminDB's UTC DATETIME text, "2015-10-07 12:44:00.000000", as RFC 3339."""
     return datetime.fromisoformat(t).replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

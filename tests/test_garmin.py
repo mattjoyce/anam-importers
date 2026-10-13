@@ -36,13 +36,13 @@ DAILY_SUMMARY = f"""CREATE TABLE daily_summary (day DATE NOT NULL, hr_min INTEGE
     rr_waking_avg FLOAT, rr_max FLOAT, rr_min FLOAT, bb_charged INTEGER, bb_max INTEGER, bb_min INTEGER,
     description VARCHAR, PRIMARY KEY (day))"""
 
-# A day as GarminDB 3.6.7 wrote 2026-10-09, and one the watch recorded nothing for.
-DAY = {"day": "2026-10-09", "hr_min": 59, "hr_max": 135, "rhr": 61, "stress_avg": 30, "step_goal": 5070,
+# A day in GarminDB 3.6.7's shape (made up), and one the watch recorded nothing for.
+DAY = {"day": "2015-10-09", "hr_min": 59, "hr_max": 135, "rhr": 61, "stress_avg": 30, "step_goal": 5070,
        "steps": 6219, "moderate_activity_time": "00:24:00.000000", "intensity_time_goal": "02:30:00.000000",
        "floors_up": 10.0, "floors_down": 5.55282, "floors_goal": 10.0, "distance": 4.788, "calories_total": 2238,
        "calories_bmr": 1976, "calories_active": 262, "hydration_goal": 2800, "rr_waking_avg": 14.0,
        "rr_max": 26.0, "rr_min": 11.0, "bb_charged": 47, "bb_max": 63, "bb_min": 13}
-EMPTY_DAY = {"day": "2026-10-02", "intensity_time_goal": "02:30:00.000000", "hydration_goal": 2800}
+EMPTY_DAY = {"day": "2015-10-02", "intensity_time_goal": "02:30:00.000000", "hydration_goal": 2800}
 
 
 def garmin_db(path: Path, nights, resting=(), daily=()) -> Path:
@@ -65,20 +65,20 @@ def garmin_db(path: Path, nights, resting=(), daily=()) -> Path:
     return path
 
 
-NIGHT = ("2026-10-08", "2026-10-07 12:44:00.000000", "2026-10-07 18:42:00.000000", "05:49:00.000000",
+NIGHT = ("2015-10-08", "2015-10-07 12:44:00.000000", "2015-10-07 18:42:00.000000", "05:49:00.000000",
          "01:18:00.000000", "03:06:00.000000", "01:25:00.000000", "00:09:00.000000", None, 14.0, 19.0, 75, "FAIR")
-NO_SLEEP = ("2026-10-01", None, None, Z, Z, Z, Z, Z, None, None, None, None, None)
+NO_SLEEP = ("2015-10-01", None, None, Z, Z, Z, Z, Z, None, None, None, None, None)
 
 # Sessions as a watch's activity FIT files hold them: a gym Cardio session, whose
 # zero distance means none measured; the Safety profile's walk, a sport the FIT SDK
 # has no name for; and a ten-second walk, the first of a multisport file.
-CARDIO = {"start_time": "2026-10-04T03:49:17+00:00", "sport": "training", "sub_sport": "cardio_training",
+CARDIO = {"start_time": "2015-10-04T03:49:17+00:00", "sport": "training", "sub_sport": "cardio_training",
           "sport_profile_name": "Cardio", "total_elapsed_time": 2171.196, "total_timer_time": 2100.5,
           "total_distance": 0, "total_calories": 396, "avg_heart_rate": 163, "max_heart_rate": 194,
           "total_training_effect": 5.0, "total_anaerobic_training_effect": 2.9, "training_load_peak": 215.5}
-SAFETY = {"start_time": "2025-01-06T16:16:51+00:00", "sport": 54, "sub_sport": 61, "total_elapsed_time": 2063.05,
+SAFETY = {"start_time": "2014-01-06T16:16:51+00:00", "sport": 54, "sub_sport": 61, "total_elapsed_time": 2063.05,
           "total_distance": 2825.63, "total_ascent": 12, "total_descent": 11}
-WALK = {"start_time": "2026-04-04T20:35:38+00:00", "sport": "walking", "sub_sport": "generic",
+WALK = {"start_time": "2015-04-04T20:35:38+00:00", "sport": "walking", "sub_sport": "generic",
         "sport_profile_name": "Walk", "total_elapsed_time": 10.819, "total_distance": 2.52, "total_calories": 1}
 
 
@@ -152,26 +152,26 @@ class AlertTest(unittest.TestCase):
 
     def test_an_alert_is_the_health_db_worker_s_payload_and_other_events_are_not_alerts(self):
         write_fit(self.dir / "2026" / "a_WELLNESS.fit", [
-            ["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
-            ["2026-09-25T12:00:00+00:00", 22, 5],
+            ["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
+            ["2015-09-25T12:00:00+00:00", 22, 5],
         ])
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        self.assertEqual(payloads(r), [{"source": "garmin", "kind": "hr_high_alert", "fact_time": "2026-09-25T11:31:00Z",
+        self.assertEqual(payloads(r), [{"source": "garmin", "kind": "hr_high_alert", "fact_time": "2015-09-25T11:31:00Z",
                                         "heart_rate": 117, "threshold": 100, "unit": "bpm"}])
         self.assertIn("117", json.dumps(payloads(r)[0]))
         self.assertNotIn("117.0", json.dumps(payloads(r)[0]))
 
     def test_the_same_alert_in_two_files_is_sent_once(self):
-        alert = ["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100]
+        alert = ["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100]
         write_fit(self.dir / "a_WELLNESS.fit", [alert])
-        write_fit(self.dir / "b_WELLNESS.fit", [alert, ["2026-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
+        write_fit(self.dir / "b_WELLNESS.fit", [alert, ["2015-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
         r = run("poll", self.dir)
-        self.assertEqual([p["fact_time"] for p in payloads(r)], ["2026-09-25T11:31:00Z", "2026-09-26T08:00:00Z"])
+        self.assertEqual([p["fact_time"] for p in payloads(r)], ["2015-09-25T11:31:00Z", "2015-09-26T08:00:00Z"])
 
     def test_poll_is_a_snapshot_and_handle_reads_only_recent_files(self):
-        old = write_fit(self.dir / "old_WELLNESS.fit", [["2026-01-01T00:00:00+00:00", 66, (130 << 8) | 100]])
-        write_fit(self.dir / "new_WELLNESS.fit", [["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100]])
+        old = write_fit(self.dir / "old_WELLNESS.fit", [["2015-01-01T00:00:00+00:00", 66, (130 << 8) | 100]])
+        write_fit(self.dir / "new_WELLNESS.fit", [["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100]])
         week_ago = time.time() - 7 * 86400
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
@@ -182,7 +182,7 @@ class AlertTest(unittest.TestCase):
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
 
     def test_a_file_that_will_not_decode_is_logged_and_the_run_is_no_snapshot(self):
-        write_fit(self.dir / "a_WELLNESS.fit", [["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100]])
+        write_fit(self.dir / "a_WELLNESS.fit", [["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100]])
         (self.dir / "b_WELLNESS.fit").write_bytes(b"not a FIT file")
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
@@ -196,9 +196,9 @@ class AlertTest(unittest.TestCase):
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(payloads(r), [{
-            "id": "sleep:2026-10-08",
-            "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-07T12:44:00Z",
-                                                       "end_date_time": "2026-10-07T18:42:00Z"}},
+            "id": "sleep:2015-10-08",
+            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T12:44:00Z",
+                                                       "end_date_time": "2015-10-07T18:42:00Z"}},
             "total_sleep_time": {"value": 349, "unit": "min"},
             "light_sleep_duration": {"value": 186, "unit": "min"},
             "deep_sleep_duration": {"value": 78, "unit": "min"},
@@ -209,22 +209,22 @@ class AlertTest(unittest.TestCase):
         self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
 
     def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
-        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2026-10-09", 61.0)],
-                  daily=[("2026-10-09", 59, 135), ("2026-04-05", None, 120)])
+        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0)],
+                  daily=[("2015-10-09", 59, 135), ("2015-04-05", None, 120)])
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        sydney_day = {"time_interval": {"start_date_time": "2026-10-09T00:00:00+11:00",
-                                        "end_date_time": "2026-10-10T00:00:00+11:00"}}
+        sydney_day = {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
+                                        "end_date_time": "2015-10-10T00:00:00+11:00"}}
         self.assertEqual(payloads(r), [
-            {"id": "2026-04-05", "statistic": "maximum", "heart_rate": {"value": 120, "unit": "beats/min"},
-             "effective_time_frame": {"time_interval": {"start_date_time": "2026-04-05T00:00:00+11:00",
-                                                        "end_date_time": "2026-04-06T00:00:00+10:00"}},
+            {"id": "2015-04-05", "statistic": "maximum", "heart_rate": {"value": 120, "unit": "beats/min"},
+             "effective_time_frame": {"time_interval": {"start_date_time": "2015-04-05T00:00:00+11:00",
+                                                        "end_date_time": "2015-04-06T00:00:00+10:00"}},
              "descriptive_statistic": "maximum"},
-            {"id": "2026-10-09", "statistic": "resting", "heart_rate": {"value": 61, "unit": "beats/min"},
+            {"id": "2015-10-09", "statistic": "resting", "heart_rate": {"value": 61, "unit": "beats/min"},
              "effective_time_frame": sydney_day, "temporal_relationship_to_physical_activity": "at rest"},
-            {"id": "2026-10-09", "statistic": "minimum", "heart_rate": {"value": 59, "unit": "beats/min"},
+            {"id": "2015-10-09", "statistic": "minimum", "heart_rate": {"value": 59, "unit": "beats/min"},
              "effective_time_frame": sydney_day, "descriptive_statistic": "minimum"},
-            {"id": "2026-10-09", "statistic": "maximum", "heart_rate": {"value": 135, "unit": "beats/min"},
+            {"id": "2015-10-09", "statistic": "maximum", "heart_rate": {"value": 135, "unit": "beats/min"},
              "effective_time_frame": sydney_day, "descriptive_statistic": "maximum"},
         ])
 
@@ -237,11 +237,11 @@ class AlertTest(unittest.TestCase):
             for e in ev["payload"]["envelopes"]:
                 by_type.setdefault(e["type"], []).append(e["payload"])
         self.assertEqual(by_type["health.step-count"], [{
-            "id": "steps:2026-10-09", "step_count": {"value": 6219, "unit": "steps"},
-            "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-09T00:00:00+11:00",
-                                                       "end_date_time": "2026-10-10T00:00:00+11:00"}}}])
+            "id": "steps:2015-10-09", "step_count": {"value": 6219, "unit": "steps"},
+            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
+                                                       "end_date_time": "2015-10-10T00:00:00+11:00"}}}])
         self.assertEqual(by_type["garmin.day"], [{
-            "id": "day:2026-10-09", "day": "2026-10-09", "step_goal": 5070, "floors_up": 10, "floors_down": 5.55282, "floors_goal": 10,
+            "id": "day:2015-10-09", "day": "2015-10-09", "step_goal": 5070, "floors_up": 10, "floors_down": 5.55282, "floors_goal": 10,
             "calories_total": 2238, "calories_bmr": 1976, "calories_active": 262, "hydration_goal": 2800,
             "stress_avg": 30, "rr_waking_avg": 14, "rr_max": 26, "rr_min": 11, "bb_charged": 47, "bb_max": 63,
             "bb_min": 13, "distance_km": 4.788, "moderate_activity_minutes": 24, "vigorous_activity_minutes": 0,
@@ -252,8 +252,8 @@ class AlertTest(unittest.TestCase):
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(payloads(r), [{
-            "id": "garmin:session:2026-10-04T03:49:17Z", "activity_name": "other",
-            "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-04T03:49:17Z",
+            "id": "garmin:session:2015-10-04T03:49:17Z", "activity_name": "other",
+            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-04T03:49:17Z",
                                                        "duration": {"value": 2171.196, "unit": "sec"}}},
             "source": "Garmin", "fit_sport": "training", "fit_sub_sport": "cardio_training", "sport_profile": "Cardio",
             "duration": {"value": 2100.5, "unit": "sec"}, "kcal_burned": {"value": 396, "unit": "kcal"},
@@ -266,15 +266,15 @@ class AlertTest(unittest.TestCase):
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
         got = {p["id"]: p for p in payloads(r)}
-        self.assertEqual(list(got), ["garmin:session:2025-01-06T16:16:51Z", "garmin:session:2026-04-04T20:35:38Z"])
-        self.assertEqual(got["garmin:session:2025-01-06T16:16:51Z"], {
-            "id": "garmin:session:2025-01-06T16:16:51Z", "activity_name": "unknown",
-            "effective_time_frame": {"time_interval": {"start_date_time": "2025-01-06T16:16:51Z",
+        self.assertEqual(list(got), ["garmin:session:2014-01-06T16:16:51Z", "garmin:session:2015-04-04T20:35:38Z"])
+        self.assertEqual(got["garmin:session:2014-01-06T16:16:51Z"], {
+            "id": "garmin:session:2014-01-06T16:16:51Z", "activity_name": "unknown",
+            "effective_time_frame": {"time_interval": {"start_date_time": "2014-01-06T16:16:51Z",
                                                        "duration": {"value": 2063.05, "unit": "sec"}}},
             "source": "Garmin", "fit_sport": "54", "fit_sub_sport": "61",
             "distance": {"value": 2825.63, "unit": "m"}, "cumulative_elevation_gain": {"value": 12, "unit": "m"},
             "descent_m": 11})
-        self.assertEqual(got["garmin:session:2026-04-04T20:35:38Z"]["activity_name"], "walking")
+        self.assertEqual(got["garmin:session:2015-04-04T20:35:38Z"]["activity_name"], "walking")
 
     def test_handle_reads_only_recent_activity_files(self):
         acts = self.dir.parent / "Activities"
@@ -283,7 +283,7 @@ class AlertTest(unittest.TestCase):
         week_ago = time.time() - 7 * 86400
         os.utime(old, (week_ago, week_ago))
         self.assertEqual(len(payloads(run("poll", self.dir))), 2)
-        self.assertEqual([p["id"] for p in payloads(run("handle", self.dir))], ["garmin:session:2026-10-04T03:49:17Z"])
+        self.assertEqual([p["id"] for p in payloads(run("handle", self.dir))], ["garmin:session:2015-10-04T03:49:17Z"])
 
     def test_an_activity_file_that_will_not_decode_is_logged_and_the_run_is_no_snapshot(self):
         acts = self.dir.parent / "Activities"
@@ -302,13 +302,13 @@ class AlertTest(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
     def test_every_type_is_admitted_and_a_resend_is_no_op(self):
-        write_fit(self.dir / "a_WELLNESS.fit", [["2026-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
-                                                ["2026-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
+        write_fit(self.dir / "a_WELLNESS.fit", [["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
+                                                ["2015-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
         # The same date in sleep, steps, the day record and heart rate: five types under one
         # source, none of them one facet (anam card 55, identity across types).
-        same_day = ("2026-10-09",) + NIGHT[1:]
+        same_day = ("2015-10-09",) + NIGHT[1:]
         write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [WALK, CARDIO]})
-        garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2026-10-09", 61.0)],
+        garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2015-10-09", 61.0)],
                   daily=[DAY, EMPTY_DAY])
         daemon = Daemon("garmin", ["exercise.session", "garmin.day", "health.heart-rate-alert",
                                    "health.heart-rate-daily", "health.step-count", "sleep.episode"])

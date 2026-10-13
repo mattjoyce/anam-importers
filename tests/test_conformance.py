@@ -49,7 +49,7 @@ class SleepEpisodeTest(unittest.TestCase):
         garmin = module(REPO / "garmin" / "run.py")
         spo2 = NIGHT[:8] + (94.0,) + NIGHT[9:11] + (88, "GOOD")
         with tempfile.TemporaryDirectory() as d:
-            db = garmin_db(Path(d) / "garmin.db", [NIGHT, NO_SLEEP, ("2026-10-09",) + spo2[1:]])
+            db = garmin_db(Path(d) / "garmin.db", [NIGHT, NO_SLEEP, ("2015-10-09",) + spo2[1:]])
             nights = garmin.sleeps({"garmin_db": str(db)})
         self.assertEqual(len(nights), 2)
         validator = pinned("ieee-1752/sleep-episode-1.0")
@@ -58,8 +58,8 @@ class SleepEpisodeTest(unittest.TestCase):
             self.assertEqual(errors, [], night)
 
     def test_the_pinned_schema_is_not_a_pass_for_anything(self):
-        bad = {"effective_time_frame": {"time_interval": {"start_date_time": "2026-10-07T12:44:00Z",
-                                                          "end_date_time": "2026-10-07T18:42:00Z"}},
+        bad = {"effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T12:44:00Z",
+                                                          "end_date_time": "2015-10-07T18:42:00Z"}},
                "total_sleep_time": {"value": 349, "unit": "furlongs"}}
         self.assertTrue(list(pinned("ieee-1752/sleep-episode-1.0").iter_errors(bad)))
 
@@ -70,7 +70,7 @@ class HeartRateDailyTest(unittest.TestCase):
         validator = pinned(definition["meta"]["source_schema"])
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
-            db = garmin_db(Path(d) / "garmin.db", [], resting=[("2026-10-09", 61.0)], daily=[("2026-10-09", 59, 135)])
+            db = garmin_db(Path(d) / "garmin.db", [], resting=[("2015-10-09", 61.0)], daily=[("2015-10-09", 59, 135)])
             figures = garmin.heart_rates({"garmin_db": str(db)})
         self.assertEqual([f["statistic"] for f in figures], ["resting", "minimum", "maximum"])
         for figure in figures:
@@ -78,7 +78,7 @@ class HeartRateDailyTest(unittest.TestCase):
 
     def test_the_pinned_schema_refuses_a_statistic_omh_does_not_name(self):
         bad = {"heart_rate": {"value": 61, "unit": "beats/min"}, "descriptive_statistic": "resting",
-               "effective_time_frame": {"date_time": "2026-10-09T00:00:00+11:00"}}
+               "effective_time_frame": {"date_time": "2015-10-09T00:00:00+11:00"}}
         self.assertTrue(list(pinned("omh/heart-rate-2.0").iter_errors(bad)))
 
 
@@ -94,8 +94,8 @@ class StepCountTest(unittest.TestCase):
 
     def test_the_pinned_schema_refuses_steps_counted_in_another_unit(self):
         bad = {"step_count": {"value": 6219, "unit": "paces"},
-               "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-09T00:00:00+11:00",
-                                                          "end_date_time": "2026-10-10T00:00:00+11:00"}}}
+               "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
+                                                          "end_date_time": "2015-10-10T00:00:00+11:00"}}}
         self.assertTrue(list(pinned("omh/step-count-3.0").iter_errors(bad)))
 
 
