@@ -9,7 +9,9 @@ that uses it.
 
 Commands:
 - handle : submit the triggering event's batch; when it is the part that completes a
-           snapshot and Anam reports facets absent, raise anam.snapshot_absent
+           snapshot and Anam reports facets absent, raise anam.snapshot_absent. A batch
+           may name documents ({path, file}): their bytes are handed to Anam's library
+           first (POST /v1/documents), read from file, so bytes never ride in an event
 - health : ask Anam for its Definitions under the token
 """
 
@@ -43,6 +45,12 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     if not envelopes:
         return ductile.error("the event carries no envelopes", retry=False)
     client = client_of(request)
+    for doc in batch.get("documents") or []:
+        try:
+            data = Path(str(doc["file"])).read_bytes()
+        except OSError as exc:
+            return ductile.error(f"document {doc.get('path')}: {exc}", retry=True)
+        client.store_document(str(doc["path"]), data)
     definitions = [parse(m.encode() if isinstance(m, str) else m) for m in batch.get("definitions") or []]
     ensure_published(client, definitions)
     if batch.get("current_versions"):

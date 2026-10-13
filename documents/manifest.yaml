@@ -1,0 +1,58 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_documents
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Shapes a folder of documents with .meta.yaml sidecars into doc.reference envelopes (anam card 103) and emits them as anam_documents.batch events, at most 49 to a batch, each naming the files whose bytes anam_submit hands Anam's library (POST /v1/documents) before it posts the envelopes. Every run sends the whole folder. Reads the folder; holds no token and writes nothing."
+commands:
+  - name: handle
+    type: read
+    description: "On a folder_watch event for documents_dir: every document in the folder, as poll."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_documents.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.current_versions
+            - payload.documents
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every document in documents_dir, in batches, as one snapshot: the resend-everything mode."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_documents.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.current_versions
+            - payload.documents
+            - payload.batch
+  - name: health
+    type: read
+    description: "documents_dir is readable and every document in it has a usable sidecar."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [documents_dir, person_id]
+  optional: []

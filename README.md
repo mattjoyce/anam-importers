@@ -32,6 +32,7 @@ withings/             anam_withings: the withings plugin's measurements as healt
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
+documents/            anam_documents: a folder of documents with sidecars as doc.reference; anam_submit hands the bytes to Anam's library
   extract/            one-off extractors that turn an export into a records file
 garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
 concept2/             anam_concept2: Concept2 Logbook workouts as exercise.session
@@ -320,6 +321,38 @@ plugins:
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of the types it carries. A type whose every record is removed is not in the run, so it
 is not reported absent.
+
+## Wiring an importer into a gateway (documents)
+
+Not deployed (anam card 103). Source `documents`, the name Anam's built-in worker used, so the
+cut-over is no-op: each file's identity is its folder-relative path, and the payload is the
+sidecar's fields plus the `path`, `sha256`, `bytes` and `media_type` measured from the file, as
+the worker wrote them. Type `doc.reference`. Secret `anam_importer_token_documents`, principal
+`anam-submit-documents`; the importer entry in Anam's `importers.yaml` names `types:
+[doc.reference]`, which is also what lets the token post bytes.
+
+Each file needs a sidecar `<file>.meta.yaml` with `date: YYYY-MM-DD`, its own date and not
+today's, and may add `title` and `note`. A file without one stops the run and names the sidecar
+to write. Dot-files and dot-directories are skipped.
+
+The bytes go to Anam, never into Anam's directory: each batch names its files (`documents`:
+`{path, file}`), and `anam_submit` posts each file's bytes to `POST /v1/documents?path=` before
+the envelopes, reading them from the file so no bytes ride in a ductile event. Anam answers 201 or
+200 for bytes it now holds and 409 for other bytes at a path it already holds: a stored document
+is a value, so a changed document takes a new file name. Anam refuses a `doc.reference` whose
+bytes its library does not hold.
+
+```yaml
+plugins:
+  anam_documents:
+    enabled: true
+    config:
+      documents_dir: <the documents folder, with sidecars>
+      person_id: <Anam's person_id>
+```
+
+A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
+snapshot of `doc.reference`. `anam_submit` needs read access to the same folder.
 
 ## One-off exports: `records/extract`
 
