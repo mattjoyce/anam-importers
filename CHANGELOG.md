@@ -14,7 +14,19 @@ All notable changes to this repo. The format follows
   rescanned under the same name supersedes its reference, and the first bytes stay. Needs an Anam
   with card 150.
 
+- Every config key is read and range-checked at the start of a command, through
+  `anam_importer.config`, and passed down as a parameter (anam cards 151, 152). A value of the
+  wrong kind or out of range now fails the command at start, naming the key, where before some
+  failed late or not at all. Defaults are unchanged. `bp_csv` reads its zone from its Definition.
+  `docs/defaults-and-invariants.md` lists every hard-coded value and why it is a key or a constant.
+
 ### Added
+
+- Config keys for values that were fixed (anam card 152), each defaulting to the old value:
+  `anam_submit`'s `max_response_bytes` (8 MiB) and `absent_ids_shown` (20); `anam_garmin`'s
+  `busy_timeout_ms` (30000); `anam_concept2`'s `max_response_bytes` (8 MiB); `anam_owntracks`'s
+  `max_payload_bytes` (290 KiB); and `strong_csv.py --max-session-sec` (3 hours). `Client` takes
+  `max_response`.
 
 - `ANAM_SEED_BIN` for the tests against a real daemon (anam card 119). The takeover tests seed
   their ledger with the built-in workers' `anam ingest`, which Anam drops in card 119; with
