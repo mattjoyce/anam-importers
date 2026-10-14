@@ -7,6 +7,11 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/rebuild-drill.py` builds a fresh ledger from the importers alone and compares it with
+  the live record, type by type (anam card 141). `docs/rebuild-drill.md` says how to run it.
+
 ### Changed
 
 - `Client.store_document` posts `POST /v1/documents?ext=` with the name's extension, not a path
