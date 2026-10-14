@@ -50,7 +50,7 @@ class SleepEpisodeTest(unittest.TestCase):
         spo2 = NIGHT[:8] + (94.0,) + NIGHT[9:11] + (88, "GOOD")
         with tempfile.TemporaryDirectory() as d:
             db = garmin_db(Path(d) / "garmin.db", [NIGHT, NO_SLEEP, ("2015-10-09",) + spo2[1:]])
-            nights = garmin.sleeps({"garmin_db": str(db)})
+            nights = garmin.sleeps({"garmin_db": str(db)}, garmin.DEFAULT_BUSY_MS)
         self.assertEqual(len(nights), 2)
         validator = pinned("ieee-1752/sleep-episode-1.0")
         for night in nights:
@@ -71,7 +71,7 @@ class HeartRateDailyTest(unittest.TestCase):
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
             db = garmin_db(Path(d) / "garmin.db", [], resting=[("2015-10-09", 61.0)], daily=[("2015-10-09", 59, 135)])
-            figures = garmin.heart_rates({"garmin_db": str(db)})
+            figures = garmin.heart_rates({"garmin_db": str(db)}, garmin.DEFAULT_BUSY_MS)
         self.assertEqual([f["statistic"] for f in figures], ["resting", "minimum", "maximum"])
         for figure in figures:
             self.assertEqual([e.message for e in validator.iter_errors(figure)], [], figure)
@@ -88,7 +88,7 @@ class StepCountTest(unittest.TestCase):
         validator = pinned(definition["meta"]["source_schema"])
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
-            steps, _ = garmin.days({"garmin_db": str(garmin_db(Path(d) / "garmin.db", [], daily=[DAY, EMPTY_DAY]))})
+            steps, _ = garmin.days({"garmin_db": str(garmin_db(Path(d) / "garmin.db", [], daily=[DAY, EMPTY_DAY]))}, garmin.DEFAULT_BUSY_MS)
         self.assertEqual(len(steps), 1)
         self.assertEqual([e.message for e in validator.iter_errors(steps[0])], [], steps[0])
 

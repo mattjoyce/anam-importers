@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "health.measurement"
@@ -42,7 +43,8 @@ BATCH_EVENT = "anam_withings.batch"
 
 # ATTRIB_AMBIGUOUS is Withings' attrib for a reading the device could not place: it
 # "may belong to other users as well as this one". Such a reading asserts no one, so
-# Anam binds it at medium rather than high. Every other attrib is the account's.
+# Anam binds it at medium rather than high. Every other attrib is the account's. Not
+# configurable: it is what Withings' code means.
 ATTRIB_AMBIGUOUS = "1"
 
 # Every column but value is read through CAST(... AS TEXT), as the source wrote it.
@@ -67,26 +69,32 @@ FIELDS = ("withings_id", "date", "type", "value", "unit", "attrib", "model", "de
 
 
 # DEFAULT_BUSY_MS is how long a read waits for the withings plugin to finish a write
-# before it gives up and asks to be retried.
+# before it gives up and asks to be retried, unless config's busy_timeout_ms says
+# otherwise.
 DEFAULT_BUSY_MS = 5000
 
 
-def read_source(config: Dict[str, Any], withings_id: Optional[int] = None) -> List[Dict[str, Any]]:
+def busy_timeout(config: Dict[str, Any]) -> int:
+    """busy_timeout_ms, checked: read once, at the start of a command."""
+    return cfg.integer(config, "busy_timeout_ms", DEFAULT_BUSY_MS, 0, 600_000)
+
+
+def read_source(config: Dict[str, Any], busy_ms: int, withings_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """The payloads in the withings database, every one or one group's. A database
     that is busy is a failure worth retrying; one that is missing or the wrong shape
     is not, until someone changes it."""
     try:
-        conn = open_source(str(config["db_path"]), int(config.get("busy_timeout_ms", DEFAULT_BUSY_MS)))
+        conn = open_source(str(config["db_path"]), busy_ms)
         try:
             return payloads(conn, withings_id)
         finally:
             conn.close()
     except sqlite3.Error as exc:
-        busy = isinstance(exc, sqlite3.OperationalError) and ("locked" in str(exc) or "busy" in str(exc))
-        raise ductile.Failure(f"withings database {config['db_path']}: {exc}", retry=busy) from exc
+        locked = isinstance(exc, sqlite3.OperationalError) and ("locked" in str(exc) or "busy" in str(exc))
+        raise ductile.Failure(f"withings database {config['db_path']}: {exc}", retry=locked) from exc
 
 
-def open_source(db_path: str, busy_ms: int = DEFAULT_BUSY_MS) -> sqlite3.Connection:
+def open_source(db_path: str, busy_ms: int) -> sqlite3.Connection:
     """The withings database, read-only. It must carry measure_groups (the withings
     plugin 0.4.0 after its reconcile), or attribution is unknown."""
     path = Path(db_path)
@@ -138,9 +146,10 @@ def envelopes_of(definition: Definition, rows: List[Dict[str, Any]], person: str
 
 def batch_events(request: Dict[str, Any], withings_id: Optional[int]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    busy_ms = busy_timeout(config)
     definitions = load(HERE)
     definition = definitions[TYPE]
-    rows = read_source(config, withings_id)
+    rows = read_source(config, busy_ms, withings_id)
     envs = envelopes_of(definition, rows, str(config["person_id"]))
     check(definitions, envs)
 
@@ -175,8 +184,9 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    busy_ms = busy_timeout(config)
     definitions = load(HERE)
-    rows = read_source(config)
+    rows = read_source(config, busy_ms)
     check(definitions, envelopes_of(definitions[TYPE], rows, "health-check"))
     return ductile.ok(f"{len(rows)} measurement(s), every one conforming to {TYPE} v{definitions[TYPE].version}")
 

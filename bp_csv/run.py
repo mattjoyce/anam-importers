@@ -25,22 +25,26 @@ Commands:
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Set, Tuple
+from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "health.blood-pressure"
 BATCH_EVENT = "anam_bp_csv.batch"
 
-# DEFAULT_PATTERN matches the app's export names. The name changes with every
-# export, and nothing about identity is read from it.
+# DEFAULT_PATTERN matches the app's export names, unless config's pattern says
+# otherwise. The name changes with every export, and nothing about identity is read
+# from it.
 DEFAULT_PATTERN = "BloodPressure_*"
 
 
@@ -178,12 +182,14 @@ def payloads(path: Path) -> List[Dict[str, str]]:
     return out
 
 
-# ZONE is where the app's wall clock reads, as the Definition's fact_time says.
-ZONE = "Australia/Sydney"
+# ZONE is where the app's wall clock reads. The Definition says so, in its
+# fact_time; it is read from there so it is stated once.
+ZONE = ZoneInfo(json.loads((HERE / "definitions" / f"{TYPE}.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
 
 # POSTURES maps the app's posture to Open mHealth's body_posture. Seated is the only
 # one the app has written. Any other stays as the source's posture, which v4 does not
-# admit, so the run stops for a person to name it rather than dropping it.
+# admit, so the run stops for a person to name it rather than dropping it. Not
+# configurable: it is what the words mean, and a change rewrites the facets.
 POSTURES = {"Seated": "sitting"}
 
 
@@ -192,10 +198,7 @@ def omh(row: Dict[str, str]) -> Dict[str, Any]:
     export's own fields beside it. date_excel and reading stay, since identity and
     fact time point at them; every other field keeps the export's text. Location is
     not mapped: OMH distinguishes upper arm from wrist and the app does not say."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    at = datetime.strptime(row["date_excel"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZoneInfo(ZONE))
+    at = datetime.strptime(row["date_excel"], "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONE)
     body: Dict[str, Any] = {
         "systolic_blood_pressure": {"value": number(row["systolic"]), "unit": "mmHg"},
         "diastolic_blood_pressure": {"value": number(row["diastolic"]), "unit": "mmHg"},
@@ -225,14 +228,19 @@ def exported_on(path: Path) -> date:
         return datetime.fromtimestamp(path.stat().st_mtime).date()
 
 
-def exports(config: Dict[str, Any]) -> List[Path]:
-    """Every export under export_dir, oldest first by exported_on, then by name.
-    Order matters: on a resend the gate keeps the last payload it is sent for a
-    reading, so the newest export, which holds any correction, is sent last."""
+def pattern_of(config: Dict[str, Any]) -> str:
+    """pattern, checked: read once, at the start of a command."""
+    return cfg.text(config, "pattern", DEFAULT_PATTERN)
+
+
+def exports(config: Dict[str, Any], pattern: str) -> List[Path]:
+    """Every export under export_dir that pattern names, oldest first by
+    exported_on, then by name. Order matters: on a resend the gate keeps the last
+    payload it is sent for a reading, so the newest export, which holds any
+    correction, is sent last."""
     root = Path(str(config["export_dir"]))
     if not root.is_dir():
         raise ductile.Failure(f"no export_dir at {root}", retry=False)
-    pattern = str(config.get("pattern", DEFAULT_PATTERN))
     return sorted((p for p in root.rglob(pattern) if p.is_file()), key=lambda p: (exported_on(p), p.name, str(p)))
 
 
@@ -272,6 +280,7 @@ def batch_events(definitions: Dict[str, Definition], path: Path, rows: List[Dict
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    pattern = pattern_of(config)
     event = ductile.payload_of(request)
     if event.get("change_type") == "deleted":
         return ductile.ok(f"{event.get('path')} was deleted: nothing to send")
@@ -283,7 +292,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     # An older export dropped in late must not undo a newer one's correction: with
     # export_dir known, readings a newer export holds are left to it.
     if config.get("export_dir"):
-        files = exports(config)
+        files = exports(config, pattern)
         later = files[files.index(path) + 1:] if path in files else [f for f in files if exported_on(f) > exported_on(path)]
         held = {identity(r) for f in later for r in payloads(f)}
         rows = [r for r in rows if identity(r) not in held]
@@ -294,8 +303,9 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    pattern = pattern_of(config)
     definitions = load(HERE)
-    files = exports(config)
+    files = exports(config, pattern)
     events = [e for f, rows in newest(files) for e in batch_events(definitions, f, rows, str(config["person_id"]))]
     # Every export kept under export_dir together is everything the app has given us,
     # so poll's run is a snapshot. One export alone (handle) is not.
@@ -308,8 +318,9 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    pattern = pattern_of(config)
     definitions = load(HERE)
-    files = exports(config)
+    files = exports(config, pattern)
     events = [e for f in files for e in batch_events(definitions, f, payloads(f), "health-check")]
     readings = sum(len(e["payload"]["envelopes"]) for e in events)
     return ductile.ok(f"{readings} reading(s) in {len(files)} export(s), every one conforming to "

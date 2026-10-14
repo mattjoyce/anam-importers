@@ -138,6 +138,18 @@ class Strong(unittest.TestCase):
         self.assertEqual(pull["effective_time_frame"]["time_interval"]["duration"]["value"], 3 * 3600)
         self.assertEqual(pull["reported_duration_sec"], 200000)
 
+    def test_max_session_sec_moves_the_cap(self):
+        sc = module("strong_csv")
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "strong1.csv"
+            p.write_text(STRONG)
+            doc, _ = sc.extract(p, "UTC", 1800)
+        legs, pull = doc["records"]
+        self.assertTrue(legs["duration_capped"])
+        self.assertEqual(legs["effective_time_frame"]["time_interval"]["duration"]["value"], 1800)
+        self.assertEqual(legs["reported_duration_sec"], 3600)
+        self.assertEqual(pull["effective_time_frame"]["time_interval"]["duration"]["value"], 1800)
+
 
 def technogym_zip(path: Path, sessions: list) -> Path:
     with zipfile.ZipFile(path, "w") as z:

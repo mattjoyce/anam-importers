@@ -40,7 +40,7 @@ BATCH_EVENT = "anam_dreamstation.batch"
 
 # The summary record's keys the Definition holds, as the decoder names them. Its
 # derived figures (end, mask-on total, AHI, RDI, leak statistics, span totals) are
-# left out: each is a read over these.
+# left out: each is a read over these. Not configurable: the Definition decides.
 KEPT = ("settings", "pressure", "device_counts")
 
 

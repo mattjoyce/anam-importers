@@ -5,7 +5,7 @@
 # ///
 """Strong app CSV export -> a records file of exercise.session, one record per workout.
 
-Usage: strong_csv.py --out-dir DIR --zone ZONE strong<digits>.csv
+Usage: strong_csv.py --out-dir DIR --zone ZONE [--max-session-sec N] strong<digits>.csv
 
 The export is one row per set, semicolon-separated. A workout is identified by its start
 time (the "Workout #" column is renumbered per export, so it is not identity). Each record
@@ -17,9 +17,10 @@ strong:<ISO start>; a new type takes new ids, so the move is by retraction, not 
 Each payload conforms to IEEE 1752.1 physical-activity-1.0 as `strength_training`, which
 requires an interval. Strong keeps a workout open until the next one starts, so its duration
 is unreliable (some run for days, one is negative). The person's rule (2026-10-08): a Strong
-session is 3 hours at most. The interval's duration is Strong's own figure when it is above 0
-and at most 3 hours, and 3 hours otherwise; then `duration_capped: true` marks it, and Strong's
-number is always kept as reported_duration_sec. The start is Strong's local clock read in
+session is 3 hours at most, the default of --max-session-sec. The interval's duration is
+Strong's own figure when it is above 0 and at most the cap, and the cap otherwise; then
+`duration_capped: true` marks it, and Strong's number is always kept as reported_duration_sec.
+Another cap writes other records, and a resend of them supersedes. The start is Strong's local clock read in
 ZONE; a workout logged elsewhere is placed as if in ZONE.
 
 Moved from Anam's scripts/extract-strong-csv.py (anam card 58); the records are the same.
@@ -34,6 +35,8 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+# MAX_SESSION_SEC is the longest a session is taken to be, unless --max-session-sec
+# says otherwise.
 MAX_SESSION_SEC = 3 * 3600
 METHOD = "records/extract/strong_csv.py"
 
@@ -45,8 +48,9 @@ def num(s):
     return int(f) if f.is_integer() else f
 
 
-def extract(p: Path, zone: str) -> tuple:
-    """The records file's content, and how many CSV rows it was read from."""
+def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple:
+    """The records file's content, and how many CSV rows it was read from. A
+    session's duration is capped at max_session_sec."""
     tz = ZoneInfo(zone)
     sha = hashlib.sha256(p.read_bytes()).hexdigest()
     with open(p, encoding="utf-8-sig", newline="") as f:
@@ -60,12 +64,12 @@ def extract(p: Path, zone: str) -> tuple:
         iso = start.replace(" ", "T")
         at = datetime.fromisoformat(start).replace(tzinfo=tz)
         reported = num(first["Duration (sec)"])
-        capped = not (0 < reported <= MAX_SESSION_SEC)
+        capped = not (0 < reported <= max_session_sec)
         rec = {"type": "exercise.session", "id": f"strong:session:{iso}",
                "activity_name": "strength_training",
                "effective_time_frame": {"time_interval": {
                    "start_date_time": at.isoformat(timespec="seconds"),
-                   "duration": {"value": MAX_SESSION_SEC if capped else reported, "unit": "sec"}}},
+                   "duration": {"value": max_session_sec if capped else reported, "unit": "sec"}}},
                "source": "Strong", "workout_name": first["Workout Name"],
                "reported_duration_sec": reported}
         if capped:
@@ -99,9 +103,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--zone", required=True, help="the IANA zone Strong's clock reads in")
+    ap.add_argument("--max-session-sec", type=int, default=MAX_SESSION_SEC,
+                    help=f"the longest a session is taken to be, in seconds (default {MAX_SESSION_SEC}, 3 hours)")
     ap.add_argument("csv")
     a = ap.parse_args()
-    doc, n = extract(Path(a.csv), a.zone)
+    if not 60 <= a.max_session_sec <= 7 * 86400:
+        ap.error(f"--max-session-sec {a.max_session_sec} is outside 60..{7 * 86400}")
+    doc, n = extract(Path(a.csv), a.zone, a.max_session_sec)
     records = doc["records"]
     out = Path(a.out_dir) / f"strong-workouts.{doc['document']['sha256'][:12]}.yaml"
     out.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100))
