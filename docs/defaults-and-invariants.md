@@ -28,7 +28,7 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | 3 days | `concept2/run.py:60` | `lookback_days` (concept2) | depends on the fetch schedule |
 | 8 MiB | `concept2/run.py:63` | `max_response_bytes` (concept2) | a guard; a page of 250 results is under 1 MiB |
 | 2 days | `owntracks/run.py:53` | `lookback_days` (owntracks) | depends on how long a phone may be offline |
-| 290 KiB | `owntracks/run.py:59` | `max_payload_bytes` | follows Anam's payload limit, which Anam holds as policy (`gate.New`, 300 KiB) and may make a key under card 151; an Anam run with another limit needs another value here |
+| 290 KiB | `owntracks/run.py:59` | `max_payload_bytes` | follows Anam's payload limit, the daemon's `max_payload_bytes` (300 KiB by default since anam card 151); a daemon set to another limit needs another value here |
 | 3 hours | `records/extract/strong_csv.py:40` | `--max-session-sec` | the person's rule of 2026-10-08 for capping Strong's open-ended workouts; someone else's rule may differ |
 
 `timeout`, `busy_timeout_ms` (withings), `pattern`, `logbook_url`, `logbook_user` and every
@@ -44,7 +44,7 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 
 | Value | Where | Why not configurable |
 |---|---|---|
-| `MAX_BATCH = 49` | `envelopes.py:13` | Anam refuses a larger batch (`gate.MaxBatch`); if Anam makes it a key, this becomes a default |
+| `MAX_BATCH = 49` | `envelopes.py:13` | Anam refuses a larger batch (`gate.MaxBatch`), which card 151 kept an invariant: it decides which events share an anam-time |
 | importers fill each batch to `MAX_BATCH` | every `batches(envs)` call | a smaller batch only means more transactions; borderline, see below |
 | `run-<uuid4>` snapshot id | `envelopes.py:70` | Anam treats it as opaque; fresh per run is what makes a run one snapshot |
 | first 5 problems in `Invalid` | `envelopes.py:20` | shapes an error message; the full list is on the exception |
@@ -64,7 +64,7 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 
 | Value | Where | Why not configurable |
 |---|---|---|
-| `MAX_ABSENT_IDS = 1000` | `anam_submit/run.py:39` | Anam's `api.AbsentIDsMax`; the bound on `absent_ids_shown` |
+| `MAX_ABSENT_IDS = 1000` | `anam_submit/run.py:40` | The upper bound on `absent_ids_shown`, the size of an alert a person reads; the daemon's report holds `max_absent_ids`, 1000 by default (anam card 151) |
 | events `anam.admitted`, `anam.snapshot_absent`, dedupe key `anam.snapshot_absent:<id>` | `run.py:99`, `:127-131` | pipelines route on them; a rename is a major release |
 | `maxItems: 49` | `manifest.yaml:20` | `MAX_BATCH` |
 

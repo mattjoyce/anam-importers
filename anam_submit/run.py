@@ -30,12 +30,13 @@ from anam_importer import ductile  # noqa: E402
 from anam_importer.client import DEFAULT_MAX_RESPONSE, DEFAULT_TIMEOUT  # noqa: E402
 
 # ABSENT_IDS_SHOWN is how many absent facet ids the alert carries unless config's
-# absent_ids_shown says otherwise. The report holds up to MAX_ABSENT_IDS, and anam
-# retract lists them all.
+# absent_ids_shown says otherwise. The report holds up to the daemon's max_absent_ids,
+# and anam retract lists them all.
 ABSENT_IDS_SHOWN = 20
 
-# MAX_ABSENT_IDS is the most absent ids Anam's snapshot report holds (its
-# api.AbsentIDsMax), so the most an alert can carry. Not configurable: it is Anam's.
+# MAX_ABSENT_IDS bounds absent_ids_shown: an alert is a message a person reads, and
+# the daemon's report holds 1000 by default (its max_absent_ids, anam card 151). An
+# alert asking for more than a report holds shows what it holds.
 MAX_ABSENT_IDS = 1000
 
 

@@ -52,10 +52,10 @@ BATCH_EVENT = "anam_owntracks.batch"
 # now, so they count as new however old their fixes.
 DEFAULT_LOOKBACK_DAYS = 2
 
-# DEFAULT_MAX_PAYLOAD is the gate's bound on one payload (300 KiB in Anam's gate),
-# less room for the envelope, unless config's max_payload_bytes says otherwise. An
-# hour over it would be refused whole; at OwnTracks' densest it is far under. Anam
-# holds the bound as policy, so an Anam run with another one takes another value here.
+# DEFAULT_MAX_PAYLOAD is Anam's bound on one payload (the daemon's max_payload_bytes,
+# 300 KiB by default), less room for the envelope, unless config's max_payload_bytes
+# says otherwise. An hour over it would be refused whole; at OwnTracks' densest it is
+# far under. A daemon set to another bound takes another value here.
 DEFAULT_MAX_PAYLOAD = 290 * 1024
 
 
