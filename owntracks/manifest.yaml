@@ -51,4 +51,4 @@ commands:
       status: string
 config_keys:
   required: [spool_dir, person_id]
-  optional: [lookback_days]
+  optional: [lookback_days, max_payload_bytes]

@@ -55,7 +55,8 @@ FIELDS = ("document", "extracted", "records")
 # IDENTITY is the payload fields each type's Definition composes its identity from,
 # where that is not the record's id. It is used only to refuse two records claiming
 # one identity in a run; the gate composes the identity itself. Identity does not
-# include the type, so the check runs across types.
+# include the type, so the check runs across types. Not configurable: it restates
+# Anam's bundled Definition, which this importer does not carry or fetch.
 IDENTITY = {"health.blood-pressure": ("date_excel", "reading")}
 
 class BadRecords(ductile.Failure):
@@ -249,7 +250,8 @@ def identity(env: Dict[str, Any]) -> Tuple[str, ...]:
 
 def files(config: Dict[str, Any]) -> List[Path]:
     """The .yaml, .yml and .json files directly under records_dir, by name. A folder
-    with none is a state, nothing extracted yet, not a fault."""
+    with none is a state, nothing extracted yet, not a fault. The suffixes are not
+    configurable: they are what the worker read, and a snapshot is that set."""
     root = Path(str(config.get("records_dir", ""))).expanduser()
     if not root.is_dir():
         raise ductile.Failure(f"no records_dir at {root}", retry=False)

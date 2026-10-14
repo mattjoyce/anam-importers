@@ -38,12 +38,13 @@ from datetime import date, datetime, timedelta, timezone
 from datetime import time as clock
 from zoneinfo import ZoneInfo
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 ALERT_TYPE = "health.heart-rate-alert"
@@ -55,7 +56,8 @@ SESSION_TYPE = "exercise.session"
 
 # DAY_COLUMNS are daily_summary's columns garmin.day keeps under the same name.
 # Steps and the heart rate columns are other types; the TIME columns are kept in
-# minutes (DAY_MINUTES); distance is renamed for its unit.
+# minutes (DAY_MINUTES); distance is renamed for its unit. These and DAY_GOALS are
+# not configurable: they are GarminDB's schema and the Definition's fields.
 DAY_COLUMNS = ("step_goal", "floors_up", "floors_down", "floors_goal", "calories_goal", "calories_total",
                "calories_bmr", "calories_active", "calories_consumed", "hydration_goal", "hydration_intake",
                "sweat_loss", "stress_avg", "spo2_avg", "spo2_min", "rr_waking_avg", "rr_max", "rr_min",
@@ -73,11 +75,32 @@ BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
 # heart rate alert. Garmin does not document it; it was read from a watch's files.
+# Not configurable: it is what the watch writes.
 HR_HIGH_ALERT = 66
 
-# DEFAULT_LOOKBACK_DAYS bounds handle to the files a sync can have touched. A
-# monitoring file covers one day and the watch syncs at least daily.
+# DEFAULT_LOOKBACK_DAYS bounds handle to the files a sync can have touched, unless
+# config's lookback_days says otherwise. A monitoring file covers one day and the
+# watch syncs at least daily.
 DEFAULT_LOOKBACK_DAYS = 3
+
+# DEFAULT_BUSY_MS is how long a read of garmin.db waits for GarminDB to finish a
+# write before it gives up and asks to be retried, unless config's busy_timeout_ms
+# says otherwise.
+DEFAULT_BUSY_MS = 30_000
+
+
+class Settings(NamedTuple):
+    """This run's config, read and checked once, at the start of a command."""
+
+    lookback_days: float
+    busy_ms: int
+
+
+def settings(config: Dict[str, Any]) -> Settings:
+    return Settings(
+        lookback_days=cfg.number(config, "lookback_days", DEFAULT_LOOKBACK_DAYS, 0, 3650, low_open=True),
+        busy_ms=cfg.integer(config, "busy_timeout_ms", DEFAULT_BUSY_MS, 0, 600_000),
+    )
 
 
 def number(v: float) -> Any:
@@ -177,7 +200,8 @@ def decode(path: Path) -> Dict[str, List[Dict[str, Any]]]:
 # ACTIVITY_NAMES maps a FIT session's (sport, sub_sport) to the Definition's
 # activity name, Google Fit's vocabulary; (sport, None) stands for any sub-sport.
 # Cardio training has no Google Fit name. A pair not here is "unknown", and the
-# payload's fit_sport and fit_sub_sport keep what the watch wrote either way.
+# payload's fit_sport and fit_sub_sport keep what the watch wrote either way. Not
+# configurable: it is what the payload means, and a change supersedes every session.
 ACTIVITY_NAMES = {
     ("walking", None): "walking",
     ("running", "treadmill"): "running.treadmill",
@@ -295,23 +319,23 @@ def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
     return p
 
 
-def sleeps(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[str, Any]]:
+def sleeps(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> List[Dict[str, Any]]:
     """Every night garmin.db's sleep table holds, by day; with since, those from that
     day on. A day without a start is a day the watch saw no sleep: no episode."""
-    rows = query(config, 'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
+    rows = query(config, busy_ms, 'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
                          "avg_spo2, avg_rr, avg_stress, score, qualifier FROM sleep "
                          'WHERE start IS NOT NULL AND "end" IS NOT NULL AND day >= ? ORDER BY day', since)
     return [sleep_episode(r) for r in rows]
 
 
-def query(config: Dict[str, Any], sql: str, since: Optional[date]) -> List[sqlite3.Row]:
-    """sql's rows from garmin_db, opened read-only; its one parameter is the first
-    day wanted."""
+def query(config: Dict[str, Any], busy_ms: int, sql: str, since: Optional[date]) -> List[sqlite3.Row]:
+    """sql's rows from garmin_db, opened read-only, waiting up to busy_ms for a
+    write; its one parameter is the first day wanted."""
     path = Path(str(config["garmin_db"]))
     if not path.is_file():
         raise ductile.Failure(f"no garmin_db at {path}", retry=False)
     try:
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=busy_ms / 1000)
         conn.row_factory = sqlite3.Row
         try:
             return conn.execute(sql, ((since or date.min).isoformat(),)).fetchall()
@@ -339,26 +363,26 @@ def heart_figure(day: str, statistic: str, bpm: float) -> Dict[str, Any]:
     return p
 
 
-def heart_rates(config: Dict[str, Any], since: Optional[date] = None) -> List[Dict[str, Any]]:
+def heart_rates(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> List[Dict[str, Any]]:
     """Each day's resting heart rate (resting_hr) and its minimum and maximum
     (daily_summary), by day. A figure Garmin left empty is no facet."""
     figures = [heart_figure(r["day"], "resting", r["resting_heart_rate"])
-               for r in query(config, "SELECT day, resting_heart_rate FROM resting_hr "
+               for r in query(config, busy_ms, "SELECT day, resting_heart_rate FROM resting_hr "
                                       "WHERE resting_heart_rate IS NOT NULL AND day >= ?", since)]
-    for r in query(config, "SELECT day, hr_min, hr_max FROM daily_summary WHERE day >= ?", since):
+    for r in query(config, busy_ms, "SELECT day, hr_min, hr_max FROM daily_summary WHERE day >= ?", since):
         figures += [heart_figure(r["day"], stat, r[col]) for stat, col in (("minimum", "hr_min"), ("maximum", "hr_max"))
                     if r[col] is not None]
     order = {"resting": 0, "minimum": 1, "maximum": 2}
     return sorted(figures, key=lambda f: (f["id"], order[f["statistic"]]))
 
 
-def days(config: Dict[str, Any], since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Each day of daily_summary as a health.step-count and a garmin.day. A day
     holding only goals and zero times is a day the watch recorded nothing: neither."""
     cols = ", ".join(("day", "steps", "distance") + DAY_COLUMNS + tuple(DAY_MINUTES))
     steps: List[Dict[str, Any]] = []
     records: List[Dict[str, Any]] = []
-    for r in query(config, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since):
+    for r in query(config, busy_ms, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since):
         if r["steps"] is not None:
             steps.append({"id": f"steps:{r['day']}", "step_count": {"value": int(r["steps"]), "unit": "steps"},
                           "effective_time_frame": day_frame(r["day"])})
@@ -399,20 +423,21 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
     return events
 
 
-def shape(config: Dict[str, Any], monitoring: List[Path], activities: List[Path],
+def shape(config: Dict[str, Any], busy_ms: int, monitoring: List[Path], activities: List[Path],
           since: Optional[date]) -> Tuple[Dict[str, List[Dict[str, Any]]], List[str]]:
     """Every type's payloads from the given FIT files and garmin.db from since on,
     and a log line per FIT file that would not decode."""
     found, alert_logs = alerts(monitoring)
     held, session_logs = sessions(activities)
-    steps, records = days(config, since)
-    return ({ALERT_TYPE: found, SLEEP_TYPE: sleeps(config, since), HEART_TYPE: heart_rates(config, since),
+    steps, records = days(config, busy_ms, since)
+    return ({ALERT_TYPE: found, SLEEP_TYPE: sleeps(config, busy_ms, since),
+             HEART_TYPE: heart_rates(config, busy_ms, since),
              STEPS_TYPE: steps, DAY_TYPE: records, SESSION_TYPE: held}, alert_logs + session_logs)
 
 
-def run_over(config: Dict[str, Any], monitoring: List[Path], activities: List[Path], since: Optional[date],
-             snapshot: bool) -> Dict[str, Any]:
-    by_type, logs = shape(config, monitoring, activities, since)
+def run_over(config: Dict[str, Any], s: Settings, monitoring: List[Path], activities: List[Path],
+             since: Optional[date], snapshot: bool) -> Dict[str, Any]:
+    by_type, logs = shape(config, s.busy_ms, monitoring, activities, since)
     # A file that would not decode leaves its alerts or sessions out, so the run is not everything.
     events = batch_events(load(HERE), by_type, str(config["person_id"]), snapshot and not logs)
     n = {t: len(ps) for t, ps in by_type.items()}
@@ -424,25 +449,29 @@ def run_over(config: Dict[str, Any], monitoring: List[Path], activities: List[Pa
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    days = float(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
-    since = time.time() - days * 86400
-    return run_over(config, fit_files(config, "fit_dir", since), fit_files(config, "activities_dir", since),
+    s = settings(config)
+    since = time.time() - s.lookback_days * 86400
+    # garmin.db is read from the day before the cutoff's UTC day, so the local day
+    # holding the cutoff is read whole in any zone.
+    return run_over(config, s, fit_files(config, "fit_dir", since), fit_files(config, "activities_dir", since),
                     datetime.fromtimestamp(since, timezone.utc).date() - timedelta(days=1), snapshot=False)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    s = settings(config)
     # Every FIT file and every night GarminDB holds is everything, so poll's run is
     # a snapshot, unless a file would not decode.
-    return run_over(config, fit_files(config, "fit_dir"), fit_files(config, "activities_dir"), None, snapshot=True)
+    return run_over(config, s, fit_files(config, "fit_dir"), fit_files(config, "activities_dir"), None, snapshot=True)
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    s = settings(config)
     definitions = load(HERE)
     monitoring, activities = fit_files(config, "fit_dir"), fit_files(config, "activities_dir")
     files = monitoring + activities
-    shaped, logs = shape(config, monitoring, activities, None)
+    shaped, logs = shape(config, s.busy_ms, monitoring, activities, None)
     check(definitions, [envelope(definitions[t], p) for t, ps in shaped.items() for p in ps])
     if logs:
         return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)

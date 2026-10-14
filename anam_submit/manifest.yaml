@@ -67,4 +67,4 @@ commands:
       status: string
 config_keys:
   required: [anam_url, token_secret]
-  optional: [timeout]
+  optional: [timeout, max_response_bytes, absent_ids_shown]

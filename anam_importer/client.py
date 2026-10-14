@@ -17,12 +17,27 @@ import urllib.parse
 from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 
-# MAX_RESPONSE bounds what one answer may hold. The largest Anam sends an importer is
-# a snapshot report of 1,000 absent ids, well under a megabyte.
-MAX_RESPONSE = 8 << 20
+# DEFAULT_TIMEOUT is the total time one call may take, connect to last byte, unless
+# the caller gives another (anam_submit's timeout key).
+DEFAULT_TIMEOUT = 30.0
 
-# OUTCOMES are what the gate may say became of an envelope.
+# DEFAULT_MAX_RESPONSE bounds what one answer may hold, unless the caller gives
+# another (anam_submit's max_response_bytes key). The largest Anam sends an importer
+# is a snapshot report of 1,000 absent ids, well under a megabyte.
+DEFAULT_MAX_RESPONSE = 8 << 20
+
+# READ_CHUNK is how much of an answer one read asks for. Not configurable: it sets no
+# limit, since the deadline and max_response bound the read whatever it is.
+READ_CHUNK = 65536
+
+# OUTCOMES are what the gate may say became of an envelope. Not configurable: they
+# are Anam's words (docs/IMPORTERS.md §8).
 OUTCOMES = {"admitted", "superseded", "no-op", "tombstoned"}
+
+
+# MAX_EXT is the longest extension Anam's library takes (anam card 150). Not
+# configurable: Anam refuses a longer one, so both sides must agree.
+MAX_EXT = 16
 
 
 class AnamError(Exception):
@@ -45,7 +60,8 @@ class Refused(AnamError):
 class Client:
     """Calls one Anam daemon under one importer's token."""
 
-    def __init__(self, url: str, token: str, timeout: float = 30.0):
+    def __init__(self, url: str, token: str, timeout: float = DEFAULT_TIMEOUT,
+                 max_response: int = DEFAULT_MAX_RESPONSE):
         parts = urllib.parse.urlsplit(url)
         if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ValueError(f"anam url {url!r}: want http:// or https:// and a host")
@@ -55,11 +71,14 @@ class Client:
             raise ValueError("an importer's token is required")
         if timeout <= 0:
             raise ValueError(f"timeout {timeout}: want more than 0")
+        if max_response < 1:
+            raise ValueError(f"max_response {max_response}: want at least 1")
         self.url = url.rstrip("/")
         self._scheme, self._host, self._port = parts.scheme, parts.hostname, parts.port
         self._base = parts.path.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self.max_response = max_response
 
     def _call(self, method: str, path: str, body: Optional[bytes] = None) -> Tuple[int, Any]:
         """One request to the configured origin, within self.timeout in all: connect,
@@ -77,6 +96,8 @@ class Client:
                 self._host, self._port, timeout=remaining(), context=ssl.create_default_context())
         else:
             conn = http.client.HTTPConnection(self._host, self._port, timeout=remaining())
+        # Anam-Timeout tells the daemon the caller's deadline, in the form it reads
+        # (docs/IMPORTERS.md §8): whole milliseconds, at least 1.
         headers = {"Authorization": "Bearer " + self.token,
                    "Anam-Timeout": f"{max(1, int(self.timeout * 1000))}ms"}
         if body is not None:
@@ -94,14 +115,14 @@ class Client:
             size = 0
             while not resp.isclosed():  # it closes itself once Content-Length is read
                 sock.settimeout(remaining())
-                chunk = resp.read1(65536)
+                chunk = resp.read1(READ_CHUNK)
                 if not chunk:
                     if resp.length:  # the connection closed short of Content-Length
                         raise http.client.IncompleteRead(b"".join(chunks), resp.length)
                     break
                 size += len(chunk)
-                if size > MAX_RESPONSE:
-                    raise AnamError(f"{method} {path}: answer larger than {MAX_RESPONSE} bytes", retry=True)
+                if size > self.max_response:
+                    raise AnamError(f"{method} {path}: answer larger than {self.max_response} bytes", retry=True)
                 chunks.append(chunk)
             return resp.status, _decode(b"".join(chunks))
         except AnamError:
@@ -161,9 +182,9 @@ class Client:
         names the stored file by its sha256 and answers with it; 201 stored and 200
         already held both mean the library holds these bytes. The name only lends the
         stored file its extension, so a person browsing the library can open it; an
-        extension Anam would refuse (not letters and digits, or over 16) is left off."""
+        extension Anam would refuse (not letters and digits, or over MAX_EXT) is left off."""
         ext = PurePosixPath(name).suffix.lstrip(".")
-        if not (ext.isascii() and ext.isalnum() and len(ext) <= 16):
+        if not (ext.isascii() and ext.isalnum() and len(ext) <= MAX_EXT):
             ext = ""
         target = "/v1/documents?" + urllib.parse.urlencode({"ext": ext})
         status, body = self._call("POST", target, data)
@@ -206,6 +227,13 @@ def admission(body: Any, sent: int) -> Dict[str, Any]:
     return a
 
 
+# ERROR_EXCERPT and MALFORMED_EXCERPT bound how much of an unexpected body an error
+# message quotes, so a large or hostile answer cannot flood the gateway's log. Not
+# configurable: they shape a message, not what the importer does.
+ERROR_EXCERPT = 500
+MALFORMED_EXCERPT = 200
+
+
 class _NotJSON(str):
     """An answer body that is not JSON, kept as text for the error."""
 
@@ -214,7 +242,7 @@ def _decode(raw: bytes) -> Any:
     try:
         return json.loads(raw) if raw else None
     except (json.JSONDecodeError, UnicodeDecodeError):
-        return _NotJSON(raw.decode("utf-8", "replace")[:500])
+        return _NotJSON(raw.decode("utf-8", "replace")[:ERROR_EXCERPT])
 
 
 def _object(what: str, body: Any) -> Dict[str, Any]:
@@ -226,12 +254,13 @@ def _object(what: str, body: Any) -> Dict[str, Any]:
 def _malformed(what: str, body: Any) -> AnamError:
     # A 200 that does not say what it should is a proxy, a wrong endpoint or a
     # damaged answer: not evidence of anything, and a later try may reach Anam.
-    return AnamError(f"{what}: 200 but not Anam's answer: {str(body)[:200]}", retry=True)
+    return AnamError(f"{what}: 200 but not Anam's answer: {str(body)[:MALFORMED_EXCERPT]}", retry=True)
 
 
 def _error(what: str, status: int, body: Any) -> AnamError:
     msg = body.get("error") if isinstance(body, dict) else None
     # 503 is a write holding the ledger, 504 a deadline, 5xx the daemon: all pass.
-    # 4xx is this importer or its data, and repeats until something changes.
+    # 4xx is this importer or its data, and repeats until something changes. Not
+    # configurable: it is what each status means (docs/IMPORTERS.md §8).
     retry = status >= 500 or status == 429
     return AnamError(f"{what}: {status}: {msg or body}", retry=retry, status=status)

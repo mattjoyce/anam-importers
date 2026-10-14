@@ -174,6 +174,14 @@ class OwnTracksTest(unittest.TestCase):
         self.assertEqual(parts[0]["types"], ["location.track"])
         self.assertEqual(len({p["id"] for p in parts}), 1)
 
+    def test_an_hour_over_max_payload_bytes_is_skipped_and_breaks_the_snapshot(self):
+        self.spool.add(body(HOUR + 60))
+        self.spool.add(body(HOUR + 3600 + 60))
+        self.config["max_payload_bytes"] = 100
+        r = self.run_cmd("poll")
+        self.assertEqual(self.envelopes(r), [])
+        self.assertEqual(sum("over 100" in line["message"] for line in r["logs"]), 2, r["logs"])
+
     def test_an_empty_spool_sends_nothing(self):
         r = self.run_cmd("poll")
         self.assertEqual(r["status"], "ok", r)

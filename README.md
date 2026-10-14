@@ -40,6 +40,7 @@ owntracks/            anam_owntracks: a phone's OwnTracks positions as location.
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
+docs/defaults-and-invariants.md   every hard-coded value: a config key's default, or a constant and why
 ```
 
 ## Requirements
@@ -71,6 +72,10 @@ docs/explainer.html   how the pieces fit, for a reader new to it
 4. Offer a resend-everything command. Anam makes it idempotent: an unchanged row is a no-op.
 5. Raise `anam_importer.ductile.Failure(message, retry=...)` when the source fails, so the
    gateway knows whether trying again can help.
+6. A limit, timeout, window or pattern is a config key whose default is the value you would
+   have hard-coded, read and range-checked by `anam_importer.config` at the start of each
+   command. A value the data or Anam depends on stays a constant, commented why
+   (`docs/defaults-and-invariants.md`, anam card 151).
 
 ## Running the tests
 
@@ -104,8 +109,8 @@ source that the run did not carry (`docs/IMPORTERS.md` §8.6 in the anam repo). 
 retracted on its own: the operator runs `anam retract <source>`.
 
 When the part that completes a snapshot finds facets absent, `anam_submit` raises
-`anam.snapshot_absent` with the counts and up to 20 facet ids, keyed on the snapshot so a resent
-part does not alert twice. Route it to whatever tells the operator:
+`anam.snapshot_absent` with the counts and up to 20 facet ids (`absent_ids_shown`, below), keyed on
+the snapshot so a resent part does not alert twice. Route it to whatever tells the operator:
 
 ```yaml
 pipelines:
@@ -170,6 +175,17 @@ Not deployed. What it takes, in order:
          anam_url: http://<anam host>:8787
          token_secret: anam_importer_token_withings
    ```
+
+   Optional keys, each with the default it ships with:
+
+   | Key | Plugin | Default | Why |
+   |---|---|---|---|
+   | `busy_timeout_ms` | `anam_withings` | 5000 | how long a read waits for the withings plugin's write before it asks to be retried |
+   | `timeout` | `anam_submit` | 30 | seconds one call to Anam may take, connect to last byte; more than 0, at most 3600 |
+   | `max_response_bytes` | `anam_submit` | 8388608 (8 MiB) | the most one answer from Anam may hold; the largest it sends is a snapshot report of 1,000 ids, under 1 MiB |
+   | `absent_ids_shown` | `anam_submit` | 20 | how many absent facet ids `anam.snapshot_absent` carries, 0 to 1000; `anam retract` lists them all |
+
+   A value of the wrong kind or out of range fails the command at start, naming the key.
 
 3. **Pipelines.**
 
@@ -246,6 +262,9 @@ Not deployed. The same steps as Withings, with these differences:
    ```
 
 3. **Pipelines.** `bp.export` to `anam_bp_csv`, and `anam_bp_csv.batch` to `anam_submit_bp_csv`.
+
+`pattern` (default `BloodPressure_*`, the app's export names) is the glob `poll` and `handle` find
+exports under `export_dir` by; set it if your exports are named otherwise.
 
 `poll` resends every export under `export_dir`, so a rebuild reruns them all. Keep every export
 there; an overlapping later export admits only its new readings. The importer reads the file and
@@ -372,7 +391,9 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 | `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `lab.result`, `lab.panel` |
 | `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
 
-`--zone` is the IANA zone the export's wall clock reads in. The scripts moved from Anam's
+`--zone` is the IANA zone the export's wall clock reads in. `strong_csv.py --max-session-sec`
+(default 10800, 3 hours, the person's rule of 2026-10-08) caps a workout's duration, since Strong
+keeps a workout open until the next one starts; another cap writes other records. The scripts moved from Anam's
 `scripts/` (anam card 58) and write the same records; only `extracted.method` changed.
 
 ## Wiring an importer into a gateway (Garmin)
@@ -428,6 +449,10 @@ plugins:
       garmin_db: <GarminDB's DBs/garmin.db>
       person_id: <Anam's person_id>
 ```
+
+Optional keys: `lookback_days` (default 3: a monitoring file covers a day and the watch syncs at
+least daily) and `busy_timeout_ms` (default 30000: how long a read of `garmin.db` waits for
+GarminDB's write before it asks to be retried). A bad value fails the command at start.
 
 A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
 fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
@@ -494,6 +519,11 @@ pipelines:
       - uses: anam_submit_concept2
 ```
 
+Optional keys, each with its default: `logbook_url` (`https://log.concept2.com`), `logbook_user`
+(`me`, the Logbook's name for the token's own user), `timeout` (30 seconds a call, connect to last
+byte), `lookback_days` (3, the files a fetch can have written) and `max_response_bytes` (8 MiB: a
+page of 250 results is under 1 MiB). A bad value fails every command at start, naming the key.
+
 Against a real logbook of 19 results, 5 synced by ErgData (up to 752 strokes, 72 KB a payload) and
 14 entered on the web, `fetch` took 10 s, every workout conformed, and all 19 were admitted to a
 scratch daemon with a resend all no-op.
@@ -519,6 +549,11 @@ several messages with the same `tst` (a manual publish and a ping, or a ping rep
 fix every 15 minutes while the phone is still); they are one point, with every trigger kept. A
 second message at the same `tst` with a different fix is dropped and counted. Messages that are
 not locations (status, transition, waypoint) and empty posts are skipped and counted.
+
+Optional keys: `lookback_days` (default 2) and `max_payload_bytes` (default 296960, 290 KiB:
+Anam's gate takes a payload of up to 300 KiB, less room for the envelope). An hour over
+`max_payload_bytes` is skipped and logged, and the run is then no snapshot; set it below your
+Anam's own payload limit if that is not 300 KiB. A bad value fails the command at start.
 
 No coordinates leave the payload. Logs and results carry counts, file names and line numbers,
 because the gateway's logs are shipped elsewhere.

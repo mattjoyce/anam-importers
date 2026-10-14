@@ -8,7 +8,8 @@ from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence
 from .definitions import Definition
 
 # MAX_BATCH is the most envelopes one submission may carry: the gate's batch, one
-# transaction.
+# transaction. Not configurable: Anam refuses a larger batch (its gate.MaxBatch), so
+# both sides must agree. If Anam makes its cap a key, this becomes a default.
 MAX_BATCH = 49
 
 

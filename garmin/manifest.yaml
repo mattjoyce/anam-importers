@@ -51,4 +51,4 @@ commands:
       status: string
 config_keys:
   required: [fit_dir, activities_dir, garmin_db, person_id]
-  optional: [lookback_days]
+  optional: [lookback_days, busy_timeout_ms]

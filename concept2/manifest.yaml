@@ -67,4 +67,4 @@ commands:
       status: string
 config_keys:
   required: [cache_dir, person_id, token_secret]
-  optional: [logbook_url, logbook_user, timeout, lookback_days]
+  optional: [logbook_url, logbook_user, timeout, lookback_days, max_response_bytes]

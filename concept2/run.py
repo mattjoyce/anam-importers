@@ -35,31 +35,65 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 SESSION_TYPE = "exercise.session"
 BATCH_EVENT = "anam_concept2.batch"
 FETCHED_EVENT = "anam_concept2.fetched"
 
+# The DEFAULT_ values are what a key left out of config means: logbook_url,
+# logbook_user, timeout (a call's total seconds), lookback_days and
+# max_response_bytes.
 DEFAULT_URL = "https://log.concept2.com"
+# DEFAULT_USER is the Logbook's name for the token's own user.
 DEFAULT_USER = "me"
 DEFAULT_TIMEOUT = 30.0
 # DEFAULT_LOOKBACK_DAYS bounds handle to the files a fetch can have written.
 DEFAULT_LOOKBACK_DAYS = 3
-# PAGE is the most results the Logbook lists per page.
+# DEFAULT_MAX_RESPONSE bounds one answer: a page of 250 results is under a
+# megabyte, a workout's strokes a few tens of kilobytes.
+DEFAULT_MAX_RESPONSE = 8 << 20
+
+# PAGE is the most results the Logbook lists per page. Not configurable: it is the
+# API's own maximum, and a smaller page is only more calls.
 PAGE = 250
-# ACCEPT pins the Logbook API's version, as its documentation asks.
+# ACCEPT pins the Logbook API's version, as its documentation asks. Not
+# configurable: another version is another body, which session() does not read.
 ACCEPT = "application/vnd.c2logbook.v1+json"
-# MAX_RESPONSE bounds one answer: a page of 250 results is under a megabyte, a
-# workout's strokes a few tens of kilobytes.
-MAX_RESPONSE = 8 << 20
+# READ_CHUNK is how much of an answer one read asks for. Not configurable: it sets
+# no limit, since the deadline and max_response bound the read whatever it is.
+READ_CHUNK = 65536
+# ERROR_EXCERPT bounds how much of a refusal's body an error quotes. Not
+# configurable: it shapes a message, not what the importer does.
+ERROR_EXCERPT = 200
+
+
+class Settings(NamedTuple):
+    """This run's config, read and checked once, at the start of a command."""
+
+    logbook_url: str
+    logbook_user: str
+    timeout: float
+    lookback_days: float
+    max_response: int
+
+
+def settings(config: Dict[str, Any]) -> Settings:
+    return Settings(
+        logbook_url=cfg.url(config, "logbook_url", DEFAULT_URL),
+        logbook_user=cfg.text(config, "logbook_user", DEFAULT_USER),
+        timeout=cfg.number(config, "timeout", DEFAULT_TIMEOUT, 0, 3600, low_open=True),
+        lookback_days=cfg.number(config, "lookback_days", DEFAULT_LOOKBACK_DAYS, 0, 3650, low_open=True),
+        max_response=cfg.integer(config, "max_response_bytes", DEFAULT_MAX_RESPONSE, 1, 1 << 30),
+    )
 
 # ZONE is where a result entered on the web, which names a day and no zone, is
 # placed. The Definition says so, in its fact_time; it is read from there so it is
@@ -68,7 +102,7 @@ ZONE = ZoneInfo(json.loads((HERE / "definitions" / f"{SESSION_TYPE}.json").read_
 
 # ERG_NAMES maps the Logbook's result type to the Definition's activity name,
 # Google Fit's vocabulary. An erg not here is "other"; erg_type keeps the Logbook's
-# word either way.
+# word either way. Not configurable: it is what the payload means.
 ERG_NAMES = {"rower": "rowing.machine", "bike": "biking.stationary", "water": "rowing"}
 
 # HEART_RATES are the Logbook's heart_rate figures a payload keeps, by the
@@ -201,7 +235,7 @@ class Logbook:
     deadline and fails fast; a redirect is an error, so the token never reaches
     another host."""
 
-    def __init__(self, url: str, token: str, timeout: float):
+    def __init__(self, url: str, token: str, timeout: float, max_response: int):
         parts = urllib.parse.urlsplit(url)
         if parts.scheme not in ("http", "https") or not parts.hostname:
             raise ductile.Failure(f"logbook_url {url!r}: want http:// or https:// and a host", retry=False)
@@ -213,6 +247,7 @@ class Logbook:
         self._base = parts.path.rstrip("/")
         self.token = token
         self.timeout = timeout
+        self.max_response = max_response
 
     def get(self, path: str) -> Any:
         """GET path, its JSON body."""
@@ -242,14 +277,14 @@ class Logbook:
             size = 0
             while not resp.isclosed():
                 sock.settimeout(remaining())
-                chunk = resp.read1(65536)
+                chunk = resp.read1(READ_CHUNK)
                 if not chunk:
                     if resp.length:
                         raise http.client.IncompleteRead(b"".join(chunks), resp.length)
                     break
                 size += len(chunk)
-                if size > MAX_RESPONSE:
-                    raise ductile.Failure(f"GET {path}: answer larger than {MAX_RESPONSE} bytes", retry=True)
+                if size > self.max_response:
+                    raise ductile.Failure(f"GET {path}: answer larger than {self.max_response} bytes", retry=True)
                 chunks.append(chunk)
             raw = b"".join(chunks)
         except ductile.Failure:
@@ -262,7 +297,7 @@ class Logbook:
             # 401 and 403 are the token, 404 the user or result: none changes on its own.
             # 429 and 5xx are the Logbook, and pass.
             retry = resp.status >= 500 or resp.status == 429
-            raise ductile.Failure(f"GET {path}: {resp.status}: {raw[:200].decode('utf-8', 'replace')}", retry=retry)
+            raise ductile.Failure(f"GET {path}: {resp.status}: {raw[:ERROR_EXCERPT].decode('utf-8', 'replace')}", retry=retry)
         try:
             return json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
@@ -329,13 +364,14 @@ def write_cached(path: Path, doc: Dict[str, Any]) -> None:
 
 def fetch(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    s = settings(config)
     root = cache_dir(config)
     name = str(config.get("token_secret", ""))
     token = (request.get("secrets") or {}).get(name, "")
     if not token:
         raise ductile.Failure(f"no secret named {name!r} was handed to fetch", retry=False)
-    user = str(config.get("logbook_user", DEFAULT_USER))
-    api = Logbook(str(config.get("logbook_url", DEFAULT_URL)), str(token), float(config.get("timeout", DEFAULT_TIMEOUT)))
+    user = s.logbook_user
+    api = Logbook(s.logbook_url, str(token), s.timeout, s.max_response)
     listed = api.results(user)
     fetched: List[int] = []
     for r in listed:
@@ -407,12 +443,13 @@ def run_over(config: Dict[str, Any], files: List[Path], snapshot: bool) -> Dict[
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    days = float(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
-    return run_over(config, cached_files(cache_dir(config), time.time() - days * 86400), snapshot=False)
+    s = settings(config)
+    return run_over(config, cached_files(cache_dir(config), time.time() - s.lookback_days * 86400), snapshot=False)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    settings(config)  # every command checks the whole config, so a bad value fails at start
     # The cache follows the Logbook's listing whole, so poll's run is a snapshot,
     # unless a file would not read.
     return run_over(config, cached_files(cache_dir(config)), snapshot=True)
@@ -420,6 +457,7 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    settings(config)  # every command checks the whole config, so a bad value fails at start
     files = cached_files(cache_dir(config))
     payloads, logs = shape(files)
     definition = load(HERE)[SESSION_TYPE]

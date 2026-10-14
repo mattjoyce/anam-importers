@@ -34,25 +34,43 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, NamedTuple, Optional, Tuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TRACK_TYPE = "location.track"
 BATCH_EVENT = "anam_owntracks.batch"
 
-# DEFAULT_LOOKBACK_DAYS bounds handle to the hours a pull can have touched. The pull
-# runs every 15 minutes; a phone offline for a day sends its queue when it is back,
-# and those messages are received now, so they count as new however old their fixes.
+# DEFAULT_LOOKBACK_DAYS bounds handle to the hours a pull can have touched, unless
+# config's lookback_days says otherwise. The pull runs every 15 minutes; a phone
+# offline for a day sends its queue when it is back, and those messages are received
+# now, so they count as new however old their fixes.
 DEFAULT_LOOKBACK_DAYS = 2
 
-# MAX_PAYLOAD is the gate's bound on one payload, less room for the envelope. An hour
-# over it would be refused whole; at OwnTracks' densest it is far under.
-MAX_PAYLOAD = 290 * 1024
+# DEFAULT_MAX_PAYLOAD is Anam's bound on one payload (the daemon's max_payload_bytes,
+# 300 KiB by default), less room for the envelope, unless config's max_payload_bytes
+# says otherwise. An hour over it would be refused whole; at OwnTracks' densest it is
+# far under. A daemon set to another bound takes another value here.
+DEFAULT_MAX_PAYLOAD = 290 * 1024
+
+
+class Settings(NamedTuple):
+    """This run's config, read and checked once, at the start of a command."""
+
+    lookback_days: float
+    max_payload: int
+
+
+def settings(config: Dict[str, Any]) -> Settings:
+    return Settings(
+        lookback_days=cfg.number(config, "lookback_days", DEFAULT_LOOKBACK_DAYS, 0, 3650, low_open=True),
+        max_payload=cfg.integer(config, "max_payload_bytes", DEFAULT_MAX_PAYLOAD, 1, 64 << 20),
+    )
 
 # FIELDS maps the body's keys a point keeps to the Definition's names. The phone's
 # own names are kept where they are plain; the two upper-case WiFi keys are lowered,
@@ -69,7 +87,8 @@ STRINGS = {"conn", "SSID", "BSSID", "source", "tid"}
 TRANSPORT = {"_type", "_id", "topic", "qos", "retained", "created_at", "tst", "t"}
 
 # FIX_KEYS are what make two messages with one tst the same fix. A second message
-# that differs in them is counted and dropped; the first received wins.
+# that differs in them is counted and dropped; the first received wins. Not
+# configurable: it decides which points an hour's facet holds.
 FIX_KEYS = ("lat", "lon", "acc")
 
 
@@ -87,6 +106,7 @@ def instant(tst: int) -> str:
 
 
 def hour_of(tst: int) -> str:
+    """The UTC hour tst falls in. Not configurable: an hour is a facet's identity."""
     return datetime.fromtimestamp(tst - tst % 3600, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
@@ -261,26 +281,26 @@ def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) ->
     return events
 
 
-def sized(hours: List[Hour], logs: List[str]) -> List[Dict[str, Any]]:
-    """The hours' payloads, oldest first, less any too large for the gate."""
+def sized(hours: List[Hour], max_payload: int, logs: List[str]) -> List[Dict[str, Any]]:
+    """The hours' payloads, oldest first, less any over max_payload bytes."""
     out = []
     for h in sorted(hours, key=lambda h: (h.hour, h.device)):
         p = h.payload()
         size = len(json.dumps(p, separators=(",", ":")))
-        if size > MAX_PAYLOAD:
-            logs.append(f"skipped {h.device} {h.hour}: {len(p['points'])} points, {size} bytes, over {MAX_PAYLOAD}")
+        if size > max_payload:
+            logs.append(f"skipped {h.device} {h.hour}: {len(p['points'])} points, {size} bytes, over {max_payload}")
             continue
         out.append(p)
     return out
 
 
-def run_over(config: Dict[str, Any], since: Optional[float]) -> Dict[str, Any]:
+def run_over(config: Dict[str, Any], s: Settings, since: Optional[float]) -> Dict[str, Any]:
     read = read_spool(spool_dir(config))
     hours = list(read.hours.values())
     if since is not None:
         hours = [h for h in hours if h.received >= since]
     logs = read.logs()
-    payloads = sized(hours, logs)
+    payloads = sized(hours, s.max_payload, logs)
     # A line or an hour that could not be used leaves points out, so the run is not
     # everything. Messages that are not locations, unknown fields and duplicate
     # fixes are the source as it is, and leave nothing out.
@@ -293,22 +313,23 @@ def run_over(config: Dict[str, Any], since: Optional[float]) -> Dict[str, Any]:
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    days = float(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS))
-    return run_over(config, time.time() - days * 86400)
+    s = settings(config)
+    return run_over(config, s, time.time() - s.lookback_days * 86400)
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     # The spool keeps every message ever pulled, so poll's run is a snapshot, unless
     # a line would not read.
-    return run_over(config, None)
+    return run_over(config, settings(config), None)
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
+    s = settings(config)
     read = read_spool(spool_dir(config))
     logs = read.logs()
-    payloads = sized(list(read.hours.values()), logs)
+    payloads = sized(list(read.hours.values()), s.max_payload, logs)
     definition = load(HERE)[TRACK_TYPE]
     check({TRACK_TYPE: definition}, [envelope(definition, p) for p in payloads])
     if read.bad or len(payloads) != len(read.hours):

@@ -56,6 +56,9 @@ records = _records()
 
 BATCH_EVENT = "anam_documents.batch"
 TYPE = "doc.reference"
+# SIDECAR and MEASURED are not configurable: the sidecar's name is the worker's, which
+# every sidecar already written follows, and MEASURED is what the Definition says the
+# file, not the sidecar, decides.
 SIDECAR = ".meta.yaml"
 MEASURED = ("path", "sha256", "bytes", "media_type")
 
@@ -109,7 +112,8 @@ def media_type(path: Path) -> str:
     not a verdict on the bytes. The same table Anam's worker reads, for the common
     kinds; anything else is application/octet-stream."""
     # The kinds the live library holds, spelled as Anam's container named them, so a
-    # cut-over resends every reference as a no-op (2026-10-14).
+    # cut-over resends every reference as a no-op (2026-10-14). Not configurable:
+    # another spelling supersedes every reference that carries it.
     known = {".pdf": "application/pdf", ".md": "text/markdown", ".txt": "text/plain",
              ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
              ".webp": "image/webp", ".svg": "image/svg+xml", ".html": "text/html", ".htm": "text/html",
