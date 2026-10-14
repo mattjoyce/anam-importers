@@ -7,6 +7,13 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `Client.store_document` posts `POST /v1/documents?ext=` with the name's extension, not a path
+  (anam card 150). Anam names the stored file by its sha256, so there is no 409: a document
+  rescanned under the same name supersedes its reference, and the first bytes stay. Needs an Anam
+  with card 150.
+
 ### Added
 
 - `ANAM_SEED_BIN` for the tests against a real daemon (anam card 119). The takeover tests seed
