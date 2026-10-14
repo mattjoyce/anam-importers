@@ -172,16 +172,19 @@ class Transport(unittest.TestCase):
         self.assertEqual(seen[0]["Authorization"], "Bearer " + TOKEN)
 
     def test_an_oversized_answer_is_refused(self):
-        from anam_importer import client as mod
+        with server(lambda h: reply(h, b'{"definitions":[' + b" " * 200 + b"]}")) as (url, _):
+            with self.assertRaises(AnamError) as ctx:
+                Client(url, TOKEN, timeout=2, max_response=64).definitions()
+        self.assertIn("larger than 64", str(ctx.exception))
+        self.assertTrue(ctx.exception.retry)
 
-        old, mod.MAX_RESPONSE = mod.MAX_RESPONSE, 64
-        try:
-            with server(lambda h: reply(h, b'{"definitions":[' + b" " * 200 + b"]}")) as (url, _):
-                with self.assertRaises(AnamError) as ctx:
-                    Client(url, TOKEN, timeout=2).definitions()
-            self.assertIn("larger than 64", str(ctx.exception))
-        finally:
-            mod.MAX_RESPONSE = old
+    def test_max_response_bytes_in_config_reaches_the_client(self):
+        with server(lambda h: reply(h, b'{"definitions":[' + b" " * 200 + b"]}")) as (url, _):
+            request = submit_request(url)
+            request["config"]["max_response_bytes"] = 64
+            r = run_plugin(SUBMIT, request)
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("larger than 64", r["error"])
 
     def test_a_chunked_answer_is_read_whole_and_a_cut_one_is_retryable(self):
         body = json.dumps({"definitions": [{"type": "a.b", "origin": "bundled", "current": 1, "versions": [1]}]})

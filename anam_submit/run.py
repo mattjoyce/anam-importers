@@ -20,14 +20,42 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from anam_importer import Client, Refused, ensure_published, parse  # noqa: E402
+from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
+from anam_importer.client import DEFAULT_MAX_RESPONSE, DEFAULT_TIMEOUT  # noqa: E402
 
-def client_of(request: Dict[str, Any]) -> Client:
+# ABSENT_IDS_SHOWN is how many absent facet ids the alert carries unless config's
+# absent_ids_shown says otherwise. The report holds up to MAX_ABSENT_IDS, and anam
+# retract lists them all.
+ABSENT_IDS_SHOWN = 20
+
+# MAX_ABSENT_IDS is the most absent ids Anam's snapshot report holds (its
+# api.AbsentIDsMax), so the most an alert can carry. Not configurable: it is Anam's.
+MAX_ABSENT_IDS = 1000
+
+
+class Settings(NamedTuple):
+    """This instance's config, read and checked once, at the start of a command."""
+
+    timeout: float
+    max_response: int
+    absent_ids_shown: int
+
+
+def settings(config: Dict[str, Any]) -> Settings:
+    return Settings(
+        timeout=cfg.number(config, "timeout", DEFAULT_TIMEOUT, 0, 3600, low_open=True),
+        max_response=cfg.integer(config, "max_response_bytes", DEFAULT_MAX_RESPONSE, 1, 1 << 30),
+        absent_ids_shown=cfg.integer(config, "absent_ids_shown", ABSENT_IDS_SHOWN, 0, MAX_ABSENT_IDS),
+    )
+
+
+def client_of(request: Dict[str, Any], s: Settings) -> Client:
     """A client under the token in the secret config names. Vault secret names are
     global, so each instance names its importer's own: token_secret."""
     config = request.get("config") or {}
@@ -37,15 +65,16 @@ def client_of(request: Dict[str, Any]) -> Client:
     token = (request.get("secrets") or {}).get(name, "")
     if not token:
         raise ValueError(f"no {name} secret granted to this instance")
-    return Client(str(config["anam_url"]), token, float(config.get("timeout", 30)))
+    return Client(str(config["anam_url"]), token, s.timeout, s.max_response)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
+    s = settings(request.get("config") or {})
     batch = ductile.payload_of(request)
     envelopes: List[Dict[str, Any]] = batch.get("envelopes") or []
     if not envelopes:
         return ductile.error("the event carries no envelopes", retry=False)
-    client = client_of(request)
+    client = client_of(request, s)
     for doc in batch.get("documents") or []:
         try:
             data = Path(str(doc["file"])).read_bytes()
@@ -75,7 +104,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
         report = client.snapshot(str(snapshot["id"]))
         summary += f"; snapshot complete, {report.get('absent', 0)} of {report.get('live', 0)} live absent"
         if report.get("absent"):
-            events.append(absent_event(snapshot, report))
+            events.append(absent_event(snapshot, report, s.absent_ids_shown))
     return ductile.ok(f"{summary} at W {admission.get('w')}", events=events)
 
 
@@ -91,24 +120,19 @@ def stamp_current(client: Client, envelopes: List[Dict[str, Any]]) -> None:
             env["definition_version"] = current[env["type"]]
 
 
-# ABSENT_IDS_SHOWN is how many absent facet ids the alert carries; the report holds
-# up to 1,000, and anam retract lists them all.
-ABSENT_IDS_SHOWN = 20
-
-
-def absent_event(snapshot: Dict[str, Any], report: Dict[str, Any]) -> Dict[str, Any]:
+def absent_event(snapshot: Dict[str, Any], report: Dict[str, Any], shown: int) -> Dict[str, Any]:
     """The alert that a complete resend did not carry facets Anam holds live. Nothing
     is retracted: the operator decides, with anam retract. Keyed on the snapshot, so
     a resent last part does not alert twice."""
     return ductile.event("anam.snapshot_absent", {
         "snapshot": snapshot["id"], "types": snapshot.get("types", []),
         "absent": report.get("absent"), "live": report.get("live"), "carried": report.get("carried"),
-        "absent_ids": (report.get("absent_ids") or [])[:ABSENT_IDS_SHOWN],
+        "absent_ids": (report.get("absent_ids") or [])[:shown],
     }, dedupe_key=f"anam.snapshot_absent:{snapshot['id']}")
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
-    published = client_of(request).definitions()
+    published = client_of(request, settings(request.get("config") or {})).definitions()
     return ductile.ok(f"Anam publishes {len(published)} Definitions")
 
 
