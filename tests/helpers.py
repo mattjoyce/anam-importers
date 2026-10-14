@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unittest
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -69,13 +70,22 @@ class Daemon:
                     "ANAM_LISTEN": f"127.0.0.1:{port}", "ANAM_TOKEN_FILE": str(d / "token"),
                     "ANAM_IMPORTERS_FILE": str(d / "importers.yaml"), "ANAM_ZONE": "UTC"}
         binary = os.environ["ANAM_BIN"]
-        subprocess.run([binary, "init"], env=self.env, check=True, capture_output=True, timeout=30)
+        # The built-in workers' ingest, before the daemon owns the ledger: what an
+        # importer that takes over a worker must agree with. Anam dropped the workers
+        # (anam card 119), so ANAM_SEED_BIN may name a build from before, which seeds
+        # the ledger the ANAM_BIN daemon then serves: the cut-over, in one test.
+        seed = os.environ.get("ANAM_SEED_BIN") or binary
+        if imports and subprocess.run([seed, "ingest", "--help"], env=self.env, capture_output=True,
+                                      timeout=30).returncode != 0:
+            self.dir.cleanup()
+            raise unittest.SkipTest(f"{seed} has no built-in workers (anam card 119); "
+                                    "set ANAM_SEED_BIN to a build from before it")
+        subprocess.run([seed if imports else binary, "init"], env=self.env, check=True,
+                       capture_output=True, timeout=30)
         if imports:
-            # The built-in workers' ingest, before the daemon owns the ledger: what an
-            # importer that takes over a worker must agree with.
             (d / "imports.yaml").write_text("imports:\n" + "".join(
                 f"  - source: {src}\n    path: {path}\n" for src, path in imports))
-            subprocess.run([binary, "ingest", "--imports", str(d / "imports.yaml")], env=self.env, check=True,
+            subprocess.run([seed, "ingest", "--imports", str(d / "imports.yaml")], env=self.env, check=True,
                            capture_output=True, timeout=60)
         self.proc = subprocess.Popen([binary, "daemon"], env=self.env, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL)

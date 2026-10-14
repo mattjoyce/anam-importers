@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `ANAM_SEED_BIN` for the tests against a real daemon (anam card 119). The takeover tests seed
+  their ledger with the built-in workers' `anam ingest`, which Anam drops in card 119; with
+  `ANAM_SEED_BIN` naming a build from before it and `ANAM_BIN` one from after, the test runs the
+  cut-over itself. A seeding build with no `ingest` skips those tests and says why.
+
 - `anam_documents` (anam card 103), under source `documents`: Anam's built-in documents worker,
   moved out. A folder of files with `.meta.yaml` sidecars as `doc.reference`, with the same
   payload the worker wrote, so the cut-over is no-op. `anam_submit` hands each file's bytes to
