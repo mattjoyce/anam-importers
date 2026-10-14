@@ -336,11 +336,12 @@ today's, and may add `title` and `note`. A file without one stops the run and na
 to write. Dot-files and dot-directories are skipped.
 
 The bytes go to Anam, never into Anam's directory: each batch names its files (`documents`:
-`{path, file}`), and `anam_submit` posts each file's bytes to `POST /v1/documents?path=` before
-the envelopes, reading them from the file so no bytes ride in a ductile event. Anam answers 201 or
-200 for bytes it now holds and 409 for other bytes at a path it already holds: a stored document
-is a value, so a changed document takes a new file name. Anam refuses a `doc.reference` whose
-bytes its library does not hold.
+`{path, file}`), and `anam_submit` posts each file's bytes to `POST /v1/documents?ext=` before
+the envelopes, reading them from the file so no bytes ride in a ductile event. Anam names the
+stored file by its sha256 (anam card 150) and answers 201 or 200 for bytes it now holds; the path
+lends it only an extension. So a document rescanned under the same name is new bytes, and its
+`doc.reference` supersedes the old one, whose bytes Anam keeps. Anam refuses a `doc.reference`
+whose sha256 its library holds no bytes for.
 
 ```yaml
 plugins:

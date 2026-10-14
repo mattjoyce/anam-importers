@@ -14,6 +14,7 @@ import socket
 import ssl
 import time
 import urllib.parse
+from pathlib import PurePosixPath
 from typing import Any, Dict, List, Optional, Tuple
 
 # MAX_RESPONSE bounds what one answer may hold. The largest Anam sends an importer is
@@ -155,14 +156,19 @@ class Client:
             raise Refused(str(body.get("error", "batch refused")), list(body.get("refused", [])))
         raise _error("POST /v1/envelopes", status, body)
 
-    def store_document(self, path: str, data: bytes) -> Dict[str, Any]:
-        """Hand Anam one document's bytes for its library, at a library-relative path
-        (anam card 102). 201 stored and 200 already held both mean the library holds
-        these bytes there; 409 is other bytes at that path, which a retry will not mend."""
-        target = "/v1/documents?" + urllib.parse.urlencode({"path": path})
+    def store_document(self, name: str, data: bytes) -> Dict[str, Any]:
+        """Hand Anam one document's bytes for its library (anam cards 102, 150). Anam
+        names the stored file by its sha256 and answers with it; 201 stored and 200
+        already held both mean the library holds these bytes. The name only lends the
+        stored file its extension, so a person browsing the library can open it; an
+        extension Anam would refuse (not letters and digits, or over 16) is left off."""
+        ext = PurePosixPath(name).suffix.lstrip(".")
+        if not (ext.isascii() and ext.isalnum() and len(ext) <= 16):
+            ext = ""
+        target = "/v1/documents?" + urllib.parse.urlencode({"ext": ext})
         status, body = self._call("POST", target, data)
         if status not in (200, 201):
-            raise _error("POST /v1/documents " + path, status, body)
+            raise _error("POST /v1/documents " + name, status, body)
         return _object("POST /v1/documents", body)
 
     def snapshot(self, snapshot_id: str) -> Dict[str, Any]:

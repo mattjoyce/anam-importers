@@ -99,15 +99,22 @@ class AgainstAnamTest(unittest.TestCase):
             try:
                 shaped = run("poll", d)
                 self.assertEqual(self.submit(daemon, shaped["events"]), {"no-op": 2})
-                held = Path(daemon.dir.name) / "documents" / "scans" / "2024-03-01_letter.pdf"
-                self.assertEqual(held.read_bytes(), LETTER)
-                self.assertFalse((Path(daemon.dir.name) / "documents" / "scans" / "2024-03-01_letter.pdf.meta.yaml").exists())
+                held = Path(daemon.dir.name) / "documents" / (hashlib.sha256(LETTER).hexdigest() + ".pdf")
+                self.assertEqual(held.read_bytes(), LETTER)  # named by its sha256 (anam card 150)
+                self.assertFalse(list((Path(daemon.dir.name) / "documents").rglob("*.meta.yaml")))
                 # A second run hands the same bytes again: unchanged, and no-op.
                 self.assertEqual(self.submit(daemon, run("poll", d)["events"]), {"no-op": 2})
                 # A new document is admitted with its bytes.
                 (d / "2024-05-05_scan.png").write_bytes(b"\x89PNG synthetic")
                 (d / "2024-05-05_scan.png.meta.yaml").write_text("date: 2024-05-05\n")
                 self.assertEqual(self.submit(daemon, run("poll", d)["events"]), {"no-op": 2, "admitted": 1})
+                # A rescan under the same name supersedes, and the first scan's bytes stay.
+                rescan = LETTER + b", scanned again"
+                (d / "scans" / "2024-03-01_letter.pdf").write_bytes(rescan)
+                self.assertEqual(self.submit(daemon, run("poll", d)["events"]), {"no-op": 2, "superseded": 1})
+                self.assertEqual(held.read_bytes(), LETTER)
+                again = Path(daemon.dir.name) / "documents" / (hashlib.sha256(rescan).hexdigest() + ".pdf")
+                self.assertEqual(again.read_bytes(), rescan)
             finally:
                 daemon.close()
 

@@ -11,7 +11,8 @@ Commands:
 - handle : submit the triggering event's batch; when it is the part that completes a
            snapshot and Anam reports facets absent, raise anam.snapshot_absent. A batch
            may name documents ({path, file}): their bytes are handed to Anam's library
-           first (POST /v1/documents), read from file, so bytes never ride in an event
+           first (POST /v1/documents), read from file, so bytes never ride in an event.
+           Anam names each stored file by its sha256; the path lends it an extension
 - health : ask Anam for its Definitions under the token
 """
 
