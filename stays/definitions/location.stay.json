@@ -107,7 +107,8 @@
           },
           "address": {
             "type": "object",
-            "description": "The geocoder's address parts, as it returned them.",
+            "additionalProperties": {"type": "string"},
+            "description": "The geocoder's address parts, as it returned them: open-ended keys, each a string. strict mode needs the value schema set.",
             "examples": [{"city": "Dubai", "country": "United Arab Emirates", "country_code": "ae"}]
           },
           "geocoder": {

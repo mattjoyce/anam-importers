@@ -112,6 +112,33 @@ class CacheNamesACellOnce(unittest.TestCase):
             self.assertEqual(first["data"], second["data"])
 
 
+class DefinitionIsStrict(unittest.TestCase):
+    """Anam's strict mode refuses any object subschema that does not set additionalProperties
+    (false, or a value schema). The live daemon enforces this when it registers the Definition
+    on the first batch, so a miss means a deploy that wires up and then 422s. This catches it
+    here, without the daemon. (location.stay v1's place.address regressed exactly this way.)"""
+
+    def _objects_missing_additional_properties(self, node, path="schema"):
+        bad = []
+        if not isinstance(node, dict):
+            return bad
+        t = node.get("type")
+        is_object = t == "object" or (isinstance(t, list) and "object" in t)
+        if is_object and "additionalProperties" not in node:
+            bad.append(path)
+        for key in ("properties", "$defs", "definitions"):
+            for name, sub in (node.get(key) or {}).items():
+                bad += self._objects_missing_additional_properties(sub, f"{path}/{key}/{name}")
+        for key in ("items", "additionalProperties", "contains"):
+            if isinstance(node.get(key), dict):
+                bad += self._objects_missing_additional_properties(node[key], f"{path}/{key}")
+        return bad
+
+    def test_every_object_sets_additional_properties(self):
+        schema = json.loads((REPO / "stays" / "definitions" / "location.stay.json").read_text())["schema"]
+        self.assertEqual(self._objects_missing_additional_properties(schema), [])
+
+
 class Plugin(unittest.TestCase):
     """The whole plugin over a real spool, the geocoder pointed at a closed port so no
     call can be made: stays still emit, placeless, as when OSM is down."""
