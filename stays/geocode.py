@@ -121,7 +121,7 @@ def place_from(data: Dict[str, Any], geocoded_at: str, geocoder: str = "nominati
     if isinstance(osm_id, int) and not isinstance(osm_id, bool):
         place["osm_id"] = osm_id
     if isinstance(data.get("address"), dict) and data["address"]:
-        place["address"] = {k: v for k, v in data["address"].items() if isinstance(v, (str, int, float))}
+        place["address"] = {k: v for k, v in data["address"].items() if isinstance(v, str) and v}
     return place
 
 
