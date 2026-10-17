@@ -15,7 +15,10 @@ source ──▶ importer (shape, validate) ──batch event──▶ anam_subm
 
 The contract every importer complies with is `docs/IMPORTERS.md` §8 in the anam repo: the
 wire format, tokens, all-or-nothing batches of at most 49, and what each status means.
-`docs/explainer.html` here walks through it with diagrams.
+`docs/explainer.html` here walks through it with diagrams. `docs/explainer/` holds a second, checked
+explainer: a bundle of one-concept-per-file markdown (components, workflows, decisions, invariants, gaps
+and how to add an importer) whose every code reference `python3 -I docs/explainer/check.py` verifies,
+rendered to `docs/explainer/explainer.html` by `python3 -I docs/explainer/render.py`.
 
 These are one person's importers, for the sources one person has: a Garmin watch through
 GarminDB, Withings scales, a blood pressure phone app, a DreamStation CPAP card, Concept2's
@@ -40,6 +43,7 @@ owntracks/            anam_owntracks: a phone's OwnTracks positions as location.
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
+docs/explainer/       a checked bundle of concepts, its checker and renderer, and the page they produce
 docs/defaults-and-invariants.md   every hard-coded value: a config key's default, or a constant and why
 ```
 
