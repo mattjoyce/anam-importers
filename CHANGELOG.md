@@ -9,6 +9,10 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `docs/explainer/`: an explainer bundle (102 concepts) with `check.py`, which verifies every
+  resource, anchor, symbol and test the bundle names against the tracked files, and `render.py`,
+  which renders it to one `explainer.html`. Both use only the standard library.
+
 - `scripts/rebuild-drill.py` builds a fresh ledger from the importers alone and compares it with
   the live record, type by type (anam card 141). `docs/rebuild-drill.md` says how to run it.
 

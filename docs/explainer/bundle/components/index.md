@@ -1,0 +1,23 @@
+# Components
+
+* [Anam client (anam_importer.client)](anam-client.md) - A standard-library HTTP client for the five Anam calls an importer makes, with a total deadline, a response cap, no redirects, and a rule that only a whole admission receipt counts as success.
+* [Anam daemon](anam-daemon.md) - The external service that authenticates an importer's token, publishes Definitions, admits batches whole through its gate, and answers snapshot reports.
+* [anam_bp_csv](importer-bp-csv.md) - Shapes a blood pressure app's CSV exports to health.blood-pressure, an Open mHealth body beside the export's own text, sending each reading once from the newest export that holds it.
+* [anam_concept2](importer-concept2.md) - Reads workouts from the Concept2 Logbook API into a local cache with fetch, then shapes the cache into exercise.session with handle and poll, which never touch the network.
+* [anam_documents](importer-documents.md) - Sends a folder of documents with sidecars as one snapshot of doc.reference envelopes, each batch naming the files whose bytes anam_submit hands to Anam's library before the envelopes go.
+* [anam_dreamstation](importer-dreamstation.md) - Decodes a copy of a CPAP machine's SD card with the dreamstation package and sends every session as sleep.cpap-session, a type Anam does not bundle, so it registers its own Definition.
+* [anam_garmin](importer-garmin.md) - Shapes what a Garmin watch recorded into six types, from GarminDB's SQLite file and the watch's FIT files, keeping no state of its own.
+* [anam_owntracks](importer-owntracks.md) - Groups the location messages in an OwnTracks spool into one location.track facet per phone per UTC hour, sent whole every time the hour gains a message.
+* [anam_records](importer-records.md) - Sends a folder of YAML or JSON records files as one snapshot of the Anam-bundled types they carry, resolving YAML scalars by Go yaml.v3 rules instead of YAML 1.1.
+* [anam_stays](importer-stays.md) - Derives location.stay facets from the same spool by finding runs of fixes that held within a radius, and names each stay's centroid once through a cached geocoder.
+* [anam_submit](anam-submit.md) - The one generic plugin that posts a batch event to Anam under one importer's token, after storing any documents it names and making sure Anam publishes its Definitions.
+* [anam_withings](importer-withings.md) - Reads a Withings plugin's SQLite database read-only and sends every measurement as health.measurement, with the group's attribution beside the value.
+* [Config helpers (anam_importer.config)](config-helpers.md) - Reads and range-checks a plugin's config keys once at the start of a command, so a bad value fails there naming the key, before any source or Anam is touched.
+* [Definitions (anam_importer.definitions)](definitions.md) - Loads the Definition manifests in an importer's folder, validates payloads against their closed JSON Schema, and makes sure Anam publishes each one at its version before a batch is sent.
+* [ductile gateway](ductile-gateway.md) - The external supervisor that runs plugins on schedules and events, routes their events through pipelines, and hands each instance only the vault secrets its config names.
+* [Envelopes (anam_importer.envelopes)](envelopes.md) - Builds an envelope from a payload, checks every payload against its Definition before anything leaves, cuts envelopes into batches of at most 49, and labels a resend as snapshot parts.
+* [Geocoder (stays.geocode)](geocoder.md) - A rate-limited Nominatim reverse-geocoding client with an on-disk cache keyed by grid cell, which returns nothing rather than raising when the service is unreachable.
+* [Plugin protocol (anam_importer.ductile)](plugin-protocol.md) - Reads one JSON request on stdin, runs the named command's handler, and always writes exactly one JSON response on stdout, turning every failure into a structured error with a retry flag.
+* [Rebuild drill (scripts/rebuild-drill.py)](rebuild-drill.md) - Starts a scratch Anam daemon on a new ledger, replays every importer's poll through anam_submit, and compares the result with a live daemon by facet id, content hash and status.
+* [Record extractors (records/extract)](record-extractors.md) - One-off scripts that turn an export that will never be sent again into a records file, deterministically, so a rerun on the same export writes the same records.
+* [Test harness (tests/helpers.py)](test-harness.md) - Helpers that build a Withings-shaped database, run a plugin as a subprocess, and start a real anam daemon on a temporary ledger with one importer token.
