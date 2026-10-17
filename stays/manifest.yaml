@@ -1,0 +1,54 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_stays
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: false
+description: "Names the places a phone stopped. Reads the owntracks spool (never changing a location.track fact), finds stays (a run of fixes held within radius_m for at least min_dwell_minutes), geocodes each stay's centroid once through a cache, and emits them as anam_stays.batch events, at most 49 to a batch, for anam_submit to post. The geocoder is OSM Nominatim, named by a contact User-Agent, not a token; a geocoder that is down leaves a stay placeless to backfill later. Holds no Anam token; logs no coordinates."
+commands:
+  - name: handle
+    type: read
+    description: "After a pull: every stay whose last fix was received in the last lookback_days (default 2), each sent whole. Idempotent in Anam: a stay already held is a no-op."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_stays.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: poll
+    type: read
+    description: "Every stay the spool holds, in batches: the resend-everything mode, labelled one snapshot unless a spool line would not read."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_stays.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+  - name: health
+    type: read
+    description: "spool_dir is readable, every spool line reads, and every stay conforms to the Definition."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [spool_dir, person_id, geocache_dir]
+  optional: [lookback_days, radius_m, min_dwell_minutes, rate_limit_seconds, geocode_endpoint, geocode_user_agent]
