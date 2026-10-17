@@ -1,0 +1,11 @@
+# Workflows
+
+* [Check an importer against a real daemon](check-an-importer-against-a-real-daemon.md) - A test starts a real Anam daemon on a temporary ledger, shapes fixture rows with an importer, submits them through anam_submit, and asserts a second submit is all no-op.
+* [Derive stays from the spool](derive-stays-from-the-spool.md) - The stays importer reads the OwnTracks spool, finds runs of fixes that held within a radius, names each centroid through a cached geocoder, and emits location.stay envelopes.
+* [Fetch and shape a Concept2 workout](fetch-and-shape-a-concept2-workout.md) - The fetch command brings a local cache up to date from the Logbook API, and handle or poll then shape the cached results into exercise.session envelopes without touching the network.
+* [Hand over a document](hand-over-a-document.md) - A folder of documents with sidecars becomes doc.reference envelopes, and the file bytes reach Anam's library through anam_submit without ever travelling inside an event.
+* [Rebuild the record from the importers](rebuild-the-record-from-the-importers.md) - The rebuild drill runs each importer's poll, replays every batch into a scratch daemon on a new ledger, and compares the scratch ledger with a live one type by type.
+* [Run a plugin by hand](run-a-plugin-by-hand.md) - Any importer or anam_submit runs from a shell with one JSON request on stdin, and answers with one JSON response on stdout, the same contract the gateway uses.
+* [Send a records folder](send-a-records-folder.md) - Every YAML or JSON records file in a folder becomes envelopes of the Anam-bundled types they name, sent as one snapshot with versions stamped at submit time.
+* [Shape a blood pressure export](shape-a-blood-pressure-export.md) - One CSV export dropped in a watched folder becomes batch events of health.blood-pressure envelopes, with the export's quirks absorbed and every payload validated before anything leaves.
+* [Submit a batch](submit-a-batch.md) - A batch event emitted by any importer becomes admitted facets in Anam, with the documents stored first, the Definitions published, the receipt checked and an alert raised when a complete resend left facets absent.

@@ -1,0 +1,9 @@
+# Gaps
+
+* [The documents importer loads the records importer by file path](documents-load-the-records-importer-by-path.md) - To share one YAML reader, documents/run.py imports records/run.py through importlib at module load, which couples two plugin folders that are otherwise independent.
+* [The exercise.session Definition is carried twice](exercise-session-is-carried-twice.md) - The Garmin and Concept2 folders each hold a byte-identical copy of the exercise.session Definition, and only a test, not the structure, keeps them equal.
+* [The records duplicate guard assumes id for every type but one](records-duplicate-guard-assumes-id.md) - The local duplicate check uses a record's id as its identity unless the type is health.blood-pressure, so a bundled type whose Definition keys identity on other fields could slip a duplicate past it.
+* [The stays importer reads its config unchecked](stays-reads-its-config-unchecked.md) - Every other importer range-checks its keys through the config helpers, but stays converts them with float() and str(), is not in the config test, and is absent from the README table and the defaults list.
+* [The tests against a real daemon do not run in CI](real-daemon-tests-do-not-run-in-ci.md) - The continuous-integration job runs the unit tests only, so the tests that prove a resend is a no-op against a real Anam skip there, as do the DreamStation and Garmin tests that need an external card, decoder or uv.
+* [Two explainers exist](two-explainers-exist.md) - docs/explainer.html is a hand-drawn page and docs/explainer/ is a generated one with a bundle behind it, and nothing keeps their claims in step.
+* [Where shaping ends and identity begins is not fully settled](writing-an-id-field-is-the-edge-of-shaping.md) - The rule says an importer composes no identity, but importers write the payload fields the identity key points at, and the records importer composes identity locally to refuse duplicates.
