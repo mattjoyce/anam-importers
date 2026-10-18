@@ -419,6 +419,8 @@ modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sy
 Sleep comes from GarminDB's `garmin.db`, opened read-only: one `sleep.episode` per day its `sleep`
 table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (time interval in UTC, the
 stage durations in minutes) with Garmin's score, its word for it and the averages beside it.
+GarminDB writes the start and end as wall clock in the zone its process runs in, which is the
+days' zone (Australia/Sydney), so the importer reads them there and emits UTC.
 Daily heart rate comes from the same file: each day's resting figure (`resting_hr`) and its
 minimum and maximum (`daily_summary`), one `health.heart-rate-daily` facet each, as the Open
 mHealth `heart-rate-2.0` body over the local day in Australia/Sydney. Steps are a

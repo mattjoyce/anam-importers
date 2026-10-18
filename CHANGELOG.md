@@ -29,6 +29,14 @@ All notable changes to this repo. The format follows
   failed late or not at all. Defaults are unchanged. `bp_csv` reads its zone from its Definition.
   `docs/defaults-and-invariants.md` lists every hard-coded value and why it is a key or a constant.
 
+### Fixed
+
+- `garmin`: a `sleep.episode`'s start and end are now true UTC instants (anam card 174). GarminDB
+  stores them as naive wall clock in its process's zone, and that process runs in the days' zone
+  (Australia/Sydney), so the importer stamped Sydney wall clock with `Z` and every night sat 10 to
+  11 hours late. The ids and the Definition are unchanged; a `poll` resends every night with the
+  corrected instants and each facet supersedes.
+
 ### Added
 
 - Config keys for values that were fixed (anam card 152), each defaulting to the old value:

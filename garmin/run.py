@@ -291,8 +291,10 @@ def minutes(t: str) -> Any:
 
 
 def instant(t: str) -> str:
-    """GarminDB's UTC DATETIME text, "2015-10-07 12:44:00.000000", as RFC 3339."""
-    return datetime.fromisoformat(t).replace(tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    """GarminDB's DATETIME text, "2015-10-07 12:44:00.000000", as an RFC 3339 UTC instant.
+    GarminDB writes Garmin's GMT epoch as a naive wall clock in its process's zone, and
+    that process runs in ZONE, the zone the days are local days in (anam card 174)."""
+    return datetime.fromisoformat(t).replace(tzinfo=ZONE).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:

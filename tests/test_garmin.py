@@ -133,7 +133,8 @@ class ModuleTest(unittest.TestCase):
                 self.assertEqual(self.mod.measure(v), want)
 
     def test_the_local_day_s_zone_is_the_definitions_and_they_agree(self):
-        # Alerts and sleep are UTC instants; the types keyed on a day share one zone.
+        # Alerts are UTC instants from the FIT file; the types keyed on a day share one zone,
+        # and sleep's wall clock is read in it.
         zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
                  ["meta"]["time_semantics"]["fact_time"]["zone"]
                  for t in ("garmin.day", "health.heart-rate-daily", "health.step-count")}
@@ -197,8 +198,10 @@ class AlertTest(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(payloads(r), [{
             "id": "sleep:2015-10-08",
-            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T12:44:00Z",
-                                                       "end_date_time": "2015-10-07T18:42:00Z"}},
+            # GarminDB's start and end are wall clock in the days' zone (Sydney, +11 that
+            # October), not UTC as its column type suggests (anam card 174).
+            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T01:44:00Z",
+                                                       "end_date_time": "2015-10-07T07:42:00Z"}},
             "total_sleep_time": {"value": 349, "unit": "min"},
             "light_sleep_duration": {"value": 186, "unit": "min"},
             "deep_sleep_duration": {"value": 78, "unit": "min"},
@@ -207,6 +210,20 @@ class AlertTest(unittest.TestCase):
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
         self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+
+    def test_a_night_s_instants_are_the_zone_s_wall_clock_in_utc(self):
+        # A night that began after local midnight, so the UTC instants fall on the
+        # day before Garmin's day. Garmin's own GMT stamps for this night: 13:33Z
+        # and 21:03Z. The id keeps Garmin's day.
+        night = ("2026-10-17", "2026-10-17 00:33:00.000000", "2026-10-17 08:03:00.000000", "05:53:00.000000",
+                 "00:54:00.000000", "03:49:00.000000", "01:10:00.000000", "01:37:00.000000", None, None, None, None, None)
+        garmin_db(self.dir.parent / "garmin.db", [night])
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        p = payloads(r)[0]
+        self.assertEqual(p["id"], "sleep:2026-10-17")
+        self.assertEqual(p["effective_time_frame"]["time_interval"],
+                         {"start_date_time": "2026-10-16T13:33:00Z", "end_date_time": "2026-10-16T21:03:00Z"})
 
     def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
         garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0)],
