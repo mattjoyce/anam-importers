@@ -15,7 +15,7 @@ depends_on:
   - /components/plugin-protocol.md
 ---
 
-Source `links`, type `record.link`, registered from `links/definitions/record.link.json` with a `handling` block (anam card 165). A link is a file Anam remembers but does not hold: `describe` hashes the file in 1 MiB chunks and sends `path`, `sha256`, `bytes`, `media_type`, `date` and `date_from`, and `anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library lacks, because the held-bytes refusal is keyed on `doc.reference`.
+Source `links`, type `record.link`, registered from `links/definitions/record.link.json` with a `handling` block (anam card 165). A link is a file Anam remembers but does not hold: `describe` hashes the file in 1 MiB chunks and sends `path`, `sha256`, `bytes`, `media_type`, `date` and `date_from`, and `anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library lacks, because the held-bytes refusal is keyed on `record.document`.
 
 One instance is one folder (`links_dir`, named `root_name` in every fact) under one identity mode (`identity`): `path:<root>/<path>`, `content:<sha256>` or `id:<frontmatter id>`, carried as the `id`'s prefix and repeated in `identity`. In `id` mode a file without a declared id is skipped and reported, never keyed by its path.
 

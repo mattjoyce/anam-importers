@@ -1,7 +1,7 @@
 ---
 type: data-structure
 title: Stay payload
-description: The payload of a location.stay envelope, with an id, the device, the start and end, the centroid, the fix count, the spread in metres and an optional named place.
+description: The payload of a place.stay envelope, with an id, the device, the start and end, the centroid, the fix count, the spread in metres and an optional named place.
 timestamp: 2026-10-17T00:00:00Z
 resource: stays/run.py#payload
 anchor: 'p: Dict[str, Any] = {"id": f"stay:{self.device}:{self.start}", "device": self.device,'

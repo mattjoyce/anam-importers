@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "location.stay",
+    "facet_type": "place.stay",
     "definition_version": 1,
+    "kind": "event",
+    "family": "location",
     "classification": "Sensitive",
     "validation_mode": "strict",
     "source_schema": "anam/location-stay",
@@ -19,7 +21,7 @@
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One place a phone stayed: a run of consecutive location.track fixes that held within a small radius for a while, with its centroid and, when a geocoder could name it, the place. Derived by the stays importer (source osm) from the same spool the owntracks importer reads, never by changing a location.track fact. The identity is the device and the stay's start instant; a stay still open is re-emitted whole as it grows and when it closes, so a resend replaces it. The place is optional: a stay with no geocode yet is still the fact that the phone was here then, and the place backfills on a later run. start is the fact time.",
+    "description": "One place a phone stayed: a run of consecutive place.track fixes that held within a small radius for a while, with its centroid and, when a geocoder could name it, the place. Derived by the stays importer (source osm) from the same spool the owntracks importer reads, never by changing a place.track fact. The identity is the device and the stay's start instant; a stay still open is re-emitted whole as it grows and when it closes, so a resend replaces it. The place is optional: a stay with no geocode yet is still the fact that the phone was here then, and the place backfills on a later run. start is the fact time.",
     "type": "object",
     "required": ["id", "device", "start", "end", "lat", "lon", "fixes"],
     "additionalProperties": false,

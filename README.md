@@ -33,14 +33,14 @@ anam_importer/        the shared base: Definitions, validation, batches, the cli
 anam_submit/          posts a batch: makes sure Anam publishes its Definitions, then submits it
 withings/             anam_withings: the withings plugin's measurements as health.measurement
 bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-pressure (OMH)
-dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
+dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as health.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
-documents/            anam_documents: a folder of documents with sidecars as doc.reference; anam_submit hands the bytes to Anam's library
+documents/            anam_documents: a folder of documents with sidecars as record.document; anam_submit hands the bytes to Anam's library
 links/                anam_links: a folder of files as record.link, remembered by name, hash and date; the bytes stay where they are
   extract/            one-off extractors that turn an export into a records file
 garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
-concept2/             anam_concept2: Concept2 Logbook workouts as exercise.session
-owntracks/            anam_owntracks: a phone's OwnTracks positions as location.track, one facet per hour
+concept2/             anam_concept2: Concept2 Logbook workouts as activity.exercise-session
+owntracks/            anam_owntracks: a phone's OwnTracks positions as place.track, one facet per hour
   definitions/        the Definitions it emits, in Anam's manifest format
 tests/                unit tests, and tests against a real anam daemon (ANAM_BIN)
 docs/explainer.html   how the pieces fit, for a reader new to it
@@ -285,10 +285,10 @@ importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so th
 
 ## Wiring an importer into a gateway (DreamStation)
 
-Not deployed. Source `dreamstation`, types `[sleep.cpap-session]`, secret
+Not deployed. Source `dreamstation`, types `[health.cpap-session]`, secret
 `anam_importer_token_dreamstation`, principal `anam-submit-dreamstation`. Unlike the other
 two, this importer registers its own Definition: Anam's binary does not bundle
-`sleep.cpap-session`, so the first batch makes `anam_submit` register it.
+`health.cpap-session`, so the first batch makes `anam_submit` register it.
 
 It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
 which its uv script header pins to a tag, fetched as a zip archive so the gateway needs no git.
@@ -318,9 +318,9 @@ it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
 ## Wiring an importer into a gateway (records)
 
 Not deployed. Source `records`, the same name Anam's built-in worker used, so the cut-over is
-no-op. Types are the ones the worker's scope named: `lab.result`, `lab.panel`, `condition.noted`,
-`donation.blood`, `health.weight`, the `med.*`, `illness.*` and `travel.*` types, `visit.clinic`,
-`gym.visit`, `exercise.session`, `health.blood-pressure` and `note.annotation`. Secret
+no-op. Types are the ones the worker's scope named: `health.lab-result`, `health.lab-panel`, `health.condition`,
+`health.donation`, `health.weight`, the `med.*`, `illness.*` and `travel.*` types, `health.encounter`,
+`activity.gym-visit`, `activity.exercise-session`, `health.blood-pressure` and `record.note`. Secret
 `anam_importer_token_records`, principal `anam-submit-records`.
 
 A records file names no Definition version, and every type it carries is bundled in Anam, so the
@@ -351,9 +351,9 @@ is not reported absent.
 Not deployed (anam card 103). Source `documents`, the name Anam's built-in worker used, so the
 cut-over is no-op: each file's identity is its folder-relative path, and the payload is the
 sidecar's fields plus the `path`, `sha256`, `bytes` and `media_type` measured from the file, as
-the worker wrote them. Type `doc.reference`. Secret `anam_importer_token_documents`, principal
+the worker wrote them. Type `record.document`. Secret `anam_importer_token_documents`, principal
 `anam-submit-documents`; the importer entry in Anam's `importers.yaml` names `types:
-[doc.reference]`, which is also what lets the token post bytes.
+[record.document]`, which is also what lets the token post bytes.
 
 Each file needs a sidecar `<file>.meta.yaml` with `date: YYYY-MM-DD`, its own date and not
 today's, and may add `title` and `note`. A file without one stops the run and names the sidecar
@@ -364,7 +364,7 @@ The bytes go to Anam, never into Anam's directory: each batch names its files (`
 the envelopes, reading them from the file so no bytes ride in a ductile event. Anam names the
 stored file by its sha256 (anam card 150) and answers 201 or 200 for bytes it now holds; the path
 lends it only an extension. So a document rescanned under the same name is new bytes, and its
-`doc.reference` supersedes the old one, whose bytes Anam keeps. Anam refuses a `doc.reference`
+`record.document` supersedes the old one, whose bytes Anam keeps. Anam refuses a `record.document`
 whose sha256 its library holds no bytes for.
 
 ```yaml
@@ -377,7 +377,7 @@ plugins:
 ```
 
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
-snapshot of `doc.reference`. `anam_submit` needs read access to the same folder.
+snapshot of `record.document`. `anam_submit` needs read access to the same folder.
 
 ## Wiring an importer into a gateway (links)
 
@@ -385,7 +385,7 @@ Not deployed (anam card 165). A `record.link` is a file Anam remembers but does 
 in a vault, a photo in a camera roll, a screenshot. The importer sends each file's name, hash,
 size, media type and date and never its bytes; it calls nothing but `anam_submit`'s batch, and
 `anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library does
-not hold, since the held-bytes refusal is keyed on `doc.reference`. Use `anam_documents` for a
+not hold, since the held-bytes refusal is keyed on `record.document`. Use `anam_documents` for a
 primary document the library should back up and a receipt should reach; use `anam_links` for a
 file that belongs to another tool and may be edited, moved or gone. Source `links`, type
 `record.link`, registered by the importer (`links/definitions/record.link.json`); the importer
@@ -454,10 +454,10 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 | Script | Export | Records |
 |---|---|---|
 | `fitbit_weight.py` | Fitbit `Weight Logs.xlsx` | `health.weight` |
-| `fitbit_sleep.py --zone Z` | Fitbit `Sleep Logs.xlsx` | `sleep.episode` (IEEE 1752) |
-| `strong_csv.py --zone Z` | Strong app CSV | `exercise.session` (IEEE 1752) |
-| `technogym_json.py` | Technogym mywellness zip, indoor sessions | `exercise.session` (IEEE 1752) |
-| `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `lab.result`, `lab.panel` |
+| `fitbit_sleep.py --zone Z` | Fitbit `Sleep Logs.xlsx` | `health.sleep-episode` (IEEE 1752) |
+| `strong_csv.py --zone Z` | Strong app CSV | `activity.exercise-session` (IEEE 1752) |
+| `technogym_json.py` | Technogym mywellness zip, indoor sessions | `activity.exercise-session` (IEEE 1752) |
+| `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `health.lab-result`, `health.lab-panel` |
 | `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
 
 `--zone` is the IANA zone the export's wall clock reads in. `strong_csv.py --max-session-sec`
@@ -468,8 +468,8 @@ keeps a workout open until the next one starts; another cap writes other records
 ## Wiring an importer into a gateway (Garmin)
 
 Not deployed, and not to be switched on alone. Source `garmin`, types
-`[health.heart-rate-alert, exercise.session, sleep.episode, health.heart-rate-daily,
-health.step-count, garmin.day]`, secret `anam_importer_token_garmin`, principal
+`[health.heart-rate-alert, activity.exercise-session, health.sleep-episode, health.heart-rate-day,
+activity.steps, activity.day]`, secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
 runs would hold every alert twice. It goes live with the rest of anam card 55, when the
@@ -481,24 +481,24 @@ alert, as the health ETL's `fit_events.py` does. It keeps no state: `handle` rea
 modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sync event runs it;
 `poll` reads every file and labels the run a snapshot.
 
-Sleep comes from GarminDB's `garmin.db`, opened read-only: one `sleep.episode` per day its `sleep`
+Sleep comes from GarminDB's `garmin.db`, opened read-only: one `health.sleep-episode` per day its `sleep`
 table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (time interval in UTC, the
 stage durations in minutes) with Garmin's score, its word for it and the averages beside it.
 GarminDB writes the start and end as wall clock in the zone its process runs in, which is the
 days' zone (Australia/Sydney), so the importer reads them there and emits UTC.
 Daily heart rate comes from the same file: each day's resting figure (`resting_hr`) and its
-minimum and maximum (`daily_summary`), one `health.heart-rate-daily` facet each, as the Open
+minimum and maximum (`daily_summary`), one `health.heart-rate-day` facet each, as the Open
 mHealth `heart-rate-2.0` body over the local day in Australia/Sydney. Steps are a
-`health.step-count` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
-`garmin.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost. None of
+`activity.steps` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
+`activity.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost. None of
 these types is bundled in Anam, so the first batch of each makes `anam_submit` register it.
 
 Sessions come from the activity FIT files GarminDB downloads (`FitFiles/Activities`), one
-`exercise.session` per FIT session message, beside Technogym's and Strong's. The FIT file holds the
+`activity.exercise-session` per FIT session message, beside Technogym's and Strong's. The FIT file holds the
 start as a true UTC instant; `garmin_activities.db` holds it as wall clock, and not always the same
 wall clock, so the importer reads the file. The FIT sport and sub-sport map to Google Fit's names
 (Cardio, which Google Fit has no name for, is `other`; an unmapped pair is `unknown`), and the
-payload keeps both as the watch wrote them. `exercise.session` is bundled in Anam: the importer
+payload keeps both as the watch wrote them. `activity.exercise-session` is bundled in Anam: the importer
 carries Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
 Their ids name what they are: `garmin:session:2015-10-04T03:49:17Z`, `sleep:2015-10-08`, `steps:2015-10-09`, `day:2015-10-09`. A
@@ -533,7 +533,7 @@ resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU)
 
 ## Wiring an importer into a gateway (Concept2)
 
-Not deployed. Source `concept2`, type `[exercise.session]`, secret `anam_importer_token_concept2`,
+Not deployed. Source `concept2`, type `[activity.exercise-session]`, secret `anam_importer_token_concept2`,
 principal `anam-submit-concept2`, and a second secret, the Logbook's own token, below.
 
 ErgData syncs each workout the monitor records to the Concept2 Online Logbook, and its API
@@ -552,13 +552,13 @@ network, as the garmin importer reads the files GarminDB downloaded: `handle` th
 in the last `lookback_days` (default 3), `poll` everything, labelled a snapshot. The token is a
 vault secret the gateway hands `fetch` under the name `token_secret` gives, never config.
 
-Each workout is one `exercise.session`, the IEEE 1752 body with the Logbook's measures beside
+Each workout is one `activity.exercise-session`, the IEEE 1752 body with the Logbook's measures beside
 it: `rower` is `rowing.machine`, `bike` is `biking.stationary`, `water` is `rowing`, any other erg
 is `other`, and `erg_type` keeps the Logbook's word. The start is the result's `date_utc`, the
 monitor's end of workout, minus its time; a result entered on the web has neither, so its start
 is the day it names at Sydney midnight and `start_time_known` is false. The Logbook's tenths of
 a second and decimetres are written in seconds and metres; a heart rate of zero, the monitor's
-figure for no belt, is left out. `exercise.session` is bundled in Anam: the importer carries
+figure for no belt, is left out. `activity.exercise-session` is bundled in Anam: the importer carries
 Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
 ```yaml
@@ -601,7 +601,7 @@ scratch daemon with a resend all no-op.
 
 ## Wiring an importer into a gateway (OwnTracks)
 
-Not deployed. Source `owntracks`, type `[location.track]`, secret `anam_importer_token_owntracks`,
+Not deployed. Source `owntracks`, type `[place.track]`, secret `anam_importer_token_owntracks`,
 principal `anam-submit-owntracks`.
 
 The phone runs OwnTracks in HTTP mode and posts each fix to a receiver at the edge, which keeps
@@ -610,7 +610,7 @@ it until the gateway's `owntracks` plugin (in ductile-plugins) pulls it into a s
 posted it. The spool is the source. `anam_owntracks` reads it and never touches the network:
 `handle` after a pull, `poll` for everything, labelled a snapshot.
 
-Each phone's UTC hour is one `location.track`: the hour's fixes, oldest first, with the
+Each phone's UTC hour is one `place.track`: the hour's fixes, oldest first, with the
 coordinates, accuracy, speed, battery, WiFi network and regions the phone wrote, never snapped,
 smoothed or joined to a place. The hour is the fix time's (`tst`), not the receipt's, so a phone
 that was offline fills in its hours when it reconnects. A facet replaces the last one sent for its

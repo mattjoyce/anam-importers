@@ -137,7 +137,7 @@ class ModuleTest(unittest.TestCase):
         # and sleep's wall clock is read in it.
         zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
                  ["meta"]["time_semantics"]["fact_time"]["zone"]
-                 for t in ("garmin.day", "health.heart-rate-daily", "health.step-count")}
+                 for t in ("activity.day", "health.heart-rate-day", "activity.steps")}
         self.assertEqual(zones, {str(self.mod.ZONE)})
 
 
@@ -177,7 +177,7 @@ class AlertTest(unittest.TestCase):
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
         self.assertEqual(len(payloads(polled)), 2)
-        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["activity.day", "activity.exercise-session", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
         handled = run("handle", self.dir)
         self.assertEqual([p["heart_rate"] for p in payloads(handled)], [117])
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
@@ -209,7 +209,7 @@ class AlertTest(unittest.TestCase):
             "wake_after_sleep_onset": {"value": 9, "unit": "min"},
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["exercise.session", "garmin.day", "health.heart-rate-alert", "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.day", "activity.exercise-session", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
 
     def test_a_night_s_instants_are_the_zone_s_wall_clock_in_utc(self):
         # A night that began after local midnight, so the UTC instants fall on the
@@ -253,11 +253,11 @@ class AlertTest(unittest.TestCase):
         for ev in r["events"]:
             for e in ev["payload"]["envelopes"]:
                 by_type.setdefault(e["type"], []).append(e["payload"])
-        self.assertEqual(by_type["health.step-count"], [{
+        self.assertEqual(by_type["activity.steps"], [{
             "id": "steps:2015-10-09", "step_count": {"value": 6219, "unit": "steps"},
             "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
                                                        "end_date_time": "2015-10-10T00:00:00+11:00"}}}])
-        self.assertEqual(by_type["garmin.day"], [{
+        self.assertEqual(by_type["activity.day"], [{
             "id": "day:2015-10-09", "day": "2015-10-09", "step_goal": 5070, "floors_up": 10, "floors_down": 5.55282, "floors_goal": 10,
             "calories_total": 2238, "calories_bmr": 1976, "calories_active": 262, "hydration_goal": 2800,
             "stress_avg": 30, "rr_waking_avg": 14, "rr_max": 26, "rr_min": 11, "bb_charged": 47, "bb_max": 63,
@@ -327,8 +327,8 @@ class AlertTest(unittest.TestCase):
         write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [WALK, CARDIO]})
         garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2015-10-09", 61.0)],
                   daily=[DAY, EMPTY_DAY])
-        daemon = Daemon("garmin", ["exercise.session", "garmin.day", "health.heart-rate-alert",
-                                   "health.heart-rate-daily", "health.step-count", "sleep.episode"])
+        daemon = Daemon("garmin", ["activity.exercise-session", "activity.day", "health.heart-rate-alert",
+                                   "health.heart-rate-day", "activity.steps", "health.sleep-episode"])
         try:
             shaped = run("poll", self.dir)
             for want in ("admitted", "no-op"):

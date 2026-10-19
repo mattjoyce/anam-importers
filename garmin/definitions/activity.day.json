@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "garmin.day",
+    "facet_type": "activity.day",
     "definition_version": 1,
+    "kind": "measure",
+    "family": "movement",
     "classification": "Sensitive",
     "validation_mode": "strict",
     "source_schema": "garmindb/daily_summary",
@@ -19,7 +21,7 @@
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One day of a Garmin watch's daily summary as GarminDB 3.6.7's daily_summary table holds it, through the anam_garmin importer (source garmin). The device's record: values as Garmin wrote them, intensity times in minutes, empty columns absent. Steps and the day's heart rate are not here; they are health.step-count and health.heart-rate-daily. A day the watch recorded nothing for is no facet.",
+    "description": "One day of a Garmin watch's daily summary as GarminDB 3.6.7's daily_summary table holds it, through the anam_garmin importer (source garmin). The device's record: values as Garmin wrote them, intensity times in minutes, empty columns absent. Steps and the day's heart rate are not here; they are activity.steps and health.heart-rate-day. A day the watch recorded nothing for is no facet.",
     "type": "object",
     "required": [
       "id",

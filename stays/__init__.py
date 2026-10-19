@@ -1,1 +1,1 @@
-"""anam_stays: location.stay facets derived from the owntracks spool."""
+"""anam_stays: place.stay facets derived from the owntracks spool."""

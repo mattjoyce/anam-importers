@@ -25,7 +25,7 @@ LABS = """\
 document: {name: report.pdf, sha256: abc}
 extracted: {method: hand, version: 1}
 records:
-  - type: lab.result
+  - type: health.lab-result
     id: acl:10000001/sodium
     collected: 2001-02-02 09:10
     analyte: Sodium
@@ -34,7 +34,7 @@ records:
     unit: mmol/L
     lab_number: "10000001"
     fasting: true
-  - type: lab.result
+  - type: health.lab-result
     id: 20240916
     collected: 2024-09-16 07:15
     analyte: "Ferritin: serum"
@@ -50,14 +50,14 @@ WEIGHTS = """\
 records:
   - {type: health.weight, id: 0777, date: 2026-10-01 07:00, kg: 80.0, bmi: 24.10}
   - {type: health.weight, id: w-2, date: 2026-10-02 07:00, kg: 82.5e0, logged_as: yes}
-  - type: note.annotation
+  - type: record.note
     id: n-1
     at: 2026-10-02 08:00
     about: [0b6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f, "1c6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f"]
     text: ~not null
 """
 
-FLIGHTS = """{"records": [{"type": "travel.flight", "id": "f-1", "date": "2026-10-03 +10:00", "trip": "t",
+FLIGHTS = """{"records": [{"type": "place.flight", "id": "f-1", "date": "2026-10-03 +10:00", "trip": "t",
   "from": "SYD", "to": "MEL", "flight": "QF 400"}]}
 """
 
@@ -112,7 +112,7 @@ class Files(unittest.TestCase):
             paths, envs = records.scan({"records_dir": d}, "person-a")
         self.assertEqual([p.name for p in paths], ["a-labs.yaml", "b-weights.yml", "c-flights.json"])
         sodium, ferritin, w1, w2, note, flight = envs
-        self.assertEqual(sodium["type"], "lab.result")
+        self.assertEqual(sodium["type"], "health.lab-result")
         self.assertNotIn("type", sodium["payload"])
         self.assertNotIn("definition_version", sodium)
         self.assertEqual(sodium["asserted_person"], "person-a")
@@ -137,7 +137,7 @@ class Files(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r)
         parts = [ev["payload"]["snapshot"] for ev in r["events"]]
         self.assertEqual(len({p["id"] for p in parts}), 1)
-        self.assertEqual(parts[0]["types"], ["health.weight", "lab.result", "note.annotation"])
+        self.assertEqual(parts[0]["types"], ["health.lab-result", "health.weight", "record.note"])
 
     def test_bad_files_are_refused_and_named(self):
         cases = {
@@ -159,7 +159,7 @@ class Files(unittest.TestCase):
                 self.assertFalse(r["retry"])
 
     def test_two_records_claiming_one_identity_are_refused_across_files_and_types(self):
-        one = "records: [{type: lab.result, id: x}]\n"
+        one = "records: [{type: health.lab-result, id: x}]\n"
         other = "records: [{type: health.weight, id: x}]\n"
         with folder({"a.yaml": one, "b.yaml": other}) as d:
             r = run("poll", d)
@@ -187,7 +187,7 @@ class Files(unittest.TestCase):
         self.assertEqual(sum(len(ev["payload"]["envelopes"]) for ev in r["events"]), 2)
 
 
-TYPES = ["lab.result", "health.weight", "note.annotation", "travel.flight"]
+TYPES = ["health.lab-result", "health.weight", "record.note", "place.flight"]
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")

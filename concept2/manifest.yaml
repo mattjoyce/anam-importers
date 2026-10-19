@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: false
-description: "Shapes the workouts the Concept2 Logbook holds into Anam envelopes, one exercise.session each, and emits them as anam_concept2.batch events, at most 49 to a batch, for anam_submit to post. Two concerns, two commands: fetch reads the Logbook API under the personal token the vault hands it and keeps each result, strokes included, as a JSON file under cache_dir, the source in its own shape; handle and poll shape what the cache holds and never touch the network. Holds no Anam token."
+description: "Shapes the workouts the Concept2 Logbook holds into Anam envelopes, one activity.exercise-session each, and emits them as anam_concept2.batch events, at most 49 to a batch, for anam_submit to post. Two concerns, two commands: fetch reads the Logbook API under the personal token the vault hands it and keeps each result, strokes included, as a JSON file under cache_dir, the source in its own shape; handle and poll shape what the cache holds and never touch the network. Holds no Anam token."
 commands:
   - name: fetch
     type: write

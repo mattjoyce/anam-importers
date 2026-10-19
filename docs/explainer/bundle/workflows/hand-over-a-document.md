@@ -1,7 +1,7 @@
 ---
 type: workflow
 title: Hand over a document
-description: A folder of documents with sidecars becomes doc.reference envelopes, and the file bytes reach Anam's library through anam_submit without ever travelling inside an event.
+description: A folder of documents with sidecars becomes record.document envelopes, and the file bytes reach Anam's library through anam_submit without ever travelling inside an event.
 timestamp: 2026-10-17T00:00:00Z
 resource: documents/run.py#poll
 anchor: '"documents": [by_path[e["payload"]["path"]] for e in g],'
@@ -30,7 +30,7 @@ steps:
     anchor: 'payload.update({"path": rel, "sha256": h.hexdigest(), "bytes": size, "media_type": media_type(path)})'
   - actor: /components/importer-documents.md
     label: name the files each batch needs
-    action: "Each batch event lists `{path, file}` for exactly the documents its envelopes describe, sets `current_versions`, and is labelled `documents i/n`. The run is a snapshot of `doc.reference`."
+    action: "Each batch event lists `{path, file}` for exactly the documents its envelopes describe, sets `current_versions`, and is labelled `documents i/n`. The run is a snapshot of `record.document`."
     writes: [/data-structures/batch-event.md]
     resource: documents/run.py#poll
     anchor: '"documents": [by_path[e["payload"]["path"]] for e in g],'
@@ -50,11 +50,11 @@ steps:
   - actor: /components/anam-daemon.md
     caller: /components/anam-client.md
     label: store the file under its sha256
-    action: "Anam names the stored file by its sha256 and answers 201 for new bytes or 200 for bytes it already holds. It refuses a `doc.reference` whose sha256 its library has no bytes for, which is why the bytes go first."
+    action: "Anam names the stored file by its sha256 and answers 201 for new bytes or 200 for bytes it already holds. It refuses a `record.document` whose sha256 its library has no bytes for, which is why the bytes go first."
     resource: README.md#Wiring an importer into a gateway (documents)
     anchor: "stored file by its sha256 (anam card 150) and answers 201 or 200 for bytes it now holds; the path"
   - actor: /components/anam-submit.md
-    label: post the doc.reference envelopes
+    label: post the record.document envelopes
     action: "With the bytes held, the batch's envelopes go through the same path as every other, as in [submit a batch](/workflows/submit-a-batch.md). A document rescanned under the same name has new bytes, so its reference supersedes the old one and Anam keeps the first bytes."
     ends: true
     resource: anam_submit/run.py#handle

@@ -108,7 +108,7 @@ class FitbitSleep(unittest.TestCase):
             subprocess.run([sys.executable, str(EXTRACT / "fitbit_sleep.py"), "--out-dir", d, "--zone", "UTC", str(p)],
                            check=True, capture_output=True)
             (env,) = records_of(d)
-        self.assertEqual(env["type"], "sleep.episode")
+        self.assertEqual(env["type"], "health.sleep-episode")
         self.assertEqual(env["payload"]["total_sleep_time"], {"value": 360, "unit": "min"})
 
 
@@ -230,7 +230,7 @@ class BloodPressureDiary(unittest.TestCase):
                "records": [{"type": "health.blood-pressure", "id": "2001-05-06 07:00:00/1",
                             "date_excel": "2001-05-06 07:00:00", "reading": "1", "systolic": "131",
                             "diastolic": "81.5", "posture": "Seated", "comment": "am"},
-                           {"type": "note.annotation", "id": "n"}]}
+                           {"type": "record.note", "id": "n"}]}
         with tempfile.TemporaryDirectory() as d:
             i, o = Path(d) / "in.yaml", Path(d) / "out.yaml"
             i.write_text(yaml.safe_dump(src, sort_keys=False))
@@ -243,7 +243,7 @@ class BloodPressureDiary(unittest.TestCase):
         self.assertEqual(bp["body_posture"], "sitting")
         self.assertEqual(bp["effective_time_frame"], {"date_time": "2001-05-06T07:00:00+09:00"})
         self.assertNotIn("systolic", bp)
-        self.assertEqual(note, {"type": "note.annotation", "id": "n"})
+        self.assertEqual(note, {"type": "record.note", "id": "n"})
         self.assertEqual(out["extracted"]["version"], 2)
 
 

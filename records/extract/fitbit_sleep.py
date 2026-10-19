@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Fitbit "Sleep Logs.xlsx" -> a records file of sleep.episode.
+"""Fitbit "Sleep Logs.xlsx" -> a records file of health.sleep-episode.
 
 Usage: fitbit_sleep.py --out-dir DIR --zone ZONE "Sleep Logs.xlsx"
 
@@ -16,7 +16,7 @@ wall clock in ZONE, which is what proves the reading; a row where they do not st
 run. H, I and K (seconds) are kept as awake_count, restless_count and restless_minutes,
 under the applet's names. D/E, time to fall asleep, is always zero and left out.
 
-Each record is the IEEE 1752 sleep-episode body of anam_garmin's sleep.episode: the
+Each record is the IEEE 1752 sleep-episode body of anam_garmin's health.sleep-episode: the
 interval in UTC, total_sleep_time and wake_after_sleep_onset in minutes. is_main_sleep
 is not written, since Fitbit does not say. Ids are fitbit:sleep:<local start>, distinct
 from Garmin's sleep:<day>. Deterministic: the same workbook yields the same records.
@@ -60,7 +60,7 @@ def extract(p: Path, zone: str) -> dict:
                 raise SystemExit(f"row {n}: a second sleep starting {c['A']}")
             ids.add(rid)
             records.append({
-                "type": "sleep.episode", "id": rid,
+                "type": "health.sleep-episode", "id": rid,
                 "effective_time_frame": {"time_interval": {
                     "start_date_time": start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "end_date_time": end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}},

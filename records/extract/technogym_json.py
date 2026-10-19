@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Technogym mywellness export -> a records file of exercise.session, one per indoor session.
+"""Technogym mywellness export -> a records file of activity.exercise-session, one per indoor session.
 
 Usage: technogym_json.py --out-dir DIR <export>.zip
 
@@ -83,7 +83,7 @@ def session(s):
     start = end - timedelta(seconds=m["Duration"])
     start = (start + timedelta(microseconds=500000)).replace(microsecond=0)
     rec = {
-        "type": "exercise.session",
+        "type": "activity.exercise-session",
         "id": f"technogym:{on}",
         "activity_name": activity(m, on),
         "effective_time_frame": {"time_interval": {

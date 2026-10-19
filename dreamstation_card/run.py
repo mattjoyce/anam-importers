@@ -7,7 +7,7 @@
 # ]
 # ///
 """anam_dreamstation: shapes a Philips DreamStation SD card copy into
-sleep.cpap-session envelopes for Anam, one batch event at a time.
+health.cpap-session envelopes for Anam, one batch event at a time.
 
 The card holds every session since the device was first used, so a newer copy is
 a superset of an older one and every run resends the whole card; Anam makes that
@@ -35,7 +35,7 @@ sys.path.insert(0, str(HERE.parent))
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-TYPE = "sleep.cpap-session"
+TYPE = "health.cpap-session"
 BATCH_EVENT = "anam_dreamstation.batch"
 
 # The summary record's keys the Definition holds, as the decoder names them. Its

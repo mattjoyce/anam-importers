@@ -9,8 +9,8 @@ Usage:
   acl_pathology.py --out-dir DIR [--history-labs N,N] [--known-times N=HH:MM,...] REPORT.pdf...
 
 For each PDF this runs `pdftotext -layout`, reads the result table, and writes
-<out-dir>/<stem>.<sha12>.yaml holding one `lab.result` record per analyte per draw and
-one `lab.panel` record for the report's own draw. It needs poppler's pdftotext.
+<out-dir>/<stem>.<sha12>.yaml holding one `health.lab-result` record per analyte per draw and
+one `health.lab-panel` record for the report's own draw. It needs poppler's pdftotext.
 
 A report prints earlier draws as history columns. Only the report's own draw and the
 draws named in --history-labs are emitted, so that a draw with a report of its own is
@@ -288,7 +288,7 @@ def main():
             # what the analyte is, so a non-blood specimen prefixes the id.
             prefix = f"{slug(sp)}-" if sp and slug(sp) not in ("serum", "whole-blood", "plasma") else ""
             rec = {
-                "type": "lab.result",
+                "type": "health.lab-result",
                 "id": f"acl:{r['lab']}/{prefix}{slug(r['analyte'])}",
                 "collected": f"{r['date']} {t or '00:00'}",
                 "lab_number": r["lab"],
@@ -310,7 +310,7 @@ def main():
 
         cd = dmy(hdr["collected"].split(" ")[0]) if hdr["collected"] else None
         panel_rec = {
-            "type": "lab.panel",
+            "type": "health.lab-panel",
             "id": f"acl:{lab}/panel/{slug(panel)}",
             "collected": f"{cd} {known.get(lab, '00:00')}",
             "lab_number": lab,

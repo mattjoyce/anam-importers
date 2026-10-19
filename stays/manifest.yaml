@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: false
-description: "Names the places a phone stopped. Reads the owntracks spool (never changing a location.track fact), finds stays (a run of fixes held within radius_m for at least min_dwell_minutes), geocodes each stay's centroid once through a cache, and emits them as anam_stays.batch events, at most 49 to a batch, for anam_submit to post. The geocoder is OSM Nominatim, named by a contact User-Agent, not a token; a geocoder that is down leaves a stay placeless to backfill later. Holds no Anam token; logs no coordinates."
+description: "Names the places a phone stopped. Reads the owntracks spool (never changing a place.track fact), finds stays (a run of fixes held within radius_m for at least min_dwell_minutes), geocodes each stay's centroid once through a cache, and emits them as anam_stays.batch events, at most 49 to a batch, for anam_submit to post. The geocoder is OSM Nominatim, named by a contact User-Agent, not a token; a geocoder that is down leaves a stay placeless to backfill later. Holds no Anam token; logs no coordinates."
 commands:
   - name: handle
     type: read

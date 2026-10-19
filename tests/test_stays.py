@@ -116,7 +116,7 @@ class DefinitionIsStrict(unittest.TestCase):
     """Anam's strict mode refuses any object subschema that does not set additionalProperties
     (false, or a value schema). The live daemon enforces this when it registers the Definition
     on the first batch, so a miss means a deploy that wires up and then 422s. This catches it
-    here, without the daemon. (location.stay v1's place.address regressed exactly this way.)"""
+    here, without the daemon. (place.stay v1's place.address regressed exactly this way.)"""
 
     def _objects_missing_additional_properties(self, node, path="schema"):
         bad = []
@@ -135,7 +135,7 @@ class DefinitionIsStrict(unittest.TestCase):
         return bad
 
     def test_every_object_sets_additional_properties(self):
-        schema = json.loads((REPO / "stays" / "definitions" / "location.stay.json").read_text())["schema"]
+        schema = json.loads((REPO / "stays" / "definitions" / "place.stay.json").read_text())["schema"]
         self.assertEqual(self._objects_missing_additional_properties(schema), [])
 
 
@@ -169,7 +169,7 @@ class Plugin(unittest.TestCase):
         envs = self._envelopes(resp)
         self.assertEqual(len(envs), 1)
         p = envs[0]["payload"]
-        self.assertEqual(envs[0]["type"], "location.stay")
+        self.assertEqual(envs[0]["type"], "place.stay")
         self.assertEqual(p["id"], "stay:tokay:2026-10-17T02:00:00Z")
         self.assertEqual(p["fixes"], 6)
         self.assertNotIn("place", p)  # the geocoder could not be reached
@@ -178,7 +178,7 @@ class Plugin(unittest.TestCase):
         resp = run_plugin(ENTRY, {"command": "poll", "config": self.config})
         self.assertEqual(resp["status"], "ok", resp)
         snapshots = [ev["payload"].get("snapshot") for ev in resp["events"]]
-        self.assertTrue(all(s and s["types"] == ["location.stay"] for s in snapshots))
+        self.assertTrue(all(s and s["types"] == ["place.stay"] for s in snapshots))
 
     def test_health_passes_on_a_readable_spool(self):
         resp = run_plugin(ENTRY, {"command": "health", "config": self.config})

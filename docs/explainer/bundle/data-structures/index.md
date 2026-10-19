@@ -10,7 +10,7 @@
 * [Plugin request](plugin-request.md) - The one JSON object a plugin reads from stdin, naming a command and carrying the instance config, any granted secrets, and the triggering event.
 * [Plugin response](plugin-response.md) - The one JSON object a plugin writes to stdout, either ok with a result line and events or error with a message and a retry flag, plus info log lines.
 * [Records file](records-file.md) - A YAML or JSON file with a document, an extracted block and a list of records, each a facet type, an id and the payload fields.
-* [Sidecar file](sidecar-file.md) - The <file>.meta.yaml beside a document, a mapping with a required date and optional title, note and other fields that become part of the doc.reference payload.
+* [Sidecar file](sidecar-file.md) - The <file>.meta.yaml beside a document, a mapping with a required date and optional title, note and other fields that become part of the record.document payload.
 * [Snapshot label](snapshot-label.md) - The small object a resend-everything run puts on every batch, with a run id, the part number, the part count and the facet types the run claims to cover.
 * [Spool line](spool-line.md) - One JSON line of the OwnTracks spool, holding the receiver's id, the phone's message body as text, and when it was received.
-* [Stay payload](stay-payload.md) - The payload of a location.stay envelope, with an id, the device, the start and end, the centroid, the fix count, the spread in metres and an optional named place.
+* [Stay payload](stay-payload.md) - The payload of a place.stay envelope, with an id, the device, the start and end, the centroid, the fix count, the spread in metres and an optional named place.

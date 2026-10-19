@@ -1,5 +1,5 @@
 """anam_concept2: the Logbook's results, fetched into a cache under a personal token
-and shaped as exercise.session. The Logbook is stood in for by a local HTTP server
+and shaped as activity.exercise-session. The Logbook is stood in for by a local HTTP server
 serving synthetic results; the daemon, when ANAM_BIN names one, is real."""
 
 import http.server
@@ -208,7 +208,7 @@ class ConceptTest(unittest.TestCase):
         self.assertEqual(by_id["concept2:session:1002"]["rest_distance_m"], 200)
         self.assertEqual(by_id["concept2:session:1002"]["comments"], "one piece")
         self.assertNotIn("stroke_series", by_id["concept2:session:1002"])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["exercise.session"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.exercise-session"])
         self.assertNotIn("4800", json.dumps(by_id["concept2:session:1001"]))
 
     def test_a_workout_entered_on_the_web_starts_at_sydney_midnight_and_says_so(self):
@@ -244,7 +244,7 @@ class ConceptTest(unittest.TestCase):
         (self.cache / "1003.json").unlink()
         h = self.run_cmd("health")
         self.assertEqual(h["status"], "ok", h)
-        self.assertEqual(h["result"], "3 exercise.session v5 from 3 cached result(s), every one conforming")
+        self.assertEqual(h["result"], "3 activity.exercise-session v1 from 3 cached result(s), every one conforming")
 
     def test_a_missing_cache_dir_is_not_retried(self):
         r = self.run_cmd("poll", cache_dir=str(self.cache / "nowhere"))
@@ -252,13 +252,13 @@ class ConceptTest(unittest.TestCase):
         self.assertFalse(r["retry"])
 
     def test_the_definition_is_anam_s_and_the_garmin_importer_carries_the_same_one(self):
-        ours = (REPO / "concept2" / "definitions" / "exercise.session.json").read_bytes()
-        self.assertEqual(ours, (REPO / "garmin" / "definitions" / "exercise.session.json").read_bytes())
+        ours = (REPO / "concept2" / "definitions" / "activity.exercise-session.json").read_bytes()
+        self.assertEqual(ours, (REPO / "garmin" / "definitions" / "activity.exercise-session.json").read_bytes())
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
     def test_every_workout_is_admitted_and_a_resend_is_no_op(self):
         self.run_cmd("fetch")
-        daemon = Daemon("concept2", ["exercise.session"])
+        daemon = Daemon("concept2", ["activity.exercise-session"])
         try:
             shaped = self.run_cmd("poll")
             for want in ("admitted", "no-op"):

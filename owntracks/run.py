@@ -4,7 +4,7 @@
 # dependencies = ["jsonschema>=4.18"]
 # ///
 """anam_owntracks: shapes the positions OwnTracks reported into Anam envelopes, one
-location.track per phone per UTC hour, one batch event at a time.
+place.track per phone per UTC hour, one batch event at a time.
 
 The phone posts each fix to a receiver at the edge, and the gateway's owntracks plugin
 pulls what the receiver holds into a spool: one JSON line per message, under
@@ -43,7 +43,7 @@ from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-TRACK_TYPE = "location.track"
+TRACK_TYPE = "place.track"
 BATCH_EVENT = "anam_owntracks.batch"
 
 # DEFAULT_LOOKBACK_DAYS bounds handle to the hours a pull can have touched, unless

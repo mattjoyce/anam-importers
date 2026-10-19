@@ -1,11 +1,11 @@
 ---
 type: gap
-title: The exercise.session Definition is carried twice
-description: The Garmin and Concept2 folders each hold a byte-identical copy of the exercise.session Definition, and only a test, not the structure, keeps them equal.
+title: The activity.exercise-session Definition is carried twice
+description: The Garmin and Concept2 folders each hold a byte-identical copy of the activity.exercise-session Definition, and only a test, not the structure, keeps them equal.
 timestamp: 2026-10-17T00:00:00Z
 looked_at:
-  - garmin/definitions/exercise.session.json
-  - concept2/definitions/exercise.session.json
+  - garmin/definitions/activity.exercise-session.json
+  - concept2/definitions/activity.exercise-session.json
   - tests/test_concept2.py
 ---
 

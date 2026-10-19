@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "location.track",
+    "facet_type": "place.track",
     "definition_version": 1,
+    "kind": "measure",
+    "family": "location",
     "classification": "Sensitive",
     "validation_mode": "strict",
     "source_schema": "owntracks/location",

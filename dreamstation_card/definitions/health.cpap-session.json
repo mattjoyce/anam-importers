@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "sleep.cpap-session",
+    "facet_type": "health.cpap-session",
     "definition_version": 1,
+    "kind": "event",
+    "family": "sleep",
     "classification": "Sensitive",
     "validation_mode": "strict",
     "source_schema": "dreamstation/session",

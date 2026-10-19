@@ -12,11 +12,11 @@ GarminDB downloads those files but drops their event messages on import, so noth
 else holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
 moved: the same event decoded the same way, and the same payload the health-db
 worker built from the ETL's events table. From GarminDB's garmin.db: each night's
-sleep (sleep.episode, the IEEE 1752 body with Garmin's score and averages beside
-it), each day's resting, minimum and maximum heart rate (health.heart-rate-daily,
-Open mHealth), steps (health.step-count, Open mHealth) and the rest of the day as
-Garmin wrote it (garmin.day). From the activity FIT files under GarminDB's
-FitFiles/Activities, each session the watch recorded (exercise.session, the IEEE
+sleep (health.sleep-episode, the IEEE 1752 body with Garmin's score and averages beside
+it), each day's resting, minimum and maximum heart rate (health.heart-rate-day,
+Open mHealth), steps (activity.steps, Open mHealth) and the rest of the day as
+Garmin wrote it (activity.day). From the activity FIT files under GarminDB's
+FitFiles/Activities, each session the watch recorded (activity.exercise-session, the IEEE
 1752 body with Garmin's measures beside it): the FIT file holds the start as a true
 UTC instant, where garmin_activities.db holds it as wall clock, not always the same
 one. It keeps no state of its own: Anam makes a resend a no-op.
@@ -48,13 +48,13 @@ from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 ALERT_TYPE = "health.heart-rate-alert"
-SLEEP_TYPE = "sleep.episode"
-HEART_TYPE = "health.heart-rate-daily"
-STEPS_TYPE = "health.step-count"
-DAY_TYPE = "garmin.day"
-SESSION_TYPE = "exercise.session"
+SLEEP_TYPE = "health.sleep-episode"
+HEART_TYPE = "health.heart-rate-day"
+STEPS_TYPE = "activity.steps"
+DAY_TYPE = "activity.day"
+SESSION_TYPE = "activity.exercise-session"
 
-# DAY_COLUMNS are daily_summary's columns garmin.day keeps under the same name.
+# DAY_COLUMNS are daily_summary's columns activity.day keeps under the same name.
 # Steps and the heart rate columns are other types; the TIME columns are kept in
 # minutes (DAY_MINUTES); distance is renamed for its unit. These and DAY_GOALS are
 # not configurable: they are GarminDB's schema and the Definition's fields.
@@ -70,7 +70,7 @@ DAY_GOALS = {"step_goal", "floors_goal", "calories_goal", "hydration_goal", "int
 
 # ZONE is where Garmin's days are local days. The Definitions say so, in their
 # fact_time; it is read from there so it is stated once.
-ZONE = ZoneInfo(json.loads((HERE / "definitions" / "garmin.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
+ZONE = ZoneInfo(json.loads((HERE / "definitions" / "activity.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
@@ -247,7 +247,7 @@ SESSION_UNITS = {"duration": ("total_timer_time", "sec"), "kcal_burned": ("total
 
 
 def session(mesg: Dict[str, Any]) -> Dict[str, Any]:
-    """One FIT session message as an exercise.session payload. A figure the watch
+    """One FIT session message as an activity.exercise-session payload. A figure the watch
     did not write is left out, and so is a zero distance, which is what the watch
     writes for a session that measures none."""
     start = mesg["start_time"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -298,7 +298,7 @@ def instant(t: str) -> str:
 
 
 def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
-    """One night of Garmin's sleep table as a sleep.episode payload."""
+    """One night of Garmin's sleep table as a health.sleep-episode payload."""
     p: Dict[str, Any] = {
         "id": f"sleep:{row['day']}",
         "effective_time_frame": {"time_interval": {"start_date_time": instant(row["start"]),
@@ -379,7 +379,7 @@ def heart_rates(config: Dict[str, Any], busy_ms: int, since: Optional[date] = No
 
 
 def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Each day of daily_summary as a health.step-count and a garmin.day. A day
+    """Each day of daily_summary as a activity.steps and a activity.day. A day
     holding only goals and zero times is a day the watch recorded nothing: neither."""
     cols = ", ".join(("day", "steps", "distance") + DAY_COLUMNS + tuple(DAY_MINUTES))
     steps: List[Dict[str, Any]] = []
