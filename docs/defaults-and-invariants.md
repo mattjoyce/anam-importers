@@ -29,6 +29,7 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | 8 MiB | `concept2/run.py:63` | `max_response_bytes` (concept2) | a guard; a page of 250 results is under 1 MiB |
 | 2 days | `owntracks/run.py:53` | `lookback_days` (owntracks) | depends on how long a phone may be offline |
 | 290 KiB | `owntracks/run.py:59` | `max_payload_bytes` | follows Anam's payload limit, the daemon's `max_payload_bytes` (300 KiB by default since anam card 151); a daemon set to another limit needs another value here |
+| 3 runs | `links/run.py` `DEFAULT_UNSEEN_AFTER` | `unseen_after` (links) | how long a person tolerates a file being missing before its facet says so is theirs: a synced folder wants more, a tidy one less |
 | 3 hours | `records/extract/strong_csv.py:40` | `--max-session-sec` | the person's rule of 2026-10-08 for capping Strong's open-ended workouts; someone else's rule may differ |
 
 `timeout`, `busy_timeout_ms` (withings), `pattern`, `logbook_url`, `logbook_user` and every
@@ -115,6 +116,19 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 | the media type table, `application/octet-stream` | `media_type` | another spelling supersedes every reference |
 | dot-files, dot-directories and symlinks skipped | `:134-137` | the worker's walk; a change alters the snapshot |
 | 1 MiB hash chunk | `:151` | a buffer size |
+
+### links
+
+| Value | Where | Why not configurable |
+|---|---|---|
+| `TYPE`, `BATCH_EVENT`, `MODES`, `SOURCES` | `links/run.py` | the Definition's vocabulary and the routed event; the id prefixes are part of identity |
+| `MARKDOWN`, `EXIF_KINDS` | `links/run.py` | which files have frontmatter read and mtime refused, and which have EXIF read: what the Definition's `date_from` means |
+| `FRONT_READ = 64 KiB`, `EXIF_READ = 1 MiB`, 1 MiB hash chunk | `links/run.py` | buffer sizes; a frontmatter or an IFD past them is not read, which a bound must say |
+| `FILENAME_DATE` | `links/run.py` | the `YYYY-MM-DD` prefix the Definition names; another pattern moves fact-times |
+| `STATE_VERSION = 1` | `links/run.py` | the state file's shape |
+| the media type table | `media_type` | as documents: another spelling supersedes every link |
+| dot-files, dot-directories and symlinks skipped | `files` | the walk; a change alters the snapshot |
+| `state_file` has no default and may not sit under `links_dir` | `settings` | an importer reads its source and does not write into it; a required key, not a default |
 
 ### garmin
 
