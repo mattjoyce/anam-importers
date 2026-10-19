@@ -6,6 +6,8 @@
     "validation_mode": "strict",
     "source_schema": "links/link",
     "payload_kind": "verbatim",
+    "kind": "event",
+    "family": "documents",
     "time_semantics": {
       "fact_time": {"pointer": "/date", "layout": "2006-01-02T15:04:05Z07:00", "zone": "UTC"}
     },
