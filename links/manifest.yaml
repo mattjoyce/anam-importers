@@ -1,0 +1,56 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: anam_links
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: false
+description: "Shapes a folder of files into record.link envelopes (anam card 165), a file Anam remembers but does not hold: name, hash, size, media type and date, never the bytes. One instance is one folder under one identity mode (path, content or id). Emits anam_links.batch events, at most 49 to a batch, every run a snapshot; a file missing for unseen_after complete runs is superseded with unseen. Keeps its own count of runs in state_file, outside links_dir, the only state it keeps; reads the folder and writes nothing into it; holds no token and posts no bytes."
+commands:
+  - name: handle
+    type: read
+    description: "On a folder_watch event for links_dir: every file in the folder, as poll; counts as a complete run."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_links.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+            - payload.snapshot
+  - name: poll
+    type: read
+    description: "Every file under links_dir, in batches, as one snapshot, with each known file the run did not find carried as it was or, past unseen_after runs, as unseen: the resend-everything mode, and one complete run. Labelled a snapshot unless a file could not be read."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: anam_links.batch
+          values:
+            - payload.envelopes
+            - payload.definitions
+            - payload.batch
+            - payload.snapshot
+  - name: health
+    type: read
+    description: "links_dir and state_file are readable and every file under links_dir shapes to record.link; reports the files skipped, the files dated by mtime (weak) and the files unseen. Writes nothing and counts no run."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [links_dir, root_name, person_id, identity, zone, state_file]
+  optional: [unseen_after]

@@ -6,6 +6,7 @@
 * [anam_concept2](importer-concept2.md) - Reads workouts from the Concept2 Logbook API into a local cache with fetch, then shapes the cache into exercise.session with handle and poll, which never touch the network.
 * [anam_documents](importer-documents.md) - Sends a folder of documents with sidecars as one snapshot of doc.reference envelopes, each batch naming the files whose bytes anam_submit hands to Anam's library before the envelopes go.
 * [anam_dreamstation](importer-dreamstation.md) - Decodes a copy of a CPAP machine's SD card with the dreamstation package and sends every session as sleep.cpap-session, a type Anam does not bundle, so it registers its own Definition.
+* [anam_links](importer-links.md) - Sends a folder of files as one snapshot of record.link envelopes, each a file's name, hash, size and date and never its bytes, under one identity mode per folder, and supersedes a file it has not found for unseen_after runs with unseen rather than retracting it.
 * [anam_garmin](importer-garmin.md) - Shapes what a Garmin watch recorded into six types, from GarminDB's SQLite file and the watch's FIT files, keeping no state of its own.
 * [anam_owntracks](importer-owntracks.md) - Groups the location messages in an OwnTracks spool into one location.track facet per phone per UTC hour, sent whole every time the hour gains a message.
 * [anam_records](importer-records.md) - Sends a folder of YAML or JSON records files as one snapshot of the Anam-bundled types they carry, resolving YAML scalars by Go yaml.v3 rules instead of YAML 1.1.

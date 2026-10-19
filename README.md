@@ -36,6 +36,7 @@ bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-p
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as sleep.cpap-session
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
 documents/            anam_documents: a folder of documents with sidecars as doc.reference; anam_submit hands the bytes to Anam's library
+links/                anam_links: a folder of files as record.link, remembered by name, hash and date; the bytes stay where they are
   extract/            one-off extractors that turn an export into a records file
 garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
 concept2/             anam_concept2: Concept2 Logbook workouts as exercise.session
@@ -377,6 +378,70 @@ plugins:
 
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of `doc.reference`. `anam_submit` needs read access to the same folder.
+
+## Wiring an importer into a gateway (links)
+
+Not deployed (anam card 165). A `record.link` is a file Anam remembers but does not hold: a note
+in a vault, a photo in a camera roll, a screenshot. The importer sends each file's name, hash,
+size, media type and date and never its bytes; it calls nothing but `anam_submit`'s batch, and
+`anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library does
+not hold, since the held-bytes refusal is keyed on `doc.reference`. Use `anam_documents` for a
+primary document the library should back up and a receipt should reach; use `anam_links` for a
+file that belongs to another tool and may be edited, moved or gone. Source `links`, type
+`record.link`, registered by the importer (`links/definitions/record.link.json`); the importer
+entry in Anam's `importers.yaml` names `types: [record.link]`.
+
+One instance is one folder under one identity mode, because one folder's files share a nature;
+a second folder is a second instance. The mode is in every fact (`identity`) and is the prefix of
+its `id`:
+
+| `identity` | `id` | new bytes | a move or rename |
+|---|---|---|---|
+| `path` | `path:<root_name>/<relative path>` | supersedes | a new facet; the old one goes unseen |
+| `content` | `content:<sha256>` | a new facet; the old one goes unseen | supersedes with the new path |
+| `id` | `id:<frontmatter id>` | supersedes | supersedes |
+
+In `id` mode a Markdown file with no `id` in its frontmatter is skipped and reported, never keyed
+by its path; two files declaring the same id (or, in `content` mode, holding the same bytes)
+send the first by path and report the other.
+
+Fact-time is the first of these that answers, and `date_from` says which: a Markdown file's
+frontmatter `date` (`YYYY-MM-DD`, or that with a time, with or without an offset), EXIF
+`DateTimeOriginal` (JPEG and TIFF; `OffsetTimeOriginal` when the camera wrote one), a
+`YYYY-MM-DD` prefix on the file name, then mtime. A date with no zone is read in the instance's
+`zone` and sent with that offset. mtime is weak, since every edit moves it and would supersede
+the facet for nothing: `health` reports how many files are on it, and it is refused for
+Markdown, so an undated note is skipped and reported until it has a frontmatter date or a dated
+name. A frontmatter date the importer cannot read is reported, not guessed.
+
+Every run sends the whole folder as one snapshot, the known files included. A file known from
+an earlier run and not found is carried as it was until `unseen_after` complete runs have missed
+it; then its facet is superseded with `unseen: true`, `unseen_since` (the first run that missed
+it) and `last_seen` (the last that found it). Nothing is retracted: the earlier version stands as
+what was, and a file that comes back is superseded back with `unseen` absent. The count, and
+the payload last sent for each file, live in `state_file`, the importer's only state; it must sit
+outside `links_dir`, which the importer reads and never writes, and Anam keeps none of it. A
+`links_dir` that is not there (an unmounted volume) is no run: the importer reports it, sends
+nothing and counts no miss. A file the importer cannot read is skipped and reported, counts as not
+seen, and withholds the run's snapshot label, so Anam never calls its facet absent; every
+`handle` run counts as a complete run too.
+
+```yaml
+plugins:
+  anam_links:
+    enabled: true
+    config:
+      links_dir: <the folder>
+      root_name: vault                      # the folder's name in every fact; never its location
+      person_id: <Anam's person_id>
+      identity: id                          # path | content | id
+      zone: <an IANA zone name>             # for a date that carries none
+      state_file: <a writable path>         # the importer's count of runs; outside links_dir
+      unseen_after: 3                       # complete runs a file may be missing before unseen (default 3)
+```
+
+A `folder_watch` on the folder runs `handle`, or a schedule runs `poll`; both send the whole
+folder. The importer reads the folder and writes only `state_file`.
 
 ## One-off exports: `records/extract`
 

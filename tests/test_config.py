@@ -91,6 +91,10 @@ class PluginsTest(unittest.TestCase):
                                         "lookback_days": -3}, "lookback_days"),
                 ("owntracks", "health", {"spool_dir": missing, "person_id": "p", "max_payload_bytes": 0},
                  "max_payload_bytes"),
+                ("links", "poll", {"links_dir": missing, "root_name": "r", "person_id": "p", "identity": "path",
+                                   "zone": "UTC", "state_file": missing + ".json", "unseen_after": 0}, "unseen_after"),
+                ("links", "health", {"links_dir": missing, "root_name": "r", "person_id": "p", "identity": "path",
+                                     "zone": "Nowhere/Here", "state_file": missing + ".json"}, "zone"),
             ]
             for plugin, command, config, key in cases:
                 with self.subTest(f"{plugin} {key}"):

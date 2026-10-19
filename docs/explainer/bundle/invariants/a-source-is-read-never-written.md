@@ -14,6 +14,7 @@ applies_to:
   - /components/importer-garmin.md
   - /components/importer-bp-csv.md
   - /components/importer-documents.md
+  - /components/importer-links.md
 ---
 
-Garmin opens `garmin.db` with `mode=ro` too. The Concept2 cache and the stays geocoder cache are the importer's own, written atomically or tolerating failure. Most importer manifests say the plugin "holds no token and writes nothing".
+Garmin opens `garmin.db` with `mode=ro` too. The Concept2 cache and the stays geocoder cache are the importer's own, written atomically or tolerating failure. The links importer's `state_file` is required and refused under `links_dir`. Most importer manifests say the plugin "holds no token and writes nothing".

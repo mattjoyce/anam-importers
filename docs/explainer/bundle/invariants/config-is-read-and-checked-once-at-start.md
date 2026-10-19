@@ -15,6 +15,7 @@ applies_to:
   - /components/importer-concept2.md
   - /components/importer-owntracks.md
   - /components/importer-withings.md
+  - /components/importer-links.md
 tested_by:
   - tests/test_config.py#test_every_plugin_refuses_a_bad_value_at_start
 ---

@@ -9,6 +9,15 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `links/` (`anam_links`): a folder of files as `record.link`, a file Anam remembers but does not
+  hold (anam card 165). Each file's name, hash, size, media type and date are sent and the bytes
+  never are; one instance is one folder under one identity mode (`path`, `content` or `id`),
+  which the `id` carries as its prefix. Fact-time is the first of frontmatter `date`, EXIF
+  `DateTimeOriginal`, a `YYYY-MM-DD` file-name prefix and mtime, read in the instance's `zone`
+  when it has no offset. A file missing for `unseen_after` complete runs is superseded with
+  `unseen: true`, never retracted, and comes back by another supersession; the count is the
+  importer's, in `state_file`. The importer registers `record.link` with a `handling` block.
+
 - `docs/explainer/`: an explainer bundle (102 concepts) with `check.py`, which verifies every
   resource, anchor, symbol and test the bundle names against the tracked files, and `render.py`,
   which renders it to one `explainer.html`. Both use only the standard library.
