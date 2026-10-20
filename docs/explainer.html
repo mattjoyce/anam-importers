@@ -254,7 +254,7 @@ svg .arrowhead { fill: var(--muted); }
 from anam_importer import ductile
 
 DEFS = ai.load(HERE)                      # definitions/*.json, by type
-d = DEFS["health.measurement"]
+d = DEFS["health.measurement.withings"]
 
 envs = [ai.envelope(d, payload) for payload in rows]
 ai.check(DEFS, envs)                      # raises Invalid before anything leaves
@@ -267,7 +267,7 @@ return ductile.ok(f"{len(envs)} measurements", events=events)</code></pre>
 
 <h2 id="withings">6. The Withings example</h2>
 
-<p><code>anam_withings</code> reads the database the withings plugin keeps, read-only, and emits one <code>health.measurement</code> envelope per measurement, with its measure group's attribution beside it. It runs on three triggers:</p>
+<p><code>anam_withings</code> reads the database the withings plugin keeps, read-only, and emits one <code>health.measurement.withings</code> envelope per measurement, with its measure group's attribution beside it. It runs on three triggers:</p>
 
 <ul>
 <li><code>withings.measurement_recorded</code>: the batch for that one new measure group.</li>

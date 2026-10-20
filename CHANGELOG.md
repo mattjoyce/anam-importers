@@ -27,6 +27,18 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- Vendor-shaped types take the vendor leaf (anam card 195). garmin sends
+  `activity.exercise-session.garmin` and `activity.day.garmin`, concept2
+  `activity.exercise-session.concept2`, withings `health.measurement.withings` and dreamstation_card
+  `health.cpap-session.dreamstation`; `technogym_json.py` and `strong_csv.py` write
+  `activity.exercise-session.technogym` and `.strong`. The two exercise leaves are byte copies of
+  Anam's bundled bodies; the three registered leaves are v1, their old type's body under the new
+  name, the old body kept in `definitions/history/`. `activity.day.garmin` reads its fact time at
+  the start of the day Garmin counted, where `activity.day` read the date at Sydney midnight.
+  `retype_records.py` takes a table's select rows, retypes only a record's own `type`, and refuses
+  a record of a split type that no one row places; the records files on the Library share are
+  retyped with `--table renames/vendor-leaves.json` from anam after its rename run.
+
 - The medication, illness and trip types take a third segment (anam card 196):
   `health.medication-started` is `health.medication.started`, and likewise `.stopped`, `.dose`,
   `.dose-changed`, `.compliance`; `health.medication-missed-dose` is
