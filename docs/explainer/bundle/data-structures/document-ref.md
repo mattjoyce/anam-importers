@@ -11,4 +11,4 @@ group: wire
 references: []
 ---
 
-`{path, file}`. `path` is the identity of the matching `doc.reference` envelope and lends the stored file its extension. `file` is where `anam_submit` reads the bytes, so no bytes ride in an event. Anam names the stored file by its sha256.
+`{path, file}`. `path` is the identity of the matching `record.document` envelope and lends the stored file its extension. `file` is where `anam_submit` reads the bytes, so no bytes ride in an event. Anam names the stored file by its sha256.

@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes a folder of documents with .meta.yaml sidecars into doc.reference envelopes (anam card 103) and emits them as anam_documents.batch events, at most 49 to a batch, each naming the files whose bytes anam_submit hands Anam's library (POST /v1/documents) before it posts the envelopes. Every run sends the whole folder. Reads the folder; holds no token and writes nothing."
+description: "Shapes a folder of documents with .meta.yaml sidecars into record.document envelopes (anam card 103) and emits them as anam_documents.batch events, at most 49 to a batch, each naming the files whose bytes anam_submit hands Anam's library (POST /v1/documents) before it posts the envelopes. Every run sends the whole folder. Reads the folder; holds no token and writes nothing."
 commands:
   - name: handle
     type: read

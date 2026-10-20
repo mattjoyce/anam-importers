@@ -178,7 +178,7 @@ class ShapeTest(unittest.TestCase):
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
 class AgainstAnamTest(unittest.TestCase):
-    """Readings reach Anam as health.blood-pressure v5: an export is admitted once and
+    """Readings reach Anam as health.blood-pressure v6: an export is admitted once and
     a resend is no-op; a later export that overlaps admits only its new reading."""
 
     def setUp(self):

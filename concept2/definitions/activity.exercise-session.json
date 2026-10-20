@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "exercise.session",
-    "definition_version": 5,
+    "facet_type": "activity.exercise-session",
+    "definition_version": 1,
+    "kind": "event",
+    "family": "exercise",
     "classification": "Confidential",
     "validation_mode": "strict",
     "source_schema": "ieee-1752/physical-activity-1.0",

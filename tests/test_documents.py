@@ -63,7 +63,7 @@ class ShapeTest(unittest.TestCase):
         for doc in ev["documents"]:
             self.assertTrue(os.path.isabs(doc["file"]) and doc["file"].endswith(doc["path"]))
         self.assertTrue(ev["current_versions"])
-        self.assertEqual(ev["snapshot"]["types"], ["doc.reference"])
+        self.assertEqual(ev["snapshot"]["types"], ["record.document"])
 
     def test_a_file_without_a_usable_sidecar_refuses_the_run(self):
         cases = {
@@ -95,7 +95,7 @@ class AgainstAnamTest(unittest.TestCase):
 
     def test_every_document_the_worker_admitted_resends_as_no_op_and_lands_in_the_library(self):
         with library(GOOD) as d:
-            daemon = Daemon("documents", ["doc.reference"], imports=[("documents", d)])
+            daemon = Daemon("documents", ["record.document"], imports=[("documents", d)])
             try:
                 shaped = run("poll", d)
                 self.assertEqual(self.submit(daemon, shaped["events"]), {"no-op": 2})

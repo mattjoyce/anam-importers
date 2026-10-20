@@ -1,10 +1,12 @@
 {
   "meta": {
-    "facet_type": "health.heart-rate-daily",
+    "facet_type": "activity.steps",
     "definition_version": 1,
+    "kind": "measure",
+    "family": "movement",
     "classification": "Sensitive",
     "validation_mode": "strict",
-    "source_schema": "omh/heart-rate-2.0",
+    "source_schema": "omh/step-count-3.0",
     "time_semantics": {
       "fact_time": {
         "pointer": "/effective_time_frame/time_interval/start_date_time",
@@ -13,19 +15,17 @@
       }
     },
     "identity_key": [
-      "/id",
-      "/statistic"
+      "/id"
     ],
     "min_binding_assurance": "medium"
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One figure for one day's heart rate as an Open mHealth heart-rate-2.0 body (omh:heart-rate:2.0, pinned), with the source's day and which figure it is beside it. A day has up to three: resting, the minimum and the maximum. Garmin writes them through the anam_garmin importer (source garmin): resting from GarminDB's resting_hr table, minimum and maximum from its daily_summary.",
+    "description": "One day's steps as an Open mHealth step-count-3.0 body (omh:step-count:3.0, pinned), with the source's key for the day beside it. Garmin writes it through the anam_garmin importer (source garmin) from GarminDB's daily_summary.",
     "type": "object",
     "required": [
       "id",
-      "statistic",
-      "heart_rate",
+      "step_count",
       "effective_time_frame"
     ],
     "additionalProperties": false,
@@ -33,26 +33,14 @@
       "id": {
         "type": "string",
         "minLength": 1,
-        "description": "The source's key for the day. For Garmin, the day as GarminDB files it, a local date.",
+        "description": "The source's key for the day, prefixed with what it is. For Garmin, \"steps:\" and the day as GarminDB files it, a local date. Under one source no two types share an id: a facet's id is the source plus its identity values, without the type.",
         "examples": [
-          "2026-10-09"
+          "steps:2026-10-09"
         ]
       },
-      "statistic": {
-        "type": "string",
-        "enum": [
-          "resting",
-          "minimum",
-          "maximum"
-        ],
-        "description": "Which of the day's figures this is. With id, the identity: one facet per figure per day.",
-        "examples": [
-          "resting"
-        ]
-      },
-      "heart_rate": {
+      "step_count": {
         "type": "object",
-        "description": "The figure as an OMH unit-value, in beats per minute.",
+        "description": "The day's steps as an OMH unit-value.",
         "required": [
           "value",
           "unit"
@@ -60,25 +48,25 @@
         "additionalProperties": false,
         "properties": {
           "value": {
-            "type": "number",
+            "type": "integer",
             "minimum": 0,
-            "description": "Beats per minute, as the source gave it.",
+            "description": "Steps, as the source counted them.",
             "examples": [
-              61
+              6219
             ]
           },
           "unit": {
             "type": "string",
             "enum": [
-              "beats/min"
+              "steps"
             ],
-            "description": "Always beats/min."
+            "description": "Always steps."
           }
         }
       },
       "effective_time_frame": {
         "type": "object",
-        "description": "The day the figure covers, as an OMH time interval: local midnight to the next, in Australia/Sydney with that day's offset. The start is the fact time.",
+        "description": "The day counted, as an OMH time interval: local midnight to the next, in Australia/Sydney with that day's offset. The start is the fact time.",
         "required": [
           "time_interval"
         ],
@@ -111,27 +99,6 @@
             }
           }
         }
-      },
-      "temporal_relationship_to_physical_activity": {
-        "type": "string",
-        "enum": [
-          "at rest"
-        ],
-        "description": "OMH's \"at rest\", on the resting figure only.",
-        "examples": [
-          "at rest"
-        ]
-      },
-      "descriptive_statistic": {
-        "type": "string",
-        "enum": [
-          "minimum",
-          "maximum"
-        ],
-        "description": "OMH's statistic over the day, on the minimum and maximum figures only.",
-        "examples": [
-          "minimum"
-        ]
       }
     }
   }

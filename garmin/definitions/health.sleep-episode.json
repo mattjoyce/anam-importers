@@ -1,7 +1,9 @@
 {
   "meta": {
-    "facet_type": "sleep.episode",
+    "facet_type": "health.sleep-episode",
     "definition_version": 1,
+    "kind": "measure",
+    "family": "sleep",
     "classification": "Sensitive",
     "validation_mode": "strict",
     "source_schema": "ieee-1752/sleep-episode-1.0",

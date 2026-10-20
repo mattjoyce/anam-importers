@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""anam_documents: shapes a folder of documents into doc.reference envelopes for Anam,
+"""anam_documents: shapes a folder of documents into record.document envelopes for Anam,
 one batch event at a time (anam card 103). It is Anam's built-in documents worker
 (internal/capture/documents), moved, so the same file from either path is the same
 facet with the same payload.
@@ -55,7 +55,7 @@ def _records() -> Any:
 records = _records()
 
 BATCH_EVENT = "anam_documents.batch"
-TYPE = "doc.reference"
+TYPE = "record.document"
 # SIDECAR and MEASURED are not configurable: the sidecar's name is the worker's, which
 # every sidecar already written follows, and MEASURED is what the Definition says the
 # file, not the sidecar, decides.

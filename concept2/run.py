@@ -4,7 +4,7 @@
 # dependencies = ["jsonschema>=4.18"]
 # ///
 """anam_concept2: shapes the workouts the Concept2 Logbook holds into Anam envelopes,
-one exercise.session each, one batch event at a time.
+one activity.exercise-session each, one batch event at a time.
 
 ErgData syncs each workout the monitor records to the Logbook, and the Logbook's API
 is where it can be read back whole: the result, its splits or intervals, and every
@@ -45,7 +45,7 @@ from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-SESSION_TYPE = "exercise.session"
+SESSION_TYPE = "activity.exercise-session"
 BATCH_EVENT = "anam_concept2.batch"
 FETCHED_EVENT = "anam_concept2.fetched"
 
@@ -185,7 +185,7 @@ def stroke(s: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def session(cached: Dict[str, Any]) -> Dict[str, Any]:
-    """One cached result, {"result": ..., "strokes": [...]}, as an exercise.session
+    """One cached result, {"result": ..., "strokes": [...]}, as an activity.exercise-session
     payload. A figure the Logbook did not give is left out."""
     r = cached["result"]
     seconds = tenths(r.get("time"))

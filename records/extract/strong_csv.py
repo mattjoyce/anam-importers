@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Strong app CSV export -> a records file of exercise.session, one record per workout.
+"""Strong app CSV export -> a records file of activity.exercise-session, one record per workout.
 
 Usage: strong_csv.py --out-dir DIR --zone ZONE [--max-session-sec N] strong<digits>.csv
 
@@ -11,7 +11,7 @@ The export is one row per set, semicolon-separated. A workout is identified by i
 time (the "Workout #" column is renumbered per export, so it is not identity). Each record
 carries the workout's rows verbatim under `sets`, in file order, minus the workout-level
 columns; "Rest Timer" and "Note" rows stay as rows, because that is what the source says.
-Deterministic; ids are strong:session:<ISO start>. (Version 1 wrote gym.visit with ids
+Deterministic; ids are strong:session:<ISO start>. (Version 1 wrote activity.gym-visit with ids
 strong:<ISO start>; a new type takes new ids, so the move is by retraction, not supersession.)
 
 Each payload conforms to IEEE 1752.1 physical-activity-1.0 as `strength_training`, which
@@ -65,7 +65,7 @@ def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple
         at = datetime.fromisoformat(start).replace(tzinfo=tz)
         reported = num(first["Duration (sec)"])
         capped = not (0 < reported <= max_session_sec)
-        rec = {"type": "exercise.session", "id": f"strong:session:{iso}",
+        rec = {"type": "activity.exercise-session", "id": f"strong:session:{iso}",
                "activity_name": "strength_training",
                "effective_time_frame": {"time_interval": {
                    "start_date_time": at.isoformat(timespec="seconds"),

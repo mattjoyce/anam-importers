@@ -44,7 +44,7 @@ def module(path: Path):
 
 class SleepEpisodeTest(unittest.TestCase):
     def test_garmin_nights_pass_the_pinned_sleep_episode_schema(self):
-        definition = json.loads((REPO / "garmin" / "definitions" / "sleep.episode.json").read_text())
+        definition = json.loads((REPO / "garmin" / "definitions" / "health.sleep-episode.json").read_text())
         self.assertEqual(definition["meta"]["source_schema"], "ieee-1752/sleep-episode-1.0")
         garmin = module(REPO / "garmin" / "run.py")
         spo2 = NIGHT[:8] + (94.0,) + NIGHT[9:11] + (88, "GOOD")
@@ -66,7 +66,7 @@ class SleepEpisodeTest(unittest.TestCase):
 
 class HeartRateDailyTest(unittest.TestCase):
     def test_garmin_s_daily_figures_pass_the_pinned_heart_rate_schema(self):
-        definition = json.loads((REPO / "garmin" / "definitions" / "health.heart-rate-daily.json").read_text())
+        definition = json.loads((REPO / "garmin" / "definitions" / "health.heart-rate-day.json").read_text())
         validator = pinned(definition["meta"]["source_schema"])
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
@@ -84,7 +84,7 @@ class HeartRateDailyTest(unittest.TestCase):
 
 class StepCountTest(unittest.TestCase):
     def test_garmin_s_daily_steps_pass_the_pinned_step_count_schema(self):
-        definition = json.loads((REPO / "garmin" / "definitions" / "health.step-count.json").read_text())
+        definition = json.loads((REPO / "garmin" / "definitions" / "activity.steps.json").read_text())
         validator = pinned(definition["meta"]["source_schema"])
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:

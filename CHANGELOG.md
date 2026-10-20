@@ -27,6 +27,20 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- The taxonomy (anam card 147). Every type is named `domain.concept` under one of eight domains,
+  and each importer names the new ones: garmin sends `activity.day` (was `garmin.day`),
+  `activity.exercise-session`, `activity.steps`, `health.heart-rate-day` (was
+  `health.heart-rate-daily`), `health.sleep-episode` (was `sleep.episode`) and
+  `health.heart-rate-alert` v4; concept2 `activity.exercise-session`; dreamstation
+  `health.cpap-session`; owntracks `place.track`; stays `place.stay`; documents `record.document`
+  (was `doc.reference`); withings `health.measurement` v4; bp_csv `health.blood-pressure` v6. Every
+  Definition declares `kind` and `family`; the copies of core's bundled types are core's files, byte
+  for byte. A renamed type starts at v1 under its new name. `records/extract/retype_records.py`
+  rewrites the `type:` of the records files on the Library share from anam's
+  `renames/taxonomy.json`, dry by default. Needs an Anam with card 147, after its rename run has
+  carried the record over: the old names are no longer admitted there, and the new ones are
+  refused by an Anam without it.
+
 - `Client.store_document` posts `POST /v1/documents?ext=` with the name's extension, not a path
   (anam card 150). Anam names the stored file by its sha256, so there is no 409: a document
   rescanned under the same name supersedes its reference, and the first bytes stay. Needs an Anam

@@ -1,7 +1,7 @@
 ---
 type: workflow
 title: Derive stays from the spool
-description: The stays importer reads the OwnTracks spool, finds runs of fixes that held within a radius, names each centroid through a cached geocoder, and emits location.stay envelopes.
+description: The stays importer reads the OwnTracks spool, finds runs of fixes that held within a radius, names each centroid through a cached geocoder, and emits place.stay envelopes.
 timestamp: 2026-10-17T00:00:00Z
 resource: stays/run.py#run_over
 anchor: "whole = read.bad == 0 and len(payloads) == len(stays)"
@@ -52,4 +52,4 @@ steps:
     anchor: "whole = read.bad == 0 and len(payloads) == len(stays)"
 ---
 
-The raw fix stays raw in `location.track`, and the stay is a separate derived facet. A geocoder that is down cannot block a stay, because the place is an enrichment that backfills when a later run succeeds. The same stay id is sent again with a `place` and supersedes the placeless one.
+The raw fix stays raw in `place.track`, and the stay is a separate derived facet. A geocoder that is down cannot block a stay, because the place is an enrichment that backfills when a later run succeeds. The same stay id is sent again with a `place` and supersedes the placeless one.

@@ -77,7 +77,7 @@ class OwnTracksTest(unittest.TestCase):
         self.assertEqual(first["hour"], "2026-01-01T00:00:00Z")
         self.assertEqual(first["device"], "phone-a")
         self.assertEqual([p["t"] for p in first["points"]], ["2026-01-01T00:01:00Z", "2026-01-01T00:59:59Z"])
-        self.assertEqual(envs[0]["type"], "location.track")
+        self.assertEqual(envs[0]["type"], "place.track")
         self.assertEqual(envs[0]["asserted_person"], "person-a")
 
     def test_a_point_keeps_what_the_phone_wrote(self):
@@ -171,7 +171,7 @@ class OwnTracksTest(unittest.TestCase):
         self.assertEqual(len(r["events"]), 2)
         parts = [ev["payload"]["snapshot"] for ev in r["events"]]
         self.assertEqual([(p["part"], p["parts"]) for p in parts], [(1, 2), (2, 2)])
-        self.assertEqual(parts[0]["types"], ["location.track"])
+        self.assertEqual(parts[0]["types"], ["place.track"])
         self.assertEqual(len({p["id"] for p in parts}), 1)
 
     def test_an_hour_over_max_payload_bytes_is_skipped_and_breaks_the_snapshot(self):
@@ -200,7 +200,7 @@ class OwnTracksTest(unittest.TestCase):
         self.spool.add(body(HOUR + 60))
         r = self.run_cmd("health")
         self.assertEqual(r["status"], "ok", r)
-        self.assertIn("1 location.track v1 hour(s) from 1 spool line(s), every one conforming", r["result"])
+        self.assertIn("1 place.track v1 hour(s) from 1 spool line(s), every one conforming", r["result"])
         self.spool.add(body(HOUR + 120, lat="x"))
         self.assertEqual(self.run_cmd("health")["status"], "error")
 
@@ -214,7 +214,7 @@ class OwnTracksTest(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN is not set")
 class OwnTracksAgainstAnamTest(unittest.TestCase):
     def setUp(self):
-        self.daemon = Daemon("owntracks", ["location.track"])
+        self.daemon = Daemon("owntracks", ["place.track"])
         self.tmp = tempfile.TemporaryDirectory()
         self.spool = Spool(Path(self.tmp.name) / "spool")
         self.spool.root.mkdir()

@@ -3,15 +3,15 @@
 # requires-python = ">=3.10"
 # dependencies = ["jsonschema>=4.18"]
 # ///
-"""anam_stays: names the places a phone stopped, as location.stay facets.
+"""anam_stays: names the places a phone stopped, as place.stay facets.
 
 The owntracks plugin spools every fix the phone posted, one JSON line per message,
 under <spool_dir>/<device>/<YYYY-MM>.jsonl. This importer reads that same spool, finds
 the stays (a run of consecutive fixes that held within radius_m for at least
-min_dwell_minutes), and emits one location.stay per stay. It geocodes each stay's
+min_dwell_minutes), and emits one place.stay per stay. It geocodes each stay's
 centroid once, through a cache on disk, so re-emits and repeat visits make no new call.
 
-The stay is derived, not the track changed: location.track facets are never touched, so
+The stay is derived, not the track changed: place.track facets are never touched, so
 the raw fix stays raw and recoverable. The geocoder is outside the error kernel: if it
 is down a stay is emitted without a place, and the place backfills on a later run.
 
@@ -42,7 +42,7 @@ from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa
 from anam_importer import ductile  # noqa: E402
 from stays.geocode import Cache, Nominatim, geocoder, place_from  # noqa: E402
 
-STAY_TYPE = "location.stay"
+STAY_TYPE = "place.stay"
 BATCH_EVENT = "anam_stays.batch"
 
 # DEFAULT_LOOKBACK_DAYS bounds handle to the stays a pull can have touched. As with the

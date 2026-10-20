@@ -13,7 +13,7 @@ document: a lab report, a hand-kept log, a note made from email.
     document:  {name: ..., sha256: ...}      # the file the records came from
     extracted: {method: ..., version: ...}   # how; a parser, or a model reading
     records:
-      - type: lab.result                     # a namespaced facet type
+      - type: health.lab-result                     # a namespaced facet type
         id: acl:10000001/sodium              # the row's identity, chosen once
         ...fields                            # the payload, verbatim
 

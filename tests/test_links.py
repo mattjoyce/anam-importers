@@ -273,7 +273,7 @@ class AgainstAnamTest(unittest.TestCase):
         with folder({"notes/2024-03-02 note.md": NOTE, "2024-04-05 scan.png": PHOTO}) as d:
             self.fresh()
             # Admitted, with sha256s the library holds no bytes for: the held-bytes
-            # refusal is keyed on doc.reference, not on this type.
+            # refusal is keyed on record.document, not on this type.
             self.assertEqual(self.submit(run("poll", d)), {"admitted": 2})
             self.assertEqual(self.submit(run("poll", d)), {"no-op": 2})
             # path: new bytes supersede; a move is a new facet (and the old one is a

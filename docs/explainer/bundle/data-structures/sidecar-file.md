@@ -1,7 +1,7 @@
 ---
 type: data-structure
 title: Sidecar file
-description: The <file>.meta.yaml beside a document, a mapping with a required date and optional title, note and other fields that become part of the doc.reference payload.
+description: The <file>.meta.yaml beside a document, a mapping with a required date and optional title, note and other fields that become part of the record.document payload.
 timestamp: 2026-10-17T00:00:00Z
 resource: documents/run.py#sidecar
 anchor: "def sidecar(path: Path) -> Dict[str, Any]:"

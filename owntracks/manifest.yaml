@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: false
-description: "Shapes the positions OwnTracks reported, as the owntracks plugin spools them, into Anam envelopes, one location.track per phone per UTC hour, and emits them as anam_owntracks.batch events, at most 49 to a batch, for anam_submit to post. Reads the spool only, never the network, and logs no coordinates. Holds no Anam token."
+description: "Shapes the positions OwnTracks reported, as the owntracks plugin spools them, into Anam envelopes, one place.track per phone per UTC hour, and emits them as anam_owntracks.batch events, at most 49 to a batch, for anam_submit to post. Reads the spool only, never the network, and logs no coordinates. Holds no Anam token."
 commands:
   - name: handle
     type: read
