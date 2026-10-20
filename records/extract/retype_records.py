@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rewrite the `type:` of every record in records files, per a rename table (anam card 147).
+"""Rewrite the `type:` of every record in records files, per a rename table (anam cards 147, 191).
 
 The records importer sends each record under the type the file names, so after the
 rename run carries the ledger over, the files on the Library share must name the new
@@ -9,7 +9,8 @@ nothing without --yes.
 
     python3 -I records/extract/retype_records.py --table renames/taxonomy.json [--yes] <file-or-dir>...
 
-The table is anam's `renames/taxonomy.json`: {"renames": [{"from": ..., "to": ...}, ...]}.
+The table is one of anam's `renames/`, the one its rename run used: `taxonomy.json` (card
+147) or `record-edge.json` (card 191). {"renames": [{"from": ..., "to": ...}, ...]}.
 """
 import argparse
 import json

@@ -50,7 +50,7 @@ WEIGHTS = """\
 records:
   - {type: health.weight, id: 0777, date: 2026-10-01 07:00, kg: 80.0, bmi: 24.10}
   - {type: health.weight, id: w-2, date: 2026-10-02 07:00, kg: 82.5e0, logged_as: yes}
-  - type: record.note
+  - type: record.edge
     id: n-1
     at: 2026-10-02 08:00
     about: [0b6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f, "1c6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f"]
@@ -137,7 +137,7 @@ class Files(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r)
         parts = [ev["payload"]["snapshot"] for ev in r["events"]]
         self.assertEqual(len({p["id"] for p in parts}), 1)
-        self.assertEqual(parts[0]["types"], ["health.lab-result", "health.weight", "record.note"])
+        self.assertEqual(parts[0]["types"], ["health.lab-result", "health.weight", "record.edge"])
 
     def test_bad_files_are_refused_and_named(self):
         cases = {
@@ -187,7 +187,7 @@ class Files(unittest.TestCase):
         self.assertEqual(sum(len(ev["payload"]["envelopes"]) for ev in r["events"]), 2)
 
 
-TYPES = ["health.lab-result", "health.weight", "record.note", "place.flight"]
+TYPES = ["health.lab-result", "health.weight", "record.edge", "place.flight"]
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
