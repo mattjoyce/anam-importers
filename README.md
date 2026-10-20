@@ -319,7 +319,7 @@ it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
 
 Not deployed. Source `records`, the same name Anam's built-in worker used, so the cut-over is
 no-op. Types are the ones the worker's scope named: `health.lab-result`, `health.lab-panel`, `health.condition`,
-`health.donation`, `health.weight`, the `health.medication-*` and `health.illness-*` types, the trip types `place.departed`, `place.arrived`, `place.returned` and `place.flight`, `health.encounter`,
+`health.donation`, `health.weight`, the `health.medication.*` and `health.illness.*` types, the trip types `place.trip.departed`, `place.trip.arrived`, `place.trip.returned` and `place.trip.flight`, `health.encounter`,
 `activity.gym-visit`, `activity.exercise-session`, `health.blood-pressure` and `record.edge` (was `record.note`, anam card 191). Secret
 `anam_importer_token_records`, principal `anam-submit-records`.
 

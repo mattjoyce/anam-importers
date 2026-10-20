@@ -57,7 +57,7 @@ records:
     text: ~not null
 """
 
-FLIGHTS = """{"records": [{"type": "place.flight", "id": "f-1", "date": "2026-10-03 +10:00", "trip": "t",
+FLIGHTS = """{"records": [{"type": "place.trip.flight", "id": "f-1", "date": "2026-10-03 +10:00", "trip": "t",
   "from": "SYD", "to": "MEL", "flight": "QF 400"}]}
 """
 
@@ -187,7 +187,7 @@ class Files(unittest.TestCase):
         self.assertEqual(sum(len(ev["payload"]["envelopes"]) for ev in r["events"]), 2)
 
 
-TYPES = ["health.lab-result", "health.weight", "record.edge", "place.flight"]
+TYPES = ["health.lab-result", "health.weight", "record.edge", "place.trip.flight"]
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
