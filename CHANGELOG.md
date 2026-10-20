@@ -27,6 +27,15 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- The medication, illness and trip types take a third segment (anam card 196):
+  `health.medication-started` is `health.medication.started`, and likewise `.stopped`, `.dose`,
+  `.dose-changed`, `.compliance`; `health.medication-missed-dose` is
+  `health.medication.dose-missed`; `health.illness-started` and `-ended` are
+  `health.illness.started` and `.ended`; `place.departed`, `.arrived`, `.returned` and `.flight`
+  are `place.trip.departed` and so on. The records files on the Library share are retyped with
+  `retype_records.py --table renames/kinds-segment.json` from anam, after its rename run has
+  carried the live facets over.
+
 - `record.note` is `record.edge` (anam card 191). The records files on the Library share are
   retyped with `retype_records.py --table renames/record-edge.json` from anam, after its rename run
   has carried the notes over; `about` stays as written, since `record.edge` accepts it as the old

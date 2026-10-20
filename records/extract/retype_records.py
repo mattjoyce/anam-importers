@@ -10,7 +10,7 @@ nothing without --yes.
     python3 -I records/extract/retype_records.py --table renames/taxonomy.json [--yes] <file-or-dir>...
 
 The table is one of anam's `renames/`, the one its rename run used: `taxonomy.json` (card
-147) or `record-edge.json` (card 191). {"renames": [{"from": ..., "to": ...}, ...]}.
+147), `record-edge.json` (card 191) or `kinds-segment.json` (card 196). {"renames": [{"from": ..., "to": ...}, ...]}.
 """
 import argparse
 import json
