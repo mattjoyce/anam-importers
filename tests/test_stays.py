@@ -3,6 +3,7 @@ real Dubai points so the stay geometry is honest; no test reaches the network.""
 
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -164,7 +165,10 @@ class Plugin(unittest.TestCase):
         return out
 
     def test_handle_emits_a_conforming_placeless_stay(self):
-        resp = run_plugin(ENTRY, {"command": "handle", "config": self.config})
+        # The spool's fixes are at BASE, a fixed day, so the lookback reaches back to it
+        # however long after that day the test runs.
+        days = (time.time() - BASE) / 86400 + 1
+        resp = run_plugin(ENTRY, {"command": "handle", "config": {**self.config, "lookback_days": days}})
         self.assertEqual(resp["status"], "ok", resp)
         envs = self._envelopes(resp)
         self.assertEqual(len(envs), 1)

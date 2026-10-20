@@ -244,7 +244,7 @@ class ConceptTest(unittest.TestCase):
         (self.cache / "1003.json").unlink()
         h = self.run_cmd("health")
         self.assertEqual(h["status"], "ok", h)
-        self.assertEqual(h["result"], "3 activity.exercise-session v1 from 3 cached result(s), every one conforming")
+        self.assertEqual(h["result"], "3 activity.exercise-session v2 from 3 cached result(s), every one conforming")
 
     def test_a_missing_cache_dir_is_not_retried(self):
         r = self.run_cmd("poll", cache_dir=str(self.cache / "nowhere"))

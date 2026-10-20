@@ -12,7 +12,7 @@ from jsonschema import Draft7Validator
 from referencing import Registry, Resource
 
 from tests.helpers import REPO
-from tests.test_garmin import DAY, EMPTY_DAY, NIGHT, NO_SLEEP, garmin_db
+from tests.test_garmin import DAY, EMPTY_DAY, NIGHT, NO_SLEEP, garmin_db, sleep_json, summary
 
 CONFORMANCE = Path(__file__).resolve().parent / "conformance"
 # Where each family's schemas say they live; their relative $refs resolve against it.
@@ -50,7 +50,9 @@ class SleepEpisodeTest(unittest.TestCase):
         spo2 = NIGHT[:8] + (94.0,) + NIGHT[9:11] + (88, "GOOD")
         with tempfile.TemporaryDirectory() as d:
             db = garmin_db(Path(d) / "garmin.db", [NIGHT, NO_SLEEP, ("2015-10-09",) + spo2[1:]])
-            nights = garmin.sleeps({"garmin_db": str(db)}, garmin.DEFAULT_BUSY_MS)
+            for day in ("2015-10-08", "2015-10-09"):
+                sleep_json(Path(d), day, "2015-10-07T12:44:00+11:00", "2015-10-07T18:42:00+11:00")
+            nights, _ = garmin.sleeps({"garmin_db": str(db), "sleep_dir": d}, garmin.DEFAULT_BUSY_MS)
         self.assertEqual(len(nights), 2)
         validator = pinned("ieee-1752/sleep-episode-1.0")
         for night in nights:
@@ -71,7 +73,8 @@ class HeartRateDailyTest(unittest.TestCase):
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
             db = garmin_db(Path(d) / "garmin.db", [], resting=[("2015-10-09", 61.0)], daily=[("2015-10-09", 59, 135)])
-            figures = garmin.heart_rates({"garmin_db": str(db)}, garmin.DEFAULT_BUSY_MS)
+            summary(Path(d), "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
+            figures = garmin.days({"garmin_db": str(db), "fit_dir": d}, garmin.DEFAULT_BUSY_MS).heart
         self.assertEqual([f["statistic"] for f in figures], ["resting", "minimum", "maximum"])
         for figure in figures:
             self.assertEqual([e.message for e in validator.iter_errors(figure)], [], figure)
@@ -88,7 +91,9 @@ class StepCountTest(unittest.TestCase):
         validator = pinned(definition["meta"]["source_schema"])
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
-            steps, _ = garmin.days({"garmin_db": str(garmin_db(Path(d) / "garmin.db", [], daily=[DAY, EMPTY_DAY]))}, garmin.DEFAULT_BUSY_MS)
+            summary(Path(d), "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00", steps=6219)
+            db = garmin_db(Path(d) / "garmin.db", [], daily=[DAY, EMPTY_DAY])
+            steps = garmin.days({"garmin_db": str(db), "fit_dir": d}, garmin.DEFAULT_BUSY_MS).steps
         self.assertEqual(len(steps), 1)
         self.assertEqual([e.message for e in validator.iter_errors(steps[0])], [], steps[0])
 

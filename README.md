@@ -482,16 +482,29 @@ modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sy
 `poll` reads every file and labels the run a snapshot.
 
 Sleep comes from GarminDB's `garmin.db`, opened read-only: one `health.sleep-episode` per day its `sleep`
-table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (time interval in UTC, the
-stage durations in minutes) with Garmin's score, its word for it and the averages beside it.
-GarminDB writes the start and end as wall clock in the zone its process runs in, which is the
-days' zone (Australia/Sydney), so the importer reads them there and emits UTC.
+table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (the stage durations in
+minutes) with Garmin's score, its word for it and the averages beside it.
 Daily heart rate comes from the same file: each day's resting figure (`resting_hr`) and its
 minimum and maximum (`daily_summary`), one `health.heart-rate-day` facet each, as the Open
-mHealth `heart-rate-2.0` body over the local day in Australia/Sydney. Steps are a
+mHealth `heart-rate-2.0` body over the day. Steps are a
 `activity.steps` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
-`activity.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost. None of
-these types is bundled in Anam, so the first batch of each makes `anam_submit` register it.
+`activity.day` as Garmin wrote it, so nothing the `health-db` summaries carried is lost.
+`activity.day` is the importer's own Definition, which the first batch makes `anam_submit`
+register; the rest are bundled in Anam.
+
+Times come from what Garmin Connect sent, which GarminDB keeps as JSON beside its tables (anam
+card 197). A day is the interval Garmin counted, from `daily_summary_<day>.json` under `fit_dir`
+by year: its start and end in GMT beside the watch's clock, so a day follows the watch across a
+flight (Garmin's 17 October 2026 runs `+11:00` to `+01:00`, 34 hours), and a day still in
+progress ends where Garmin had counted to. A day with no summary is taken as midnight to
+midnight in Australia/Sydney, logged and marked an assumption; a summary that disagrees with
+`garmin.db` (another day, or other steps) is skipped and logged until the next sync brings them
+together. A night is Garmin's GMT start and end from `sleep_<day>.json` under `sleep_dir`,
+written at the watch's offset, never GarminDB's wall clock, which is in the zone its own process
+runs in. Every payload carries `source_time`: the value Garmin supplied, the zone it is read in
+and the basis (`source`, or `assumption` for an assumed day). `activity.day`'s fact time is
+still its date read in Sydney until anam card 195 renames it; its `effective_time_frame` says
+where the day truly began.
 
 Sessions come from the activity FIT files GarminDB downloads (`FitFiles/Activities`), one
 `activity.exercise-session` per FIT session message, beside Technogym's and Strong's. The FIT file holds the
@@ -499,7 +512,7 @@ start as a true UTC instant; `garmin_activities.db` holds it as wall clock, and 
 wall clock, so the importer reads the file. The FIT sport and sub-sport map to Google Fit's names
 (Cardio, which Google Fit has no name for, is `other`; an unmapped pair is `unknown`), and the
 payload keeps both as the watch wrote them. `activity.exercise-session` is bundled in Anam: the importer
-carries Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+carries Anam's v2 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
 Their ids name what they are: `garmin:session:2015-10-04T03:49:17Z`, `sleep:2015-10-08`, `steps:2015-10-09`, `day:2015-10-09`. A
 facet's id is the source plus its identity values, without the type, so two types keyed on a
@@ -517,6 +530,7 @@ plugins:
     config:
       fit_dir: <GarminDB's FitFiles/Monitoring directory>
       activities_dir: <GarminDB's FitFiles/Activities directory>
+      sleep_dir: <GarminDB's Sleep directory>
       garmin_db: <GarminDB's DBs/garmin.db>
       person_id: <Anam's person_id>
 ```
@@ -526,7 +540,7 @@ least daily) and `busy_timeout_ms` (default 30000: how long a read of `garmin.db
 GarminDB's write before it asks to be retried). A bad value fails the command at start.
 
 A file the SDK cannot decode is logged and skipped, and its run is then no snapshot; `health`
-fails on it. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
+fails on it. So does a day or night left out for want of Garmin's time. Against a real archive of 7,738 files, `poll` found the same 302 alerts the ETL
 holds, in 7 batches, 564 nights, 1,900 heart rate figures and 706 days of steps, every one passing its pinned schema. Its 199 activity files hold 200
 sessions, all conforming; with the rest they were admitted to a scratch daemon, 4,076 facets, and a
 resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU).
@@ -559,7 +573,7 @@ monitor's end of workout, minus its time; a result entered on the web has neithe
 is the day it names at Sydney midnight and `start_time_known` is false. The Logbook's tenths of
 a second and decimetres are written in seconds and metres; a heart rate of zero, the monitor's
 figure for no belt, is left out. `activity.exercise-session` is bundled in Anam: the importer carries
-Anam's v5 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
+Anam's v2 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
 ```yaml
 plugins:

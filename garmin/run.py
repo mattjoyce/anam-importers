@@ -19,7 +19,9 @@ Garmin wrote it (activity.day). From the activity FIT files under GarminDB's
 FitFiles/Activities, each session the watch recorded (activity.exercise-session, the IEEE
 1752 body with Garmin's measures beside it): the FIT file holds the start as a true
 UTC instant, where garmin_activities.db holds it as wall clock, not always the same
-one. It keeps no state of its own: Anam makes a resend a no-op.
+one. Days and nights are timed by the Garmin Connect JSON GarminDB keeps beside
+garmin.db, and every payload says in source_time how its time was read (anam card
+197). It keeps no state of its own: Anam makes a resend a no-op.
 
 Commands:
 - handle : after a GarminDB sync, what changed in the last lookback_days
@@ -36,7 +38,6 @@ import sys
 import time
 from datetime import date, datetime, timedelta, timezone
 from datetime import time as clock
-from zoneinfo import ZoneInfo
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 
@@ -44,6 +45,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import clock as clk  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
@@ -68,9 +70,11 @@ DAY_MINUTES = {"moderate_activity_time": "moderate_activity_minutes",
 # DAY_GOALS are what Garmin writes on a day the watch recorded nothing.
 DAY_GOALS = {"step_goal", "floors_goal", "calories_goal", "hydration_goal", "intensity_time_goal_minutes"}
 
-# ZONE is where Garmin's days are local days. The Definitions say so, in their
-# fact_time; it is read from there so it is stated once.
-ZONE = ZoneInfo(json.loads((HERE / "definitions" / "activity.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
+# ZONE is the zone activity.day's Definition reads a bare day in. Garmin's days
+# follow the watch, so it is used only for a day Garmin gave no interval for, and
+# such a day says so (basis "assumption", anam card 197). Read from the Definition
+# so it is stated once.
+ZONE = json.loads((HERE / "definitions" / "activity.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"]
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
@@ -113,14 +117,16 @@ def alert(mesg: Dict[str, Any]) -> Dict[str, Any]:
     event's 16-bit data packs the heart rate that tripped the alert in the high byte
     and the threshold configured on the watch in the low byte."""
     data = int(mesg["data"])
-    ts: datetime = mesg["timestamp"]
+    at = clk.utc_text(mesg["timestamp"])
     return {
         "source": "garmin",
         "kind": "hr_high_alert",
-        "fact_time": ts.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "fact_time": at,
         "heart_rate": number(data >> 8),
         "threshold": number(data & 0xFF),
         "unit": "bpm",
+        # A FIT timestamp is UTC by the format's definition.
+        "source_time": clk.source_time(at, "UTC", "source"),
     }
 
 
@@ -250,7 +256,7 @@ def session(mesg: Dict[str, Any]) -> Dict[str, Any]:
     """One FIT session message as an activity.exercise-session payload. A figure the watch
     did not write is left out, and so is a zero distance, which is what the watch
     writes for a session that measures none."""
-    start = mesg["start_time"].astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    start = clk.utc_text(mesg["start_time"])
     sport, sub_sport = fit_name(mesg.get("sport")), fit_name(mesg.get("sub_sport"))
     p: Dict[str, Any] = {
         "id": f"garmin:session:{start}",
@@ -258,6 +264,7 @@ def session(mesg: Dict[str, Any]) -> Dict[str, Any]:
         "effective_time_frame": {"time_interval": {
             "start_date_time": start, "duration": {"value": measure(mesg["total_elapsed_time"]), "unit": "sec"}}},
         "source": "Garmin",
+        "source_time": clk.source_time(start, "UTC", "source"),
     }
     for key, v in (("fit_sport", sport), ("fit_sub_sport", sub_sport), ("sport_profile", mesg.get("sport_profile_name"))):
         if v:
@@ -290,19 +297,156 @@ def minutes(t: str) -> Any:
     return number(int(h) * 60 + int(m) + float(sec) / 60)
 
 
-def instant(t: str) -> str:
-    """GarminDB's DATETIME text, "2015-10-07 12:44:00.000000", as an RFC 3339 UTC instant.
-    GarminDB writes Garmin's GMT epoch as a naive wall clock in its process's zone, and
-    that process runs in ZONE, the zone the days are local days in (anam card 174)."""
-    return datetime.fromisoformat(t).replace(tzinfo=ZONE).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# GarminDB keeps what Garmin Connect sent, each day's summary and each night's sleep,
+# as JSON beside the tables it builds from them. The JSON holds what the tables drop:
+# every time in GMT beside the watch's own clock, so the offset the watch was at comes
+# from Garmin, not from the zone GarminDB runs in (anam card 197). A day is the
+# interval Garmin counted, which follows the watch across a flight.
+
+# MAX_OFFSET is the widest offset from UTC any zone keeps (+14:00). A difference
+# between Garmin's two clocks outside it, or not whole minutes, is no zone's offset.
+# Not configurable: it is the world's, not ours.
+MAX_OFFSET = timedelta(hours=14)
 
 
-def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
-    """One night of Garmin's sleep table as a health.sleep-episode payload."""
+class Frame(NamedTuple):
+    """When a payload was true: its effective_time_frame and its source_time."""
+
+    frame: Dict[str, Any]
+    source_time: Dict[str, Any]
+
+
+def read_json(path: Path) -> Optional[Dict[str, Any]]:
+    """path's JSON object, or None when GarminDB wrote no such file. A file that is
+    not a JSON object is a ValueError."""
+    try:
+        body = json.loads(path.read_text())
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ductile.Failure(f"{path}: {exc}", retry=True) from exc
+    if not isinstance(body, dict):
+        raise ValueError(f"{path.name} is not a JSON object")
+    return body
+
+
+def checked_offset(local_minus_gmt: timedelta, what: str) -> timedelta:
+    """The watch's offset from UTC, as the difference between its two clocks."""
+    if abs(local_minus_gmt) > MAX_OFFSET or local_minus_gmt % timedelta(minutes=1):
+        raise ValueError(f"{what}: its local and GMT clocks differ by {local_minus_gmt}, which is no zone's offset")
+    return local_minus_gmt
+
+
+def wellness_clock(text: Any) -> datetime:
+    """A wellness time as Garmin writes it, "2026-10-16T13:00:00.0", naive. The
+    fraction is dropped: Garmin writes whole minutes, and Python 3.10 reads only
+    three or six fraction digits."""
+    return datetime.fromisoformat(str(text).split(".")[0])
+
+
+WELLNESS = ("wellnessStartTimeGmt", "wellnessStartTimeLocal", "wellnessEndTimeGmt", "wellnessEndTimeLocal")
+
+
+def summary_frame(fit_dir: Path, day: str, steps: Optional[int] = None) -> Optional[Frame]:
+    """The interval Garmin counted for day, from its daily summary
+    (<fit_dir>/<year>/daily_summary_<day>.json), or None when it gave none. Each
+    end is written at its own offset: across a flight they differ. A day still in
+    progress ends where Garmin had counted to; the next sync supersedes it. With
+    steps, garmin.db's count for the day, a summary that counted otherwise is a
+    ValueError: the interval would not be the one the totals were counted over."""
+    name = f"daily_summary_{day}.json"
+    s = read_json(fit_dir / day[:4] / name)
+    if not s or not all(s.get(k) for k in WELLNESS):
+        return None
+    try:
+        start_gmt, start_local, end_gmt, end_local = (wellness_clock(s[k]) for k in WELLNESS)
+    except ValueError as exc:
+        raise ValueError(f"{name}: {exc}") from exc
+    start_off = checked_offset(start_local - start_gmt, name)
+    end_off = checked_offset(end_local - end_gmt, name)
+    if s.get("calendarDate") != day or start_local.date().isoformat() != day or end_gmt <= start_gmt:
+        raise ValueError(f"{name}: its interval, {start_local} to {end_local}, is not day {day}'s")
+    if steps is not None and s.get("totalSteps") is not None and s["totalSteps"] != steps:
+        raise ValueError(f"{name} counts {s['totalSteps']} steps and garmin.db {steps}: GarminDB has not imported it yet")
+    start, end = start_gmt.replace(tzinfo=timezone.utc), end_gmt.replace(tzinfo=timezone.utc)
+    return Frame({"time_interval": {"start_date_time": clk.at_offset(start, start_off),
+                                    "end_date_time": clk.at_offset(end, end_off)}},
+                 clk.source_time(day, clk.offset_text(start_off), "source"))
+
+
+def assumed_frame(day: str) -> Frame:
+    """day as local midnight to the next in ZONE, for a day Garmin gave no interval
+    for; its source_time says the zone was assumed. A midnight that does not exist
+    once in ZONE is a ClockError."""
+    d = date.fromisoformat(day)
+    start = clk.local_instant(datetime.combine(d, clock(0)), ZONE)
+    end = clk.local_instant(datetime.combine(d + timedelta(days=1), clock(0)), ZONE)
+    return Frame({"time_interval": {"start_date_time": clk.at_offset(start, start.utcoffset()),
+                                    "end_date_time": clk.at_offset(end, end.utcoffset())}},
+                 clk.source_time(day, ZONE, "assumption"))
+
+
+class Read(NamedTuple):
+    """What a read of one kind of record found: each record's Frame by its key, a
+    log line for each record assumed or left out, and whether any was left out."""
+
+    frames: Dict[str, Frame]
+    logs: List[str]
+    lost: bool
+
+
+def day_frames(fit_dir: Path, days: List[str], steps: Dict[str, int]) -> Read:
+    """Each of days' Frame: Garmin's where it gave one, else assumed. A day whose
+    summary contradicts itself, or whose assumed midnight is not one instant, is left
+    out, since no interval could be said for it without a guess."""
+    frames: Dict[str, Frame] = {}
+    logs: List[str] = []
+    lost = False
+    for day in sorted(set(days)):
+        try:
+            f = summary_frame(fit_dir, day, steps.get(day))
+            if f is None:
+                f = assumed_frame(day)
+                logs.append(f"day {day}: Garmin gave no interval, so it is taken as midnight to midnight in {ZONE} "
+                            "(basis assumption)")
+        except ValueError as exc:
+            logs.append(f"skipped day {day}: {exc}")
+            lost = True
+            continue
+        frames[day] = f
+    return Read(frames, logs, lost)
+
+
+SLEEP_CLOCKS = ("sleepStartTimestampGMT", "sleepStartTimestampLocal", "sleepEndTimestampGMT", "sleepEndTimestampLocal")
+
+
+def sleep_frame(sleep_dir: Path, day: str) -> Frame:
+    """A night's start and end as Garmin's GMT epochs, written on the watch's clock,
+    from GarminDB's copy of Garmin's sleep (<sleep_dir>/sleep_<day>.json). Its
+    source_time keeps the start's epoch as Garmin wrote it, which is UTC; the watch's
+    offset is in the frame. A night the file does not time is a ValueError."""
+    name = f"sleep_{day}.json"
+    dto = (read_json(sleep_dir / name) or {}).get("dailySleepDTO") or {}
+    if dto.get("calendarDate") != day or not all(type(dto.get(k)) is int for k in SLEEP_CLOCKS):
+        raise ValueError(f"{name} holds no GMT and local start and end for the night")
+    start_ms, start_local_ms, end_ms, end_local_ms = (dto[k] for k in SLEEP_CLOCKS)
+    start_off = checked_offset(timedelta(milliseconds=start_local_ms - start_ms), name)
+    end_off = checked_offset(timedelta(milliseconds=end_local_ms - end_ms), name)
+    start = datetime.fromtimestamp(start_ms / 1000, timezone.utc)
+    end = datetime.fromtimestamp(end_ms / 1000, timezone.utc)
+    if end <= start:
+        raise ValueError(f"{name}: the night ends before it starts")
+    return Frame({"time_interval": {"start_date_time": clk.at_offset(start, start_off),
+                                    "end_date_time": clk.at_offset(end, end_off)}},
+                 clk.source_time(str(start_ms), "UTC", "source"))
+
+
+def sleep_episode(row: sqlite3.Row, f: Frame) -> Dict[str, Any]:
+    """One night of Garmin's sleep table as a health.sleep-episode payload, timed by
+    Garmin's sleep JSON."""
     p: Dict[str, Any] = {
         "id": f"sleep:{row['day']}",
-        "effective_time_frame": {"time_interval": {"start_date_time": instant(row["start"]),
-                                                   "end_date_time": instant(row["end"])}},
+        "effective_time_frame": f.frame,
         "total_sleep_time": {"value": minutes(row["total_sleep"]), "unit": "min"},
         "light_sleep_duration": {"value": minutes(row["light_sleep"]), "unit": "min"},
         "deep_sleep_duration": {"value": minutes(row["deep_sleep"]), "unit": "min"},
@@ -311,6 +455,7 @@ def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
         # Garmin's sleep table holds one sleep a day, its main one; the importer
         # says so, Garmin does not, and the Definition's description records that.
         "is_main_sleep": True,
+        "source_time": f.source_time,
     }
     for key in ("score", "qualifier"):
         if row[key] not in (None, ""):
@@ -321,13 +466,33 @@ def sleep_episode(row: sqlite3.Row) -> Dict[str, Any]:
     return p
 
 
-def sleeps(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> List[Dict[str, Any]]:
+def sleeps(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], Read]:
     """Every night garmin.db's sleep table holds, by day; with since, those from that
-    day on. A day without a start is a day the watch saw no sleep: no episode."""
+    day on. A day without a start is a day the watch saw no sleep: no episode. A night
+    Garmin's sleep JSON does not time is left out."""
     rows = query(config, busy_ms, 'SELECT day, start, "end", total_sleep, deep_sleep, light_sleep, rem_sleep, awake, '
                          "avg_spo2, avg_rr, avg_stress, score, qualifier FROM sleep "
                          'WHERE start IS NOT NULL AND "end" IS NOT NULL AND day >= ? ORDER BY day', since)
-    return [sleep_episode(r) for r in rows]
+    sleep_dir = folder(config, "sleep_dir")
+    nights: List[Dict[str, Any]] = []
+    frames: Dict[str, Frame] = {}
+    logs: List[str] = []
+    for r in rows:
+        try:
+            frames[r["day"]] = sleep_frame(sleep_dir, r["day"])
+        except ValueError as exc:
+            logs.append(f"skipped night {r['day']}: {exc}")
+            continue
+        nights.append(sleep_episode(r, frames[r["day"]]))
+    return nights, Read(frames, logs, len(frames) < len(rows))
+
+
+def folder(config: Dict[str, Any], key: str) -> Path:
+    """The directory config[key] names."""
+    root = Path(str(config[key]))
+    if not root.is_dir():
+        raise ductile.Failure(f"no {key} at {root}", retry=False)
+    return root
 
 
 def query(config: Dict[str, Any], busy_ms: int, sql: str, since: Optional[date]) -> List[sqlite3.Row]:
@@ -347,17 +512,10 @@ def query(config: Dict[str, Any], busy_ms: int, sql: str, since: Optional[date])
         raise ductile.Failure(f"garmin_db {path}: {exc}", retry=True) from exc
 
 
-def day_frame(day: str) -> Dict[str, Any]:
-    """A Garmin day as an OMH time interval: local midnight to the next."""
-    start = datetime.combine(date.fromisoformat(day), clock(0), ZONE)
-    end = datetime.combine(date.fromisoformat(day) + timedelta(days=1), clock(0), ZONE)
-    return {"time_interval": {"start_date_time": start.isoformat(), "end_date_time": end.isoformat()}}
-
-
-def heart_figure(day: str, statistic: str, bpm: float) -> Dict[str, Any]:
+def heart_figure(day: str, statistic: str, bpm: float, f: Frame) -> Dict[str, Any]:
     p: Dict[str, Any] = {"id": day, "statistic": statistic,
                          "heart_rate": {"value": number(bpm), "unit": "beats/min"},
-                         "effective_time_frame": day_frame(day)}
+                         "effective_time_frame": f.frame, "source_time": f.source_time}
     if statistic == "resting":
         p["temporal_relationship_to_physical_activity"] = "at rest"
     else:
@@ -365,29 +523,36 @@ def heart_figure(day: str, statistic: str, bpm: float) -> Dict[str, Any]:
     return p
 
 
-def heart_rates(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> List[Dict[str, Any]]:
-    """Each day's resting heart rate (resting_hr) and its minimum and maximum
-    (daily_summary), by day. A figure Garmin left empty is no facet."""
-    figures = [heart_figure(r["day"], "resting", r["resting_heart_rate"])
-               for r in query(config, busy_ms, "SELECT day, resting_heart_rate FROM resting_hr "
-                                      "WHERE resting_heart_rate IS NOT NULL AND day >= ?", since)]
-    for r in query(config, busy_ms, "SELECT day, hr_min, hr_max FROM daily_summary WHERE day >= ?", since):
-        figures += [heart_figure(r["day"], stat, r[col]) for stat, col in (("minimum", "hr_min"), ("maximum", "hr_max"))
-                    if r[col] is not None]
-    order = {"resting": 0, "minimum": 1, "maximum": 2}
-    return sorted(figures, key=lambda f: (f["id"], order[f["statistic"]]))
+class Days(NamedTuple):
+    """The day-keyed types, each day timed by Garmin's interval for it."""
+
+    steps: List[Dict[str, Any]]
+    records: List[Dict[str, Any]]
+    heart: List[Dict[str, Any]]
+    read: Read
 
 
-def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Each day of daily_summary as a activity.steps and a activity.day. A day
-    holding only goals and zero times is a day the watch recorded nothing: neither."""
-    cols = ", ".join(("day", "steps", "distance") + DAY_COLUMNS + tuple(DAY_MINUTES))
-    steps: List[Dict[str, Any]] = []
-    records: List[Dict[str, Any]] = []
-    for r in query(config, busy_ms, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since):
+def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Days:
+    """Each day of daily_summary as an activity.steps and an activity.day, and each
+    day's resting heart rate (resting_hr) and its minimum and maximum
+    (daily_summary) as health.heart-rate-day figures. A day holding only goals and
+    zero times is a day the watch recorded nothing: no steps and no record. A figure
+    Garmin left empty is no facet."""
+    cols = ", ".join(("day", "steps", "distance", "hr_min", "hr_max") + DAY_COLUMNS + tuple(DAY_MINUTES))
+    daily = query(config, busy_ms, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since)
+    resting = query(config, busy_ms, "SELECT day, resting_heart_rate FROM resting_hr "
+                                     "WHERE resting_heart_rate IS NOT NULL AND day >= ?", since)
+    read = day_frames(folder(config, "fit_dir"), [r["day"] for r in daily] + [r["day"] for r in resting],
+                      {r["day"]: int(r["steps"]) for r in daily if r["steps"] is not None})
+    timed = read.frames
+    out = Days([], [], [], read)
+    for r in daily:
+        f = timed.get(r["day"])
+        if f is None:
+            continue
         if r["steps"] is not None:
-            steps.append({"id": f"steps:{r['day']}", "step_count": {"value": int(r["steps"]), "unit": "steps"},
-                          "effective_time_frame": day_frame(r["day"])})
+            out.steps.append({"id": f"steps:{r['day']}", "step_count": {"value": int(r["steps"]), "unit": "steps"},
+                              "effective_time_frame": f.frame, "source_time": f.source_time})
         rec: Dict[str, Any] = {k: number(r[k]) if isinstance(r[k], float) else r[k]
                                for k in DAY_COLUMNS if r[k] not in (None, "")}
         if r["distance"] is not None:
@@ -395,8 +560,17 @@ def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> 
         rec.update({name: minutes(r[col]) for col, name in DAY_MINUTES.items() if r[col]})
         measured = {k for k, v in rec.items() if k not in DAY_GOALS and v != 0}
         if measured or r["steps"] is not None:
-            records.append({"id": f"day:{r['day']}", "day": r["day"], **rec})
-    return steps, records
+            out.records.append({"id": f"day:{r['day']}", "day": r["day"], **rec,
+                                "effective_time_frame": f.frame, "source_time": f.source_time})
+    figures = [heart_figure(r["day"], "resting", r["resting_heart_rate"], timed[r["day"]])
+               for r in resting if r["day"] in timed]
+    for r in daily:
+        figures += [heart_figure(r["day"], stat, r[col], timed[r["day"]])
+                    for stat, col in (("minimum", "hr_min"), ("maximum", "hr_max"))
+                    if r[col] is not None and r["day"] in timed]
+    order = {"resting": 0, "minimum": 1, "maximum": 2}
+    out.heart.extend(sorted(figures, key=lambda f: (f["id"], order[f["statistic"]])))
+    return out
 
 
 # Ids name what they are ("sleep:", "steps:", "day:") because a facet's id is the
@@ -425,28 +599,38 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
     return events
 
 
+class Shaped(NamedTuple):
+    """One run's payloads by type, its log lines, and whether it left anything out:
+    a FIT file that would not decode, or a day or night Garmin did not time."""
+
+    by_type: Dict[str, List[Dict[str, Any]]]
+    logs: List[str]
+    complete: bool
+
+
 def shape(config: Dict[str, Any], busy_ms: int, monitoring: List[Path], activities: List[Path],
-          since: Optional[date]) -> Tuple[Dict[str, List[Dict[str, Any]]], List[str]]:
-    """Every type's payloads from the given FIT files and garmin.db from since on,
-    and a log line per FIT file that would not decode."""
+          since: Optional[date]) -> Shaped:
+    """Every type's payloads from the given FIT files and garmin.db from since on."""
     found, alert_logs = alerts(monitoring)
     held, session_logs = sessions(activities)
-    steps, records = days(config, busy_ms, since)
-    return ({ALERT_TYPE: found, SLEEP_TYPE: sleeps(config, busy_ms, since),
-             HEART_TYPE: heart_rates(config, busy_ms, since),
-             STEPS_TYPE: steps, DAY_TYPE: records, SESSION_TYPE: held}, alert_logs + session_logs)
+    nights, slept = sleeps(config, busy_ms, since)
+    d = days(config, busy_ms, since)
+    return Shaped({ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: d.heart, STEPS_TYPE: d.steps,
+                   DAY_TYPE: d.records, SESSION_TYPE: held},
+                  alert_logs + session_logs + slept.logs + d.read.logs,
+                  not (alert_logs or session_logs or slept.lost or d.read.lost))
 
 
 def run_over(config: Dict[str, Any], s: Settings, monitoring: List[Path], activities: List[Path],
              since: Optional[date], snapshot: bool) -> Dict[str, Any]:
-    by_type, logs = shape(config, s.busy_ms, monitoring, activities, since)
-    # A file that would not decode leaves its alerts or sessions out, so the run is not everything.
-    events = batch_events(load(HERE), by_type, str(config["person_id"]), snapshot and not logs)
-    n = {t: len(ps) for t, ps in by_type.items()}
+    shaped = shape(config, s.busy_ms, monitoring, activities, since)
+    # A run that left something out is not everything, so it is no snapshot.
+    events = batch_events(load(HERE), shaped.by_type, str(config["person_id"]), snapshot and shaped.complete)
+    n = {t: len(ps) for t, ps in shaped.by_type.items()}
     return ductile.ok(f"{n[ALERT_TYPE]} alert(s) in {len(monitoring)} monitoring FIT file(s), {n[SESSION_TYPE]} "
                       f"session(s) in {len(activities)} activity FIT file(s), {n[SLEEP_TYPE]} night(s) of sleep, "
                       f"{n[HEART_TYPE]} daily heart rate figure(s), {n[STEPS_TYPE]} day(s) of steps and "
-                      f"{n[DAY_TYPE]} day record(s), {len(events)} batch(es)", events=events, logs=logs)
+                      f"{n[DAY_TYPE]} day record(s), {len(events)} batch(es)", events=events, logs=shaped.logs)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -462,8 +646,8 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     s = settings(config)
-    # Every FIT file and every night GarminDB holds is everything, so poll's run is
-    # a snapshot, unless a file would not decode.
+    # Every FIT file and every day and night GarminDB holds is everything, so poll's
+    # run is a snapshot, unless it left something out.
     return run_over(config, s, fit_files(config, "fit_dir"), fit_files(config, "activities_dir"), None, snapshot=True)
 
 
@@ -473,12 +657,13 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     definitions = load(HERE)
     monitoring, activities = fit_files(config, "fit_dir"), fit_files(config, "activities_dir")
     files = monitoring + activities
-    shaped, logs = shape(config, s.busy_ms, monitoring, activities, None)
-    check(definitions, [envelope(definitions[t], p) for t, ps in shaped.items() for p in ps])
-    if logs:
-        return ductile.error(f"{len(logs)} of {len(files)} FIT file(s) would not decode", retry=False, logs=logs)
-    counts = ", ".join(f"{len(ps)} {t} v{definitions[t].version}" for t, ps in shaped.items())
-    return ductile.ok(f"{counts} from {len(files)} FIT file(s), every one conforming")
+    shaped = shape(config, s.busy_ms, monitoring, activities, None)
+    check(definitions, [envelope(definitions[t], p) for t, ps in shaped.by_type.items() for p in ps])
+    if not shaped.complete:
+        return ductile.error("a FIT file would not decode, or Garmin did not time a day or night", retry=False,
+                             logs=shaped.logs)
+    counts = ", ".join(f"{len(ps)} {t} v{definitions[t].version}" for t, ps in shaped.by_type.items())
+    return ductile.ok(f"{counts} from {len(files)} FIT file(s), every one conforming", logs=shaped.logs)
 
 
 if __name__ == "__main__":
