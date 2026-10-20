@@ -4,11 +4,11 @@ title: A run claims to be a snapshot only when it read everything
 description: An importer that skipped a file, a line, a result or an oversized payload sends its batches without a snapshot label, so Anam cannot call the unread facets absent.
 timestamp: 2026-10-17T00:00:00Z
 resource: garmin/run.py#run_over
-anchor: "snapshot and not logs"
+anchor: "snapshot and shaped.complete"
 basis: code
 tier: supporting
 enforced_at: garmin/run.py#run_over
-enforced_anchor: "snapshot and not logs"
+enforced_anchor: "snapshot and shaped.complete"
 applies_to:
   - /components/importer-garmin.md
   - /components/importer-concept2.md

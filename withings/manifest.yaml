@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes the withings plugin's measurements into Anam health.measurement envelopes and emits them as anam_withings.batch events, at most 49 to a batch, for anam_submit to post. Reads the withings database read-only; holds no token and writes nothing."
+description: "Shapes the withings plugin's measurements into Anam health.measurement.withings envelopes and emits them as anam_withings.batch events, at most 49 to a batch, for anam_submit to post. Reads the withings database read-only; holds no token and writes nothing."
 commands:
   - name: handle
     type: read

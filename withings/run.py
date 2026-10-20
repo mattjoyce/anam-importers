@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["jsonschema>=4.18"]
 # ///
-"""anam_withings: shapes the withings plugin's measurements into health.measurement
+"""anam_withings: shapes the withings plugin's measurements into health.measurement.withings
 envelopes for Anam, one batch event at a time.
 
 It reads the withings plugin's own database, read-only, and knows that one vendor's
@@ -38,7 +38,7 @@ from anam_importer import Definition, batches, check, envelope, load, snapshot_p
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-TYPE = "health.measurement"
+TYPE = "health.measurement.withings"
 BATCH_EVENT = "anam_withings.batch"
 
 # ATTRIB_AMBIGUOUS is Withings' attrib for a reading the device could not place: it

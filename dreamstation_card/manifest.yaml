@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes a Philips DreamStation SD card copy (P-SERIES) into Anam health.cpap-session envelopes, one per therapy session, and emits them as anam_dreamstation.batch events, at most 49 to a batch, for anam_submit to post. Every run sends the whole card. Reads the card; holds no token and writes nothing."
+description: "Shapes a Philips DreamStation SD card copy (P-SERIES) into Anam health.cpap-session.dreamstation envelopes, one per therapy session, and emits them as anam_dreamstation.batch events, at most 49 to a batch, for anam_submit to post. Every run sends the whole card. Reads the card; holds no token and writes nothing."
 commands:
   - name: handle
     type: read

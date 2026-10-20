@@ -62,7 +62,7 @@ class CardTest(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
     def test_the_card_registers_its_definition_and_a_resend_is_all_no_op(self):
-        daemon = Daemon("dreamstation", ["health.cpap-session"])
+        daemon = Daemon("dreamstation", ["health.cpap-session.dreamstation"])
         try:
             shaped = run("poll", CARD)
             sessions = sum(len(ev["payload"]["envelopes"]) for ev in shaped["events"])

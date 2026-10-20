@@ -7,7 +7,7 @@ from tests.helpers import REPO
 class DefinitionsTest(unittest.TestCase):
     def setUp(self):
         self.defs = load(REPO / "withings")
-        self.measurement = self.defs["health.measurement"]
+        self.measurement = self.defs["health.measurement.withings"]
 
     def test_a_conforming_payload_has_no_errors(self):
         payload = {"withings_id": "1", "date": "2026-10-09 07:30:00", "type": "1", "value": "80.5", "unit": "-3"}

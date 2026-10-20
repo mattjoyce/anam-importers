@@ -1,7 +1,7 @@
 ---
 type: workflow
 title: Fetch and shape a Concept2 workout
-description: The fetch command brings a local cache up to date from the Logbook API, and handle or poll then shape the cached results into activity.exercise-session envelopes without touching the network.
+description: The fetch command brings a local cache up to date from the Logbook API, and handle or poll then shape the cached results into activity.exercise-session.concept2 envelopes without touching the network.
 timestamp: 2026-10-17T00:00:00Z
 resource: concept2/run.py#fetch
 anchor: "api = Logbook(s.logbook_url, str(token), s.timeout, s.max_response)"

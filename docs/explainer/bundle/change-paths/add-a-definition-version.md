@@ -12,12 +12,11 @@ touches:
   - /data-structures/definition-manifest.md
   - /invariants/a-held-definition-version-is-never-overwritten.md
   - /decisions/importers-carry-their-definitions.md
-  - /gaps/exercise-session-is-carried-twice.md
 ---
 
 1. **Copy and edit.** Replace the file under `<folder>/definitions/<type>.json` with the new body and a higher `definition_version`. The file keeps its name, since an importer ships one version of each type.
 2. **Change the shaping** in `run.py` so payloads follow the new schema. `check` fails any payload that does not.
-3. **Check the shared copy.** `activity.exercise-session` lives in both the Garmin and Concept2 folders and must stay byte-identical.
+3. **Check the bundled copy.** A type Anam bundles is carried here as a byte copy of Anam's body, and Anam bumps it first. Garmin and Concept2 each carry their own leaf of `activity.exercise-session` (anam card 195), and the two leaves' shared core must stay identical, which `tests/test_concept2.py` holds.
 4. **Conformance.** Where the Definition follows a standard, the pinned schema under `tests/conformance` decides. Add a payload to the conformance tests.
 5. **Expect a supersession.** A resend under the new version changes the payload of every existing facet of that type, so each is superseded with a new version while the old ones stay in Anam.
 6. **Release as a minor version** and say in the changelog which importers emit the new version.
