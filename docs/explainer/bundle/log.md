@@ -7,3 +7,10 @@ First build of the bundle, at anam-importers commit 2b5dfd2b5ef330412d5d3dec1eb2
 - The code did not change, because this is the baseline. The repository at this commit has the shared base and `anam_submit`, and nine importers (Withings, blood pressure CSV, DreamStation, records, documents, Garmin, Concept2, OwnTracks, stays) with the one-off extractors, the rebuild drill and the unit tests.
 - The bundle holds one purpose, 17 terms, 21 components, 9 workflows, 14 data structures, 13 decisions, 15 invariants, 5 change paths and 7 gaps. Every resource, anchor, symbol and test named in the frontmatter is checked against the tracked files by `check.py`.
 - Writing it turned up gaps to fix first. The stays importer does not range-check its config, the tests against a real daemon do not run in CI, and the README does not yet list stays.
+
+## 2026-10-20, card 147
+
+Anam-importers at a4d2155 (master, after the taxonomy merge). The purpose page's commit stays 2b5dfd2; `check.py` passes against the tracked files at a4d2155.
+
+- Code: every importer names its types under the eight domains of anam card 147 (`health`, `activity`, `place`, `record`). A renamed type starts again at v1, and every Definition declares `kind` and `family`. Cards 165 (the links importer and `record.link`) and 174 (Garmin sleep instants in UTC) landed since the baseline.
+- Bundle: the Definition manifest page lists all twelve types in thirteen files with their versions, `family` and `kind`, and says which six are byte copies of Anam's bundled files. The bp-csv, Withings and Concept2 pages name the versions now in force (`health.blood-pressure` v6, `health.measurement` v4, `activity.exercise-session` v1). Counts: 1 purpose, 17 terms, 22 components, 10 workflows, 14 data structures, 13 decisions, 15 invariants, 5 change paths and 7 gaps.

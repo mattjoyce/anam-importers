@@ -51,6 +51,11 @@ All notable changes to this repo. The format follows
   wrong kind or out of range now fails the command at start, naming the key, where before some
   failed late or not at all. Defaults are unchanged. `bp_csv` reads its zone from its Definition.
   `docs/defaults-and-invariants.md` lists every hard-coded value and why it is a key or a constant.
+- The explainer's Definition manifest page lists all twelve types in thirteen files with their
+  current versions, `family` and `kind`, and its bp_csv, Withings and Concept2 pages name the
+  versions now in force. The records section of the README names the new medication, illness and
+  trip types in place of `med.*`, `illness.*` and `travel.*`. The explainer log has an entry for
+  cards 147, 165 and 174 (anam card 147).
 
 ### Fixed
 

@@ -15,7 +15,7 @@ depends_on:
   - /components/plugin-protocol.md
 ---
 
-Source `bp-csv`, type `health.blood-pressure` v5, identity `/date_excel` with `/reading`, fact time `/date_excel` in Australia/Sydney. `handle` takes a file event with a path, `poll` resends every export under `export_dir` matching the `pattern` key (default `BloodPressure_*`).
+Source `bp-csv`, type `health.blood-pressure` v6, identity `/date_excel` with `/reading`, fact time `/date_excel` in Australia/Sydney. `handle` takes a file event with a path, `poll` resends every export under `export_dir` matching the `pattern` key (default `BloodPressure_*`).
 
 The export is messy and the importer absorbs it without touching a value. `records` splits CSV the way Go's `encoding/csv` does with leading space trimmed. A quoted field that never closes, or holds a quote that neither closes nor doubles, makes the whole export `Malformed` and nothing of it is sent, because a reading swallowed into another's comment would later be reported absent. Several readings can share one timestamp, so each gets an ordinal `reading` within its timestamp, which is half the identity.
 
