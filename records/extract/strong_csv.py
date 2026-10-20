@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Strong app CSV export -> a records file of activity.exercise-session, one record per workout.
+"""Strong app CSV export -> a records file of activity.exercise-session.strong, one record per workout.
 
 Usage: strong_csv.py --out-dir DIR --zone ZONE [--max-session-sec N] strong<digits>.csv
 
@@ -65,7 +65,7 @@ def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple
         at = datetime.fromisoformat(start).replace(tzinfo=tz)
         reported = num(first["Duration (sec)"])
         capped = not (0 < reported <= max_session_sec)
-        rec = {"type": "activity.exercise-session", "id": f"strong:session:{iso}",
+        rec = {"type": "activity.exercise-session.strong", "id": f"strong:session:{iso}",
                "activity_name": "strength_training",
                "effective_time_frame": {"time_interval": {
                    "start_date_time": at.isoformat(timespec="seconds"),

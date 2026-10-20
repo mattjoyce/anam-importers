@@ -15,8 +15,8 @@ worker built from the ETL's events table. From GarminDB's garmin.db: each night'
 sleep (health.sleep-episode, the IEEE 1752 body with Garmin's score and averages beside
 it), each day's resting, minimum and maximum heart rate (health.heart-rate-day,
 Open mHealth), steps (activity.steps, Open mHealth) and the rest of the day as
-Garmin wrote it (activity.day). From the activity FIT files under GarminDB's
-FitFiles/Activities, each session the watch recorded (activity.exercise-session, the IEEE
+Garmin wrote it (activity.day.garmin). From the activity FIT files under GarminDB's
+FitFiles/Activities, each session the watch recorded (activity.exercise-session.garmin, the IEEE
 1752 body with Garmin's measures beside it): the FIT file holds the start as a true
 UTC instant, where garmin_activities.db holds it as wall clock, not always the same
 one. Days and nights are timed by the Garmin Connect JSON GarminDB keeps beside
@@ -53,10 +53,10 @@ ALERT_TYPE = "health.heart-rate-alert"
 SLEEP_TYPE = "health.sleep-episode"
 HEART_TYPE = "health.heart-rate-day"
 STEPS_TYPE = "activity.steps"
-DAY_TYPE = "activity.day"
-SESSION_TYPE = "activity.exercise-session"
+DAY_TYPE = "activity.day.garmin"
+SESSION_TYPE = "activity.exercise-session.garmin"
 
-# DAY_COLUMNS are daily_summary's columns activity.day keeps under the same name.
+# DAY_COLUMNS are daily_summary's columns activity.day.garmin keeps under the same name.
 # Steps and the heart rate columns are other types; the TIME columns are kept in
 # minutes (DAY_MINUTES); distance is renamed for its unit. These and DAY_GOALS are
 # not configurable: they are GarminDB's schema and the Definition's fields.
@@ -70,11 +70,11 @@ DAY_MINUTES = {"moderate_activity_time": "moderate_activity_minutes",
 # DAY_GOALS are what Garmin writes on a day the watch recorded nothing.
 DAY_GOALS = {"step_goal", "floors_goal", "calories_goal", "hydration_goal", "intensity_time_goal_minutes"}
 
-# ZONE is the zone activity.day's Definition reads a bare day in. Garmin's days
-# follow the watch, so it is used only for a day Garmin gave no interval for, and
-# such a day says so (basis "assumption", anam card 197). Read from the Definition
-# so it is stated once.
-ZONE = json.loads((HERE / "definitions" / "activity.day.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"]
+# ZONE is the zone activity.day.garmin's Definition names, Australia/Sydney. Garmin's
+# days follow the watch, so it is used only for a day Garmin gave no interval for,
+# which is read as midnight to midnight there, and such a day says so (basis
+# "assumption", anam card 197). Read from the Definition so it is stated once.
+ZONE = json.loads((HERE / "definitions" / f"{DAY_TYPE}.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"]
 BATCH_EVENT = "anam_garmin.batch"
 
 # HR_HIGH_ALERT is the FIT event number the watch writes for an abnormal high
@@ -253,7 +253,7 @@ SESSION_UNITS = {"duration": ("total_timer_time", "sec"), "kcal_burned": ("total
 
 
 def session(mesg: Dict[str, Any]) -> Dict[str, Any]:
-    """One FIT session message as an activity.exercise-session payload. A figure the watch
+    """One FIT session message as an activity.exercise-session.garmin payload. A figure the watch
     did not write is left out, and so is a zero distance, which is what the watch
     writes for a session that measures none."""
     start = clk.utc_text(mesg["start_time"])
@@ -533,7 +533,7 @@ class Days(NamedTuple):
 
 
 def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Days:
-    """Each day of daily_summary as an activity.steps and an activity.day, and each
+    """Each day of daily_summary as an activity.steps and an activity.day.garmin, and each
     day's resting heart rate (resting_hr) and its minimum and maximum
     (daily_summary) as health.heart-rate-day figures. A day holding only goals and
     zero times is a day the watch recorded nothing: no steps and no record. A figure

@@ -197,7 +197,7 @@ class ModuleTest(unittest.TestCase):
         # for is read in.
         zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
                  ["meta"]["time_semantics"]["fact_time"]["zone"]
-                 for t in ("activity.day", "health.heart-rate-day", "activity.steps")}
+                 for t in ("activity.day.garmin", "health.heart-rate-day", "activity.steps")}
         self.assertEqual(zones, {self.mod.ZONE})
 
     def frame(self, day, start, end, steps=None, given=None):
@@ -319,7 +319,7 @@ class AlertTest(unittest.TestCase):
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
         self.assertEqual(len(payloads(polled)), 2)
-        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["activity.day", "activity.exercise-session", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
+        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
         handled = run("handle", self.dir)
         self.assertEqual([p["heart_rate"] for p in payloads(handled)], [117])
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
@@ -353,7 +353,7 @@ class AlertTest(unittest.TestCase):
             "wake_after_sleep_onset": {"value": 9, "unit": "min"},
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.day", "activity.exercise-session", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
 
     def test_a_london_night_is_london_s_whatever_zone_garmin_db_runs_in(self):
         # A night in London: garmin.db holds it as Sydney wall clock, the zone GarminDB runs
@@ -410,7 +410,7 @@ class AlertTest(unittest.TestCase):
         self.assertEqual(by_type["activity.steps"], [{
             "id": "steps:2015-10-09", "step_count": {"value": 6219, "unit": "steps"},
             "effective_time_frame": frame, "source_time": source("2015-10-09", "+11:00")}])
-        self.assertEqual(by_type["activity.day"], [{
+        self.assertEqual(by_type["activity.day.garmin"], [{
             "id": "day:2015-10-09", "day": "2015-10-09", "step_goal": 5070, "floors_up": 10, "floors_down": 5.55282, "floors_goal": 10,
             "calories_total": 2238, "calories_bmr": 1976, "calories_active": 262, "hydration_goal": 2800,
             "stress_avg": 30, "rr_waking_avg": 14, "rr_max": 26, "rr_min": 11, "bb_charged": 47, "bb_max": 63,
@@ -433,7 +433,7 @@ class AlertTest(unittest.TestCase):
         self.assertEqual([p["id"] for p in by_type["activity.steps"]], ["steps:2026-10-18"])
         self.assertEqual(by_type["activity.steps"][0]["effective_time_frame"],
                          day_of("2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00"))
-        self.assertEqual(by_type["activity.day"][0]["source_time"], source("2026-10-18", "+01:00"))
+        self.assertEqual(by_type["activity.day.garmin"][0]["source_time"], source("2026-10-18", "+01:00"))
         self.assertTrue(any("skipped day 2026-10-19" in m for m in logged(r)), logged(r))
         self.assertNotIn("snapshot", r["events"][0]["payload"])
 
@@ -504,7 +504,7 @@ class AlertTest(unittest.TestCase):
         summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00", steps=6219)
         for day in ("2015-10-08", "2015-10-09"):
             sleep_json(self.dir.parent / "Sleep", day, "2015-10-07T12:44:00+11:00", "2015-10-07T18:42:00+11:00")
-        daemon = Daemon("garmin", ["activity.exercise-session", "activity.day", "health.heart-rate-alert",
+        daemon = Daemon("garmin", ["activity.exercise-session.garmin", "activity.day.garmin", "health.heart-rate-alert",
                                    "health.heart-rate-day", "activity.steps", "health.sleep-episode"])
         try:
             shaped = run("poll", self.dir)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -14,10 +15,11 @@ from pathlib import Path
 
 import yaml
 
-from tests.helpers import REPO
+from tests.helpers import REPO, Daemon, run_plugin
 
 EXTRACT = REPO / "records" / "extract"
 RECORDS = REPO / "records" / "run.py"
+SUBMIT = REPO / "anam_submit" / "run.py"
 
 
 def module(name: str):
@@ -129,6 +131,7 @@ class Strong(unittest.TestCase):
         self.assertEqual(rows, 3)
         legs, pull = doc["records"]
         self.assertEqual(legs["id"], "strong:session:2001-07-02T17:30:00")
+        self.assertEqual({legs["type"], pull["type"]}, {"activity.exercise-session.strong"})
         self.assertEqual(legs["effective_time_frame"]["time_interval"]["duration"], {"value": 3600, "unit": "sec"})
         self.assertNotIn("duration_capped", legs)
         self.assertEqual(legs["sets"][1], {"exercise": "Squat", "set": "2", "kg": 62.5, "reps": 6, "rpe": 8,
@@ -177,6 +180,7 @@ class Technogym(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         (s,) = doc["records"]
         self.assertEqual(s["id"], "technogym:2001-03-04T10:15:00+11:00")
+        self.assertEqual(s["type"], "activity.exercise-session.technogym")
         self.assertEqual(s["activity_name"], "rowing.machine")
         self.assertEqual(s["effective_time_frame"]["time_interval"]["start_date_time"], "2001-03-04T09:55:00+11:00")
         self.assertEqual(s["distance"], {"value": 4000, "unit": "m"})
@@ -247,6 +251,39 @@ class BloodPressureDiary(unittest.TestCase):
         self.assertEqual(out["extracted"]["version"], 2)
 
 
+@unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
+class ExerciseLeaves(unittest.TestCase):
+    def test_strong_and_technogym_records_are_admitted_under_their_leaves(self):
+        # Each extractor writes its vendor's leaf of activity.exercise-session (anam card
+        # 195), and Anam bundles it: every record is admitted, and a resend is no-op.
+        leaves = ["activity.exercise-session.strong", "activity.exercise-session.technogym"]
+        with tempfile.TemporaryDirectory() as d:
+            csv = Path(d) / "strong1.csv"
+            csv.write_text(STRONG)
+            out = Path(d) / "records"
+            out.mkdir()
+            subprocess.run([sys.executable, str(EXTRACT / "strong_csv.py"), "--out-dir", str(out), "--zone", "UTC", str(csv)],
+                           check=True, capture_output=True)
+            subprocess.run([sys.executable, str(EXTRACT / "technogym_json.py"), "--out-dir", str(out),
+                            str(technogym_zip(Path(d) / "export.zip", [SESSION]))], check=True, capture_output=True)
+            daemon = Daemon("records", leaves)
+            try:
+                shaped = run_plugin(RECORDS, {"command": "poll", "config": {"records_dir": str(out), "person_id": "person-a"}})
+                self.assertEqual(shaped["status"], "ok", shaped)
+                for want in ("admitted", "no-op"):
+                    outcomes: dict = {}
+                    for ev in shaped["events"]:
+                        r = run_plugin(SUBMIT, {"command": "handle", "event": ev,
+                                                "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                                                "secrets": {"anam_importer_token_test": daemon.token}})
+                        self.assertEqual(r["status"], "ok", r)
+                        for o, n in r["events"][0]["payload"]["outcomes"].items():
+                            outcomes[o] = outcomes.get(o, 0) + n
+                    self.assertEqual(outcomes, {want: 3})
+            finally:
+                daemon.close()
+
+
 class Retype(unittest.TestCase):
     def test_a_note_is_retyped_by_the_table_and_a_rerun_changes_nothing(self):
         notes = "records:\n  - type: record.note  # kept\n    id: n-1\n  - {type: health.weight, id: w-1}\n"
@@ -263,6 +300,45 @@ class Retype(unittest.TestCase):
             self.assertEqual(f.read_text(), notes.replace("type: record.note", "type: record.edge"))
             again = subprocess.run(cmd + ["--yes", d], check=True, capture_output=True, text=True)
             self.assertIn("0 file(s) rewritten", again.stdout)
+
+    def test_a_split_retypes_each_record_by_its_id_and_refuses_one_no_row_places(self):
+        # anam card 195: renames/vendor-leaves.json splits activity.exercise-session by
+        # the payload id's prefix, so a Technogym file and a Strong file take two leaves.
+        technogym = ("document: {name: e.zip}\nrecords:\n- type: activity.exercise-session\n"
+                     "  id: technogym:2001-03-04T10:15:00+11:00\n  sets:\n  - {type: activity.exercise-session}\n")
+        strong = "records:\n  - {type: 'activity.exercise-session', id: 'strong:session:2001-07-02T17:30:00'}\n"
+        table = {"renames": [
+            {"from": "activity.exercise-session", "to": "activity.exercise-session.technogym",
+             "select": {"pointer": "/id", "prefix": "technogym:"}},
+            {"from": "activity.exercise-session", "to": "activity.exercise-session.strong",
+             "select": {"source": "records", "pointer": "/id", "prefix": "strong:session:"}},
+            {"from": "health.measurement", "to": "health.measurement.withings"}]}
+        with tempfile.TemporaryDirectory() as d:
+            t = Path(d) / "vendor-leaves.json"
+            t.write_text(json.dumps(table))
+            files = Path(d) / "records"
+            files.mkdir()
+            (files / "technogym.yaml").write_text(technogym)
+            (files / "strong.yaml").write_text(strong)
+            cmd = [sys.executable, "-I", str(EXTRACT / "retype_records.py"), "--table", str(t)]
+            dry = subprocess.run(cmd + [str(files)], check=True, capture_output=True, text=True)
+            self.assertIn("1  activity.exercise-session -> activity.exercise-session.technogym", dry.stdout)
+            self.assertIn("1  activity.exercise-session -> activity.exercise-session.strong", dry.stdout)
+            subprocess.run(cmd + ["--yes", str(files)], check=True, capture_output=True)
+            # Only the record's own type moves: a nested type key is payload.
+            self.assertEqual((files / "technogym.yaml").read_text(), technogym.replace(
+                "- type: activity.exercise-session\n", "- type: activity.exercise-session.technogym\n"))
+            self.assertEqual((files / "strong.yaml").read_text(),
+                             strong.replace("'activity.exercise-session'", "'activity.exercise-session.strong'"))
+            again = subprocess.run(cmd + ["--yes", str(files)], check=True, capture_output=True, text=True)
+            self.assertIn("0 file(s) rewritten", again.stdout)
+
+            (files / "polar.yaml").write_text("records:\n- {type: activity.exercise-session, id: 'polar:1'}\n")
+            (files / "strong.yaml").write_text(strong)
+            refused = subprocess.run(cmd + ["--yes", str(files)], capture_output=True, text=True)
+            self.assertEqual(refused.returncode, 1, refused.stdout)
+            self.assertIn("'polar:1' matches no rename", refused.stdout)
+            self.assertEqual((files / "strong.yaml").read_text(), strong, "a refused run writes nothing")
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ WITHINGS = REPO / "withings" / "run.py"
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN is not set")
 class AgainstAnamTest(unittest.TestCase):
     def setUp(self):
-        self.daemon = Daemon("withings", ["health.measurement", "test.reading"])
+        self.daemon = Daemon("withings", ["health.measurement.withings", "test.reading"])
         self.tmp = tempfile.TemporaryDirectory()
 
     def tearDown(self):
@@ -62,7 +62,7 @@ class AgainstAnamTest(unittest.TestCase):
         self.assertEqual(len(alerts), 1, second)
         self.assertEqual(alerts[0]["payload"]["absent"], 1)
         self.assertEqual(alerts[0]["payload"]["live"], 3)
-        self.assertEqual(alerts[0]["payload"]["types"], ["health.measurement"])
+        self.assertEqual(alerts[0]["payload"]["types"], ["health.measurement.withings"])
         self.assertEqual(len(alerts[0]["payload"]["absent_ids"]), 1)
         self.assertEqual(alerts[0]["dedupe_key"], "anam.snapshot_absent:" + alerts[0]["payload"]["snapshot"])
 
@@ -76,7 +76,7 @@ class AgainstAnamTest(unittest.TestCase):
         self.assertNotIn("snapshot", r["result"])
 
     def test_a_refused_batch_is_not_retried(self):
-        d = load(REPO / "withings")["health.measurement"]
+        d = load(REPO / "withings")["health.measurement.withings"]
         bad = {"envelopes": [{"type": d.type, "definition_version": d.version, "payload": {"withings_id": "1"}}],
                "definitions": [d.body.decode()]}
         r = self.submit({"type": "anam_withings.batch", "payload": bad})
@@ -93,7 +93,7 @@ class AgainstAnamTest(unittest.TestCase):
           "schema": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object",
             "required": ["id", "at"], "properties": {"id": {"type": "string", "minLength": 1},
             "at": {"type": "string", "minLength": 1}}, "additionalProperties": false}}''')
-        bundled = load(REPO / "withings")["health.measurement"]
+        bundled = load(REPO / "withings")["health.measurement.withings"]
         ensure_published(client, [reading, bundled])
         ensure_published(client, [reading, bundled])
         self.assertEqual(client.definition("test.reading", 1), reading.manifest)
