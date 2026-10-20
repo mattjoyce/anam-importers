@@ -27,6 +27,11 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `record.note` is `record.edge` (anam card 191). The records files on the Library share are
+  retyped with `retype_records.py --table renames/record-edge.json` from anam, after its rename run
+  has carried the notes over; `about` stays as written, since `record.edge` accepts it as the old
+  name of `to`.
+
 - The taxonomy (anam card 147). Every type is named `domain.concept` under one of eight domains,
   and each importer names the new ones: garmin sends `activity.day` (was `garmin.day`),
   `activity.exercise-session`, `activity.steps`, `health.heart-rate-day` (was

@@ -230,7 +230,7 @@ class BloodPressureDiary(unittest.TestCase):
                "records": [{"type": "health.blood-pressure", "id": "2001-05-06 07:00:00/1",
                             "date_excel": "2001-05-06 07:00:00", "reading": "1", "systolic": "131",
                             "diastolic": "81.5", "posture": "Seated", "comment": "am"},
-                           {"type": "record.note", "id": "n"}]}
+                           {"type": "record.edge", "id": "n"}]}
         with tempfile.TemporaryDirectory() as d:
             i, o = Path(d) / "in.yaml", Path(d) / "out.yaml"
             i.write_text(yaml.safe_dump(src, sort_keys=False))
@@ -243,8 +243,26 @@ class BloodPressureDiary(unittest.TestCase):
         self.assertEqual(bp["body_posture"], "sitting")
         self.assertEqual(bp["effective_time_frame"], {"date_time": "2001-05-06T07:00:00+09:00"})
         self.assertNotIn("systolic", bp)
-        self.assertEqual(note, {"type": "record.note", "id": "n"})
+        self.assertEqual(note, {"type": "record.edge", "id": "n"})
         self.assertEqual(out["extracted"]["version"], 2)
+
+
+class Retype(unittest.TestCase):
+    def test_a_note_is_retyped_by_the_table_and_a_rerun_changes_nothing(self):
+        notes = "records:\n  - type: record.note  # kept\n    id: n-1\n  - {type: health.weight, id: w-1}\n"
+        table = {"renames": [{"from": "record.note", "to": "record.edge"}]}
+        with tempfile.TemporaryDirectory() as d:
+            f, t = Path(d) / "notes.yaml", Path(d) / "record-edge.json"
+            f.write_text(notes)
+            t.write_text(json.dumps(table))
+            cmd = [sys.executable, "-I", str(EXTRACT / "retype_records.py"), "--table", str(t)]
+            dry = subprocess.run(cmd + [d], check=True, capture_output=True, text=True)
+            self.assertEqual(f.read_text(), notes)
+            self.assertIn("1  record.note -> record.edge", dry.stdout)
+            subprocess.run(cmd + ["--yes", d], check=True, capture_output=True)
+            self.assertEqual(f.read_text(), notes.replace("type: record.note", "type: record.edge"))
+            again = subprocess.run(cmd + ["--yes", d], check=True, capture_output=True, text=True)
+            self.assertIn("0 file(s) rewritten", again.stdout)
 
 
 if __name__ == "__main__":
