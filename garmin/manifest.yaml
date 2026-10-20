@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Six types: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66); activity.exercise-session, one per session in the activity FIT files it downloads; health.sleep-episode, health.heart-rate-day, activity.steps and activity.day, from GarminDB's garmin.db. Reads them all, garmin.db read-only; holds no token and writes nothing."
+description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Six types: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66); activity.exercise-session, one per session in the activity FIT files it downloads; health.sleep-episode, health.heart-rate-day, activity.steps and activity.day, from GarminDB's garmin.db, each timed by the Garmin Connect JSON GarminDB keeps beside it (daily summaries under fit_dir, sleep under sleep_dir), with source_time saying how. Reads them all, garmin.db read-only; holds no token and writes nothing."
 commands:
   - name: handle
     type: read
@@ -43,12 +43,12 @@ commands:
             - payload.batch
   - name: health
     type: read
-    description: "fit_dir, activities_dir and garmin_db are readable, every FIT file decodes, and everything in them conforms to its Definition."
+    description: "fit_dir, activities_dir, sleep_dir and garmin_db are readable, every FIT file decodes, every day and night is timed by Garmin, and everything in them conforms to its Definition."
     idempotent: true
     retry_safe: true
     input_schema: {}
     output_schema:
       status: string
 config_keys:
-  required: [fit_dir, activities_dir, garmin_db, person_id]
+  required: [fit_dir, activities_dir, sleep_dir, garmin_db, person_id]
   optional: [lookback_days, busy_timeout_ms]

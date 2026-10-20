@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from tests.helpers import REPO, Daemon, run_plugin
@@ -65,6 +66,49 @@ def garmin_db(path: Path, nights, resting=(), daily=()) -> Path:
     return path
 
 
+def summary(fit_dir: Path, day: str, start: str, end: str, steps=None) -> None:
+    """Garmin Connect's daily summary for day as GarminDB keeps it, under fit_dir by
+    year: start and end given as RFC 3339 with the watch's offset, written as Garmin
+    writes them, each in GMT and on the watch's clock."""
+    s, e = datetime.fromisoformat(start), datetime.fromisoformat(end)
+
+    def gmt(t):
+        return t.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.0")
+
+    def local(t):
+        return t.strftime("%Y-%m-%dT%H:%M:%S.0")
+
+    path = fit_dir / day[:4] / f"daily_summary_{day}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"calendarDate": day, "wellnessStartTimeGmt": gmt(s), "wellnessStartTimeLocal": local(s),
+                                "wellnessEndTimeGmt": gmt(e), "wellnessEndTimeLocal": local(e), "totalSteps": steps}))
+
+
+def ms(t: str) -> int:
+    """An RFC 3339 time as Garmin's GMT epoch in milliseconds."""
+    return int(datetime.fromisoformat(t).timestamp() * 1000)
+
+
+def sleep_json(sleep_dir: Path, day: str, start: str, end: str) -> None:
+    """Garmin's sleep for day as GarminDB keeps it: each end a GMT epoch and the same
+    moment on the watch's clock, both in milliseconds."""
+    def local_ms(t):
+        return ms(t) + int(datetime.fromisoformat(t).utcoffset().total_seconds() * 1000)
+
+    sleep_dir.mkdir(parents=True, exist_ok=True)
+    (sleep_dir / f"sleep_{day}.json").write_text(json.dumps({"dailySleepDTO": {
+        "calendarDate": day, "sleepStartTimestampGMT": ms(start), "sleepStartTimestampLocal": local_ms(start),
+        "sleepEndTimestampGMT": ms(end), "sleepEndTimestampLocal": local_ms(end)}}))
+
+
+def source(value: str, zone: str = "UTC", basis: str = "source"):
+    return {"value": value, "zone": zone, "basis": basis}
+
+
+def day_of(start: str, end: str):
+    return {"time_interval": {"start_date_time": start, "end_date_time": end}}
+
+
 NIGHT = ("2015-10-08", "2015-10-07 12:44:00.000000", "2015-10-07 18:42:00.000000", "05:49:00.000000",
          "01:18:00.000000", "03:06:00.000000", "01:25:00.000000", "00:09:00.000000", None, 14.0, 19.0, 75, "FAIR")
 NO_SLEEP = ("2015-10-01", None, None, Z, Z, Z, Z, Z, None, None, None, None, None)
@@ -88,8 +132,11 @@ def run(command, fit_dir, **config):
         garmin_db(db, [])
     activities = Path(fit_dir).parent / "Activities"
     activities.mkdir(exist_ok=True)
+    sleep = Path(fit_dir).parent / "Sleep"
+    sleep.mkdir(exist_ok=True)
     request = {"command": command, "config": {"fit_dir": str(fit_dir), "activities_dir": str(activities),
-                                              "garmin_db": str(db), "person_id": "person-a", **config}}
+                                              "sleep_dir": str(sleep), "garmin_db": str(db), "person_id": "person-a",
+                                              **config}}
     out = subprocess.run([UV, "run", "-q", "--script", str(GARMIN)], input=json.dumps(request),
                          capture_output=True, text=True, check=True, timeout=120)
     return json.loads(out.stdout)
@@ -97,6 +144,18 @@ def run(command, fit_dir, **config):
 
 def payloads(r):
     return [e["payload"] for ev in r["events"] for e in ev["payload"]["envelopes"]]
+
+
+def typed(r):
+    out = {}
+    for ev in r["events"]:
+        for e in ev["payload"]["envelopes"]:
+            out.setdefault(e["type"], []).append(e["payload"])
+    return out
+
+
+def logged(r):
+    return [line["message"] for line in r.get("logs", [])]
 
 
 class ModuleTest(unittest.TestCase):
@@ -133,12 +192,94 @@ class ModuleTest(unittest.TestCase):
                 self.assertEqual(self.mod.measure(v), want)
 
     def test_the_local_day_s_zone_is_the_definitions_and_they_agree(self):
-        # Alerts are UTC instants from the FIT file; the types keyed on a day share one zone,
-        # and sleep's wall clock is read in it.
+        # Alerts and sessions are UTC instants from the FIT file and nights are Garmin's GMT
+        # epochs; the types keyed on a day share one zone, which a day Garmin gave no interval
+        # for is read in.
         zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
                  ["meta"]["time_semantics"]["fact_time"]["zone"]
                  for t in ("activity.day", "health.heart-rate-day", "activity.steps")}
-        self.assertEqual(zones, {str(self.mod.ZONE)})
+        self.assertEqual(zones, {self.mod.ZONE})
+
+    def frame(self, day, start, end, steps=None, given=None):
+        with tempfile.TemporaryDirectory() as d:
+            summary(Path(d), day, start, end, steps)
+            return self.mod.summary_frame(Path(d), day, given)
+
+    def test_a_sydney_day_keeps_the_interval_garmin_counted(self):
+        # Acceptance example 2: Garmin's 20 October in Sydney is Sydney's day, offsets and all.
+        # A client in London places it by these instants, not by its own 20 October.
+        f = self.frame("2026-10-20", "2026-10-20T00:00:00+11:00", "2026-10-21T00:00:00+11:00")
+        self.assertEqual(f.frame, day_of("2026-10-20T00:00:00+11:00", "2026-10-21T00:00:00+11:00"))
+        self.assertEqual(f.source_time, source("2026-10-20", "+11:00"))
+
+    def test_a_day_follows_the_watch_across_a_flight(self):
+        # The live days of Matt's flight to London: Garmin's 17 October began in Sydney and ended
+        # in London, 34 hours later, and the 18th is London's.
+        cases = [("2026-10-16", "2026-10-16T00:00:00+11:00", "2026-10-17T00:00:00+11:00", "+11:00", 24),
+                 ("2026-10-17", "2026-10-17T00:00:00+11:00", "2026-10-18T00:00:00+01:00", "+11:00", 34),
+                 ("2026-10-18", "2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00", "+01:00", 24)]
+        for day, start, end, zone, hours in cases:
+            with self.subTest(day=day):
+                f = self.frame(day, start, end)
+                self.assertEqual(f.frame, day_of(start, end))
+                self.assertEqual(f.source_time, source(day, zone))
+                span = datetime.fromisoformat(end) - datetime.fromisoformat(start)
+                self.assertEqual(span.total_seconds(), hours * 3600)
+
+    def test_a_day_the_clocks_change_in_is_as_long_as_garmin_counted(self):
+        # Acceptance example 4, from the source: Sydney's clocks went forward on 4 October 2026,
+        # London's go back on 25 October. Garmin gives both offsets; nothing is guessed.
+        for day, start, end, hours in [("2026-10-04", "2026-10-04T00:00:00+10:00", "2026-10-05T00:00:00+11:00", 23),
+                                       ("2026-10-25", "2026-10-25T00:00:00+01:00", "2026-10-26T00:00:00+00:00", 25)]:
+            with self.subTest(day=day):
+                f = self.frame(day, start, end)
+                self.assertEqual(f.frame, day_of(start, end))
+                span = datetime.fromisoformat(end) - datetime.fromisoformat(start)
+                self.assertEqual(span.total_seconds(), hours * 3600)
+
+    def test_a_day_still_in_progress_ends_where_garmin_had_counted_to(self):
+        f = self.frame("2026-10-20", "2026-10-20T00:00:00+01:00", "2026-10-20T15:20:00+01:00")
+        self.assertEqual(f.frame, day_of("2026-10-20T00:00:00+01:00", "2026-10-20T15:20:00+01:00"))
+
+    def test_a_day_garmin_gave_no_interval_for_is_assumed_and_says_so(self):
+        # Acceptance example 3: a bare date read in the Definition's zone is an assumption, and
+        # the record says so. Example 4: on a day Sydney's clocks change, midnight still exists
+        # once, so the assumed day is 23 or 25 hours.
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(self.mod.summary_frame(Path(d), "2026-10-04"))
+        for day, start, end in [("2026-10-04", "2026-10-04T00:00:00+10:00", "2026-10-05T00:00:00+11:00"),
+                                ("2026-04-05", "2026-04-05T00:00:00+11:00", "2026-04-06T00:00:00+10:00")]:
+            with self.subTest(day=day):
+                f = self.mod.assumed_frame(day)
+                self.assertEqual(f.frame, day_of(start, end))
+                self.assertEqual(f.source_time, source(day, "Australia/Sydney", "assumption"))
+
+    def test_a_summary_that_disagrees_with_garmin_db_is_refused(self):
+        with self.assertRaisesRegex(ValueError, "counts 100 steps and garmin.db 120"):
+            self.frame("2026-10-18", "2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00", steps=100, given=120)
+        with self.assertRaisesRegex(ValueError, "is not day 2026-10-18's"):
+            self.frame("2026-10-18", "2026-10-17T00:00:00+01:00", "2026-10-18T00:00:00+01:00")
+        with self.assertRaisesRegex(ValueError, "no zone's offset"):
+            with tempfile.TemporaryDirectory() as d:
+                summary(Path(d), "2026-10-18", "2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00")
+                path = Path(d) / "2026" / "daily_summary_2026-10-18.json"
+                body = json.loads(path.read_text())
+                body["wellnessStartTimeLocal"] = "2026-10-18T00:00:30.0"
+                body["wellnessStartTimeGmt"] = "2026-10-17T23:00:00.0"
+                path.write_text(json.dumps(body))
+                self.mod.summary_frame(Path(d), "2026-10-18")
+
+    def test_a_night_is_garmin_s_instants_on_the_watch_s_clock(self):
+        # Acceptance example 1: a start supplied as 20:00 at +11:00 is 09:00 UTC, and keeps the
+        # value Garmin wrote and how it was read.
+        with tempfile.TemporaryDirectory() as d:
+            sleep_json(Path(d), "2026-10-21", "2026-10-20T20:00:00+11:00", "2026-10-21T06:00:00+11:00")
+            f = self.mod.sleep_frame(Path(d), "2026-10-21")
+        start = f.frame["time_interval"]["start_date_time"]
+        self.assertEqual(start, "2026-10-20T20:00:00+11:00")
+        self.assertEqual(datetime.fromisoformat(start).astimezone(timezone.utc),
+                         datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(f.source_time, source(str(ms("2026-10-20T09:00:00+00:00"))))
 
 
 @unittest.skipUnless(UV, "no uv to run the plugin under")
@@ -159,7 +300,8 @@ class AlertTest(unittest.TestCase):
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(payloads(r), [{"source": "garmin", "kind": "hr_high_alert", "fact_time": "2015-09-25T11:31:00Z",
-                                        "heart_rate": 117, "threshold": 100, "unit": "bpm"}])
+                                        "heart_rate": 117, "threshold": 100, "unit": "bpm",
+                                        "source_time": source("2015-09-25T11:31:00Z")}])
         self.assertIn("117", json.dumps(payloads(r)[0]))
         self.assertNotIn("117.0", json.dumps(payloads(r)[0]))
 
@@ -194,14 +336,16 @@ class AlertTest(unittest.TestCase):
 
     def test_a_night_is_the_ieee_body_with_garmin_s_fields_beside_it(self):
         garmin_db(self.dir.parent / "garmin.db", [NIGHT, NO_SLEEP])
+        # GarminDB's start and end are wall clock in its own zone (anam card 174); the night is
+        # timed by Garmin's sleep JSON instead, its GMT epochs on the watch's clock.
+        sleep_json(self.dir.parent / "Sleep", "2015-10-08", "2015-10-07T12:44:00+11:00", "2015-10-07T18:42:00+11:00")
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(payloads(r), [{
             "id": "sleep:2015-10-08",
-            # GarminDB's start and end are wall clock in the days' zone (Sydney, +11 that
-            # October), not UTC as its column type suggests (anam card 174).
-            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T01:44:00Z",
-                                                       "end_date_time": "2015-10-07T07:42:00Z"}},
+            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-07T12:44:00+11:00",
+                                                       "end_date_time": "2015-10-07T18:42:00+11:00"}},
+            "source_time": source(str(ms("2015-10-07T01:44:00+00:00"))),
             "total_sleep_time": {"value": 349, "unit": "min"},
             "light_sleep_duration": {"value": 186, "unit": "min"},
             "deep_sleep_duration": {"value": 78, "unit": "min"},
@@ -211,58 +355,87 @@ class AlertTest(unittest.TestCase):
         }])
         self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.day", "activity.exercise-session", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
 
-    def test_a_night_s_instants_are_the_zone_s_wall_clock_in_utc(self):
-        # A night that began after local midnight, so the UTC instants fall on the
-        # day before Garmin's day. Garmin's own GMT stamps for this night: 13:33Z
-        # and 21:03Z. The id keeps Garmin's day.
-        night = ("2026-10-17", "2026-10-17 00:33:00.000000", "2026-10-17 08:03:00.000000", "05:53:00.000000",
-                 "00:54:00.000000", "03:49:00.000000", "01:10:00.000000", "01:37:00.000000", None, None, None, None, None)
-        garmin_db(self.dir.parent / "garmin.db", [night])
+    def test_a_london_night_is_london_s_whatever_zone_garmin_db_runs_in(self):
+        # A night in London: garmin.db holds it as Sydney wall clock, the zone GarminDB runs
+        # in, and Garmin's JSON as GMT epochs with the watch's +01:00 beside them. The JSON
+        # decides. A night with no JSON is left out, logged, and the run is no snapshot.
+        london = ("2026-10-18", "2026-10-18 07:44:00.000000", "2026-10-18 17:06:00.000000", "08:20:00.000000",
+                  "01:00:00.000000", "05:00:00.000000", "02:00:00.000000", "00:20:00.000000", None, None, None, None, None)
+        untimed = ("2026-10-19",) + london[1:]
+        garmin_db(self.dir.parent / "garmin.db", [london, untimed])
+        sleep_json(self.dir.parent / "Sleep", "2026-10-18", "2026-10-17T21:44:00+01:00", "2026-10-18T07:06:00+01:00")
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        p = payloads(r)[0]
-        self.assertEqual(p["id"], "sleep:2026-10-17")
-        self.assertEqual(p["effective_time_frame"]["time_interval"],
-                         {"start_date_time": "2026-10-16T13:33:00Z", "end_date_time": "2026-10-16T21:03:00Z"})
+        self.assertEqual([p["id"] for p in payloads(r)], ["sleep:2026-10-18"])
+        self.assertEqual(payloads(r)[0]["effective_time_frame"],
+                         day_of("2026-10-17T21:44:00+01:00", "2026-10-18T07:06:00+01:00"))
+        self.assertEqual(payloads(r)[0]["source_time"], source(str(ms("2026-10-17T20:44:00+00:00"))))
+        self.assertTrue(any("skipped night 2026-10-19" in m for m in logged(r)), logged(r))
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
+        self.assertEqual(run("health", self.dir)["status"], "error")
 
     def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
         garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0)],
                   daily=[("2015-10-09", 59, 135), ("2015-04-05", None, 120)])
+        # Garmin's interval for the 9th; none for 5 April, the day Sydney's clocks went back,
+        # so that day is assumed, 25 hours of Sydney, and the run says so and is still everything.
+        summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        sydney_day = {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
-                                        "end_date_time": "2015-10-10T00:00:00+11:00"}}
+        sydney_day = day_of("2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
+        given = source("2015-10-09", "+11:00")
         self.assertEqual(payloads(r), [
             {"id": "2015-04-05", "statistic": "maximum", "heart_rate": {"value": 120, "unit": "beats/min"},
-             "effective_time_frame": {"time_interval": {"start_date_time": "2015-04-05T00:00:00+11:00",
-                                                        "end_date_time": "2015-04-06T00:00:00+10:00"}},
+             "effective_time_frame": day_of("2015-04-05T00:00:00+11:00", "2015-04-06T00:00:00+10:00"),
+             "source_time": source("2015-04-05", "Australia/Sydney", "assumption"),
              "descriptive_statistic": "maximum"},
             {"id": "2015-10-09", "statistic": "resting", "heart_rate": {"value": 61, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "temporal_relationship_to_physical_activity": "at rest"},
+             "effective_time_frame": sydney_day, "source_time": given,
+             "temporal_relationship_to_physical_activity": "at rest"},
             {"id": "2015-10-09", "statistic": "minimum", "heart_rate": {"value": 59, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "descriptive_statistic": "minimum"},
+             "effective_time_frame": sydney_day, "source_time": given, "descriptive_statistic": "minimum"},
             {"id": "2015-10-09", "statistic": "maximum", "heart_rate": {"value": 135, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "descriptive_statistic": "maximum"},
+             "effective_time_frame": sydney_day, "source_time": given, "descriptive_statistic": "maximum"},
         ])
+        self.assertTrue(any("day 2015-04-05: Garmin gave no interval" in m for m in logged(r)), logged(r))
+        self.assertIn("snapshot", r["events"][0]["payload"])
 
     def test_a_day_is_omh_steps_and_garmin_s_record_and_an_empty_day_is_neither(self):
         garmin_db(self.dir.parent / "garmin.db", [], daily=[DAY, EMPTY_DAY])
+        summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00", steps=6219)
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        by_type = {}
-        for ev in r["events"]:
-            for e in ev["payload"]["envelopes"]:
-                by_type.setdefault(e["type"], []).append(e["payload"])
+        by_type = typed(r)
+        frame = day_of("2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
         self.assertEqual(by_type["activity.steps"], [{
             "id": "steps:2015-10-09", "step_count": {"value": 6219, "unit": "steps"},
-            "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-09T00:00:00+11:00",
-                                                       "end_date_time": "2015-10-10T00:00:00+11:00"}}}])
+            "effective_time_frame": frame, "source_time": source("2015-10-09", "+11:00")}])
         self.assertEqual(by_type["activity.day"], [{
             "id": "day:2015-10-09", "day": "2015-10-09", "step_goal": 5070, "floors_up": 10, "floors_down": 5.55282, "floors_goal": 10,
             "calories_total": 2238, "calories_bmr": 1976, "calories_active": 262, "hydration_goal": 2800,
             "stress_avg": 30, "rr_waking_avg": 14, "rr_max": 26, "rr_min": 11, "bb_charged": 47, "bb_max": 63,
             "bb_min": 13, "distance_km": 4.788, "moderate_activity_minutes": 24, "vigorous_activity_minutes": 0,
-            "intensity_time_goal_minutes": 150}])
+            "intensity_time_goal_minutes": 150, "effective_time_frame": frame,
+            "source_time": source("2015-10-09", "+11:00")}])
+
+    def test_a_london_day_is_london_s_and_a_summary_not_yet_imported_waits(self):
+        # Since 18 October 2026 the watch's days are London's. A summary whose steps are not
+        # garmin.db's is one GarminDB has not imported yet: that day waits for the next sync,
+        # logged, and the run is no snapshot.
+        london = dict(DAY, day="2026-10-18", steps=3834)
+        behind = dict(DAY, day="2026-10-19", steps=6128)
+        garmin_db(self.dir.parent / "garmin.db", [], daily=[london, behind])
+        summary(self.dir, "2026-10-18", "2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00", steps=3834)
+        summary(self.dir, "2026-10-19", "2026-10-19T00:00:00+01:00", "2026-10-20T00:00:00+01:00", steps=6000)
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        by_type = typed(r)
+        self.assertEqual([p["id"] for p in by_type["activity.steps"]], ["steps:2026-10-18"])
+        self.assertEqual(by_type["activity.steps"][0]["effective_time_frame"],
+                         day_of("2026-10-18T00:00:00+01:00", "2026-10-19T00:00:00+01:00"))
+        self.assertEqual(by_type["activity.day"][0]["source_time"], source("2026-10-18", "+01:00"))
+        self.assertTrue(any("skipped day 2026-10-19" in m for m in logged(r)), logged(r))
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
 
     def test_a_session_is_the_ieee_body_at_its_utc_start_with_garmin_s_measures_beside_it(self):
         write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [CARDIO]})
@@ -272,7 +445,8 @@ class AlertTest(unittest.TestCase):
             "id": "garmin:session:2015-10-04T03:49:17Z", "activity_name": "other",
             "effective_time_frame": {"time_interval": {"start_date_time": "2015-10-04T03:49:17Z",
                                                        "duration": {"value": 2171.196, "unit": "sec"}}},
-            "source": "Garmin", "fit_sport": "training", "fit_sub_sport": "cardio_training", "sport_profile": "Cardio",
+            "source": "Garmin", "source_time": source("2015-10-04T03:49:17Z"),
+            "fit_sport": "training", "fit_sub_sport": "cardio_training", "sport_profile": "Cardio",
             "duration": {"value": 2100.5, "unit": "sec"}, "kcal_burned": {"value": 396, "unit": "kcal"},
             "avg_hr_bpm": 163, "max_hr_bpm": 194, "training_effect_aerobic": 5, "training_effect_anaerobic": 2.9,
             "training_load": 215.5,
@@ -288,7 +462,7 @@ class AlertTest(unittest.TestCase):
             "id": "garmin:session:2014-01-06T16:16:51Z", "activity_name": "unknown",
             "effective_time_frame": {"time_interval": {"start_date_time": "2014-01-06T16:16:51Z",
                                                        "duration": {"value": 2063.05, "unit": "sec"}}},
-            "source": "Garmin", "fit_sport": "54", "fit_sub_sport": "61",
+            "source": "Garmin", "source_time": source("2014-01-06T16:16:51Z"), "fit_sport": "54", "fit_sub_sport": "61",
             "distance": {"value": 2825.63, "unit": "m"}, "cumulative_elevation_gain": {"value": 12, "unit": "m"},
             "descent_m": 11})
         self.assertEqual(got["garmin:session:2015-04-04T20:35:38Z"]["activity_name"], "walking")
@@ -327,6 +501,9 @@ class AlertTest(unittest.TestCase):
         write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [WALK, CARDIO]})
         garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2015-10-09", 61.0)],
                   daily=[DAY, EMPTY_DAY])
+        summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00", steps=6219)
+        for day in ("2015-10-08", "2015-10-09"):
+            sleep_json(self.dir.parent / "Sleep", day, "2015-10-07T12:44:00+11:00", "2015-10-07T18:42:00+11:00")
         daemon = Daemon("garmin", ["activity.exercise-session", "activity.day", "health.heart-rate-alert",
                                    "health.heart-rate-day", "activity.steps", "health.sleep-episode"])
         try:

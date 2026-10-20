@@ -1,0 +1,235 @@
+{
+  "meta": {
+    "facet_type": "activity.day",
+    "definition_version": 1,
+    "kind": "measure",
+    "family": "movement",
+    "classification": "Sensitive",
+    "validation_mode": "strict",
+    "source_schema": "garmindb/daily_summary",
+    "time_semantics": {
+      "fact_time": {
+        "pointer": "/day",
+        "layout": "2006-01-02",
+        "zone": "Australia/Sydney"
+      }
+    },
+    "identity_key": [
+      "/id"
+    ],
+    "min_binding_assurance": "medium"
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "One day of a Garmin watch's daily summary as GarminDB 3.6.7's daily_summary table holds it, through the anam_garmin importer (source garmin). The device's record: values as Garmin wrote them, intensity times in minutes, empty columns absent. Steps and the day's heart rate are not here; they are activity.steps and health.heart-rate-day. A day the watch recorded nothing for is no facet.",
+    "type": "object",
+    "required": [
+      "id",
+      "day"
+    ],
+    "additionalProperties": false,
+    "properties": {
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^day:[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "description": "\"day:\" and daily_summary.day. The identity. Under one source no two types share an id: a facet's id is the source plus its identity values, without the type.",
+        "examples": [
+          "day:2026-10-09"
+        ]
+      },
+      "day": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "description": "daily_summary.day: the day as GarminDB files it, a local date. The fact time.",
+        "examples": [
+          "2026-10-09"
+        ]
+      },
+      "step_goal": {
+        "type": "integer",
+        "description": "daily_summary.step_goal: the day's step goal Garmin set.",
+        "examples": [
+          5070
+        ]
+      },
+      "moderate_activity_minutes": {
+        "type": "number",
+        "description": "daily_summary.moderate_activity_time in minutes: moderate intensity minutes.",
+        "examples": [
+          24
+        ]
+      },
+      "vigorous_activity_minutes": {
+        "type": "number",
+        "description": "daily_summary.vigorous_activity_time in minutes: vigorous intensity minutes.",
+        "examples": [
+          0
+        ]
+      },
+      "intensity_time_goal_minutes": {
+        "type": "number",
+        "description": "daily_summary.intensity_time_goal in minutes: the week's intensity minutes goal as Garmin shows it that day.",
+        "examples": [
+          150
+        ]
+      },
+      "floors_up": {
+        "type": "number",
+        "description": "daily_summary.floors_up: floors climbed, as Garmin estimates them, fractions kept.",
+        "examples": [
+          10.0
+        ]
+      },
+      "floors_down": {
+        "type": "number",
+        "description": "daily_summary.floors_down: floors descended.",
+        "examples": [
+          5.55282
+        ]
+      },
+      "floors_goal": {
+        "type": "number",
+        "description": "daily_summary.floors_goal: the day's floors goal.",
+        "examples": [
+          10.0
+        ]
+      },
+      "distance_km": {
+        "type": "number",
+        "description": "daily_summary.distance: distance covered on foot, in kilometres as GarminDB writes it.",
+        "examples": [
+          4.788
+        ]
+      },
+      "calories_goal": {
+        "type": "integer",
+        "description": "daily_summary.calories_goal: the day's calorie goal, in kilocalories.",
+        "examples": [
+          2500
+        ]
+      },
+      "calories_total": {
+        "type": "integer",
+        "description": "daily_summary.calories_total: kilocalories burned in the day, Garmin's estimate.",
+        "examples": [
+          2238
+        ]
+      },
+      "calories_bmr": {
+        "type": "integer",
+        "description": "daily_summary.calories_bmr: the resting share of calories_total.",
+        "examples": [
+          1976
+        ]
+      },
+      "calories_active": {
+        "type": "integer",
+        "description": "daily_summary.calories_active: the active share of calories_total.",
+        "examples": [
+          262
+        ]
+      },
+      "calories_consumed": {
+        "type": "integer",
+        "description": "daily_summary.calories_consumed: kilocalories logged as eaten.",
+        "examples": [
+          1800
+        ]
+      },
+      "hydration_goal": {
+        "type": "integer",
+        "description": "daily_summary.hydration_goal: the day's fluid goal, in millilitres.",
+        "examples": [
+          2800
+        ]
+      },
+      "hydration_intake": {
+        "type": "integer",
+        "description": "daily_summary.hydration_intake: fluid logged, in millilitres.",
+        "examples": [
+          0
+        ]
+      },
+      "sweat_loss": {
+        "type": "integer",
+        "description": "daily_summary.sweat_loss: Garmin's estimated sweat loss, in millilitres.",
+        "examples": [
+          350
+        ]
+      },
+      "stress_avg": {
+        "type": "integer",
+        "description": "daily_summary.stress_avg: Garmin's average stress for the day, 0 to 100; Garmin writes a negative number when it had too little data, and that is kept as written.",
+        "examples": [
+          30
+        ]
+      },
+      "spo2_avg": {
+        "type": "number",
+        "description": "daily_summary.spo2_avg: average blood oxygen saturation, in percent.",
+        "examples": [
+          95.0
+        ]
+      },
+      "spo2_min": {
+        "type": "number",
+        "description": "daily_summary.spo2_min: lowest blood oxygen saturation, in percent.",
+        "examples": [
+          89.0
+        ]
+      },
+      "rr_waking_avg": {
+        "type": "number",
+        "description": "daily_summary.rr_waking_avg: average waking respiration rate, breaths per minute.",
+        "examples": [
+          14.0
+        ]
+      },
+      "rr_max": {
+        "type": "number",
+        "description": "daily_summary.rr_max: highest respiration rate, breaths per minute.",
+        "examples": [
+          26.0
+        ]
+      },
+      "rr_min": {
+        "type": "number",
+        "description": "daily_summary.rr_min: lowest respiration rate, breaths per minute.",
+        "examples": [
+          11.0
+        ]
+      },
+      "bb_charged": {
+        "type": "integer",
+        "description": "daily_summary.bb_charged: body battery charged during the day, Garmin's 0 to 100 scale.",
+        "examples": [
+          47
+        ]
+      },
+      "bb_max": {
+        "type": "integer",
+        "description": "daily_summary.bb_max: highest body battery.",
+        "examples": [
+          63
+        ]
+      },
+      "bb_min": {
+        "type": "integer",
+        "description": "daily_summary.bb_min: lowest body battery.",
+        "examples": [
+          13
+        ]
+      },
+      "description": {
+        "type": "string",
+        "minLength": 1,
+        "description": "daily_summary.description, as written.",
+        "examples": [
+          "Daily summary"
+        ]
+      }
+    }
+  }
+}
