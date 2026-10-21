@@ -105,7 +105,7 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(ev["payload"]["snapshot"]["types"], ["record.link"])
         self.assertIn('"facet_type": "record.link"', ev["payload"]["definitions"][0])
         # Every version of record.link, oldest first (anam card 198).
-        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in ev["payload"]["definitions"]], [1, 2])
+        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in ev["payload"]["definitions"]], [1, 2, 3])
         self.assertNotIn("documents", ev["payload"])  # no bytes are handed to anyone
         for env in ev["payload"]["envelopes"]:
             self.assertEqual((env["type"], env["asserted_person"]), ("record.link", "person-a"))

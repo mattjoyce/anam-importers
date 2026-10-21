@@ -40,7 +40,7 @@ class WithingsTest(unittest.TestCase):
         self.assertEqual(envs[0]["asserted_person"], "person-a")
         self.assertNotIn("asserted_person", envs[2], "an ambiguous group asserts no one")
         # Every version of the type it emits, oldest first; the old name's history is not sent.
-        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in batch["payload"]["definitions"]], [1, 2])
+        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in batch["payload"]["definitions"]], [1, 2, 3])
         self.assertEqual({json.loads(m)["meta"]["facet_type"] for m in batch["payload"]["definitions"]},
                          {"health.measurement.withings"})
 

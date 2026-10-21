@@ -94,9 +94,24 @@ class HistoryTest(unittest.TestCase):
     def test_the_importers_carry_their_history_and_no_old_name_is_sent(self):
         withings = load(REPO / "withings")
         self.assertEqual([(x.type, x.version) for x in withings.every],
-                         [("health.measurement.withings", 1), ("health.measurement.withings", 2)])
+                         [("health.measurement.withings", 1), ("health.measurement.withings", 2),
+                          ("health.measurement.withings", 3)])
         garmin = load(REPO / "garmin")
         self.assertNotIn("activity.day", {x.type for x in garmin.every})  # the vendor leaf's old name
+
+
+class DefinitionWordsTest(unittest.TestCase):
+    def test_a_current_definition_names_no_kanban_card(self):
+        # The words are what a reader or an agent is told a type is. They say the thing
+        # itself; history/ keeps the earlier words as they were.
+        import re
+
+        card = re.compile(r"\bcards?[ -]\d", re.IGNORECASE)
+        paths = sorted(REPO.glob("*/definitions/*.json"))
+        self.assertTrue(paths)
+        for path in paths:
+            with self.subTest(path.name):
+                self.assertIsNone(card.search(path.read_text()), path)
 
 
 class ProtocolTest(unittest.TestCase):

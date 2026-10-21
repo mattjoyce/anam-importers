@@ -53,7 +53,7 @@ docs/defaults-and-invariants.md   every hard-coded value: a config key's default
 - Python 3.10 or later, with `jsonschema` 4.18 or later. Importers that validate declare it
   in a uv script header, so a gateway with `uv` resolves it; `anam_submit` needs only the
   standard library.
-- An Anam daemon with the importer routes and snapshots (anam card 78, a14ee51 and later), and a
+- An Anam daemon with the importer routes and snapshots (anam a14ee51 and later), and a
   line for each importer in its `importers_file`.
 - A ductile gateway to run the plugins on a schedule (protocol 2). Without one, a plugin is a
   program that reads one JSON request on stdin and writes one JSON response on stdout, so you
@@ -80,12 +80,12 @@ docs/defaults-and-invariants.md   every hard-coded value: a config key's default
 6. A limit, timeout, window or pattern is a config key whose default is the value you would
    have hard-coded, read and range-checked by `anam_importer.config` at the start of each
    command. A value the data or Anam depends on stays a constant, commented why
-   (`docs/defaults-and-invariants.md`, anam card 151).
+   (`docs/defaults-and-invariants.md`).
 7. Say how the source's clock was read: each payload carries `source_time` (`value` as the source
    gave it, the `zone` it is read in, and `basis`: `source`, `configuration` or `assumption`,
    logged), built by `anam_importer.clock.source_time`. Read a wall clock with
    `clock.local_instant`, which refuses one a zone skips or repeats rather than guessing, and
-   never in the host's zone (anam cards 197 and 198).
+   never in the host's zone.
 8. A new version of a type keeps the old one in `definitions/history/<type>.v<n>.json`; `load`
    sends every version of each type you emit, oldest first, so Anam holds them all.
 
@@ -132,7 +132,7 @@ pipelines:
       - uses: <the gateway's notifier, such as discord>
 ```
 
-Needs an Anam with card 78 (anam a14ee51 or later). An older one refuses the `snapshot` field.
+Needs an Anam with importer snapshots (a14ee51 or later). An older one refuses the `snapshot` field.
 
 ## Wiring an importer into a gateway (Withings)
 
@@ -224,8 +224,8 @@ While Anam's binary still carries its own `withings` worker, both paths write th
 under the same source, and the importer's batches come back `no-op`, except where the two
 render a value differently (below). Once they agree, the worker and its `imports.yaml` entry
 go, and a later Anam release drops `health.measurement` from the binary so this folder's copy
-becomes the registered one. Since anam card 195 the type is `health.measurement.withings`, Withings'
-own leaf, v1 with v4's rules; the old body is in `definitions/history/`.
+becomes the registered one. The type is `health.measurement.withings`, Withings'
+own leaf, v1 with the earlier type's v4 rules; the old body is in `definitions/history/`.
 
 ## Wiring an importer into a gateway (blood pressure)
 
@@ -282,7 +282,7 @@ exports under `export_dir` by; set it if your exports are named otherwise.
 `zone` names the zone the cuff's clock is set to, and each reading's `source_time` then says
 `basis: configuration`; without it the reading is read in the Definition's zone, Australia/Sydney,
 as an assumption, and the run says so. The Definition reads `date_excel` in Australia/Sydney, so
-that is the only zone the key takes until a fact can name its own (anam card 198). A reading
+that is the only zone the key takes until a fact can name its own. A reading
 whose wall clock that zone skips or repeats is left out with a log line, and `poll` is then no
 snapshot. An export with no date in its name is ordered by its modification day in that zone,
 never the gateway's.
@@ -304,7 +304,7 @@ importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so th
 Not deployed. Source `dreamstation`, types `[health.cpap-session.dreamstation]`, secret
 `anam_importer_token_dreamstation`, principal `anam-submit-dreamstation`. Unlike the other
 two, this importer registers its own Definition: Anam's binary does not bundle
-`health.cpap-session.dreamstation` (`health.cpap-session` until anam card 195, its body now in
+`health.cpap-session.dreamstation` (once `health.cpap-session`, its body now in
 `definitions/history/`), so the first batch makes `anam_submit` register it.
 
 It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
@@ -337,7 +337,7 @@ it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
 Not deployed. Source `records`, the same name Anam's built-in worker used, so the cut-over is
 no-op. Types are the ones the worker's scope named: `health.lab-result`, `health.lab-panel`, `health.condition`,
 `health.donation`, `health.weight`, the `health.medication.*` and `health.illness.*` types, the trip types `place.trip.departed`, `place.trip.arrived`, `place.trip.returned` and `place.trip.flight`, `health.encounter`,
-`activity.gym-visit`, `activity.exercise-session.technogym` and `activity.exercise-session.strong` (one `activity.exercise-session` until anam card 195), `health.blood-pressure` and `record.edge` (was `record.note`, anam card 191). Secret
+`activity.gym-visit`, `activity.exercise-session.technogym` and `activity.exercise-session.strong` (once one `activity.exercise-session`), `health.blood-pressure` and `record.edge` (was `record.note`). Secret
 `anam_importer_token_records`, principal `anam-submit-records`.
 
 A records file names no Definition version, and every type it carries is bundled in Anam, so the
@@ -365,7 +365,7 @@ is not reported absent.
 
 ## Wiring an importer into a gateway (documents)
 
-Not deployed (anam card 103). Source `documents`, the name Anam's built-in worker used, so the
+Not deployed. Source `documents`, the name Anam's built-in worker used, so the
 cut-over is no-op: each file's identity is its folder-relative path, and the payload is the
 sidecar's fields plus the `path`, `sha256`, `bytes` and `media_type` measured from the file, as
 the worker wrote them. Type `record.document`. Secret `anam_importer_token_documents`, principal
@@ -379,7 +379,7 @@ to write. Dot-files and dot-directories are skipped.
 The bytes go to Anam, never into Anam's directory: each batch names its files (`documents`:
 `{path, file}`), and `anam_submit` posts each file's bytes to `POST /v1/documents?ext=` before
 the envelopes, reading them from the file so no bytes ride in a ductile event. Anam names the
-stored file by its sha256 (anam card 150) and answers 201 or 200 for bytes it now holds; the path
+stored file by its sha256 and answers 201 or 200 for bytes it now holds; the path
 lends it only an extension. So a document rescanned under the same name is new bytes, and its
 `record.document` supersedes the old one, whose bytes Anam keeps. Anam refuses a `record.document`
 whose sha256 its library holds no bytes for.
@@ -398,7 +398,7 @@ snapshot of `record.document`. `anam_submit` needs read access to the same folde
 
 ## Wiring an importer into a gateway (links)
 
-Not deployed (anam card 165). A `record.link` is a file Anam remembers but does not hold: a note
+Not deployed. A `record.link` is a file Anam remembers but does not hold: a note
 in a vault, a photo in a camera roll, a screenshot. The importer sends each file's name, hash,
 size, media type and date and never its bytes; it calls nothing but `anam_submit`'s batch, and
 `anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library does
@@ -481,10 +481,10 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 so (`basis: configuration`); a wall clock the zone skips or repeats stops the script, naming the
 row. `technogym_json.py` keeps Technogym's `on` with its own offset (`basis: source`), and
 `acl_pathology.py` reads collection times in Australia/Sydney, the lab types' zone, as an
-assumption, since the reports print none (anam card 198). `strong_csv.py --max-session-sec`
+assumption, since the reports print none. `strong_csv.py --max-session-sec`
 (default 10800, 3 hours, the person's rule of 2026-10-08) caps a workout's duration, since Strong
 keeps a workout open until the next one starts; another cap writes other records. The scripts moved from Anam's
-`scripts/` (anam card 58) and write the same records; only `extracted.method` changed.
+`scripts/` and write the same records; only `extracted.method` changed.
 
 ## Wiring an importer into a gateway (Garmin)
 
@@ -494,7 +494,7 @@ activity.steps, activity.day.garmin, health.heart-rate-day]`, the last kept whil
 (below), secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
-runs would hold every alert twice. It goes live with the rest of anam card 55, when the
+runs would hold every alert twice. It goes live when the
 `health-db` facets retire.
 
 It reads the monitoring FIT files GarminDB downloads (`FitFiles/Monitoring`) with Garmin's FIT
@@ -508,19 +508,19 @@ table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (the stage du
 minutes) with Garmin's score, its word for it and the averages beside it.
 Daily heart rate comes from the same file: each day's resting figure (`resting_hr`) and its
 minimum and maximum (`daily_summary`), as one `health.heart-rate.day` a day, each figure
-`{value, unit}` in beats per minute and a figure Garmin left empty not there (anam card 205).
-Open mHealth has no body for one day's several statistics, so the shape is Anam's. Until card 205
-they were three `health.heart-rate-day` facets a day, one Open mHealth `heart-rate-2.0` body each;
+`{value, unit}` in beats per minute and a figure Garmin left empty not there.
+Open mHealth has no body for one day's several statistics, so the shape is Anam's. They used to be
+three `health.heart-rate-day` facets a day, one Open mHealth `heart-rate-2.0` body each;
 `poll`'s snapshot still names that type and carries none of it, so Anam reports the old facts
 absent and the operator's `anam retract garmin` tombstones them. Steps are a
 `activity.steps` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
 `activity.day.garmin` as Garmin wrote it, so nothing the `health-db` summaries carried is lost.
-`activity.day.garmin` is the importer's own Definition (`activity.day` until anam card 195, its bodies in
+`activity.day.garmin` is the importer's own Definition (once `activity.day`, its bodies in
 `definitions/history/`), which the first batch makes `anam_submit`
 register; the rest are bundled in Anam.
 
-Times come from what Garmin Connect sent, which GarminDB keeps as JSON beside its tables (anam
-card 197). A day is the interval Garmin counted, from `daily_summary_<day>.json` under `fit_dir`
+Times come from what Garmin Connect sent, which GarminDB keeps as JSON beside its tables.
+A day is the interval Garmin counted, from `daily_summary_<day>.json` under `fit_dir`
 by year: its start and end in GMT beside the watch's clock, so a day follows the watch across a
 flight (Garmin's 17 October 2026 runs `+11:00` to `+01:00`, 34 hours), and a day still in
 progress ends where Garmin had counted to. A day with no summary is taken as midnight to
@@ -531,7 +531,7 @@ written at the watch's offset, never GarminDB's wall clock, which is in the zone
 runs in. Every payload carries `source_time`: the value Garmin supplied, the zone it is read in
 and the basis (`source`, or `assumption` for an assumed day). `activity.day.garmin`'s fact time is
 the start of its `effective_time_frame`, where the day truly began; `activity.day` read the date
-at Sydney midnight, and anam card 195's rename re-placed each day by the leaf's rule.
+at Sydney midnight, and the rename to the leaf re-placed each day by the leaf's rule.
 
 Sessions come from the activity FIT files GarminDB downloads (`FitFiles/Activities`), one
 `activity.exercise-session.garmin` per FIT session message, Garmin's leaf beside Technogym's and Strong's. The FIT file holds the

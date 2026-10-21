@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Reshape a records file's health.blood-pressure rows to Definition v4 (anam card 83).
+"""Reshape a records file's health.blood-pressure rows to Definition v4.
 
 v4's payload is the Open mHealth blood-pressure-4.0 body with the source's own fields
 beside it. Per row:
@@ -22,7 +22,7 @@ through unchanged. The extracted block gains a reshape note and its version goes
 
 Usage: bp_diary_omh.py ZONE <records file in> <records file out>
 
-Moved from Anam's scripts/reshape-bp-diary-omh.py (anam card 58); the output is the same.
+Moved from Anam's scripts/reshape-bp-diary-omh.py; the output is the same.
 """
 
 import sys
@@ -73,7 +73,7 @@ def main(zone, src, dst):
             n += 1
     ext = doc.setdefault("extracted", {})
     ext["version"] = int(ext.get("version", 1)) + 1
-    ext["reshaped"] = "health.blood-pressure v4, Open mHealth blood-pressure-4.0 body (card 83, records/extract/bp_diary_omh.py)"
+    ext["reshaped"] = "health.blood-pressure v4, Open mHealth blood-pressure-4.0 body (records/extract/bp_diary_omh.py)"
     with open(dst, "w", encoding="utf-8") as f:
         yaml.safe_dump(doc, f, sort_keys=False, allow_unicode=True, width=200)
     print(f"{n} blood pressure rows reshaped to v4 -> {dst}")

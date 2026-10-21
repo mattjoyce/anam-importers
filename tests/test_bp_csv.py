@@ -90,7 +90,7 @@ class ShapeTest(unittest.TestCase):
         self.assertFalse(any("basis assumption" in line["message"] for line in named["logs"]), named["logs"])
         # The Definition reads date_excel in Sydney, so a cuff set to London cannot be
         # placed truly yet; a misspelt zone is no zone.
-        for zone, want in (("Europe/London", "anam card 198"), ("Europe/Londn", "not an IANA zone"), ("Local", "no zone")):
+        for zone, want in (("Europe/London", "cannot be placed truly"), ("Europe/Londn", "not an IANA zone"), ("Local", "no zone")):
             with self.subTest(zone):
                 r = run({"zone": zone})
                 self.assertEqual(r["status"], "error", r)

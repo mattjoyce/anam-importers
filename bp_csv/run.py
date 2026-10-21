@@ -215,7 +215,7 @@ def clock_of(config: Dict[str, Any]) -> Clock:
         raise cfg.bad("zone", str(exc)) from exc
     if zone != ZONE:
         raise cfg.bad("zone", f"{zone!r}: {TYPE} reads date_excel in {ZONE}, so a cuff set to another zone "
-                              "cannot be placed truly until a fact can name its own zone (anam card 198)")
+                              "cannot be placed truly until a fact can name its own zone")
     return Clock(zone, "configuration")
 
 # POSTURES maps the app's posture to Open mHealth's body_posture. Seated is the only

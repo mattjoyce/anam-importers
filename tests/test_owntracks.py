@@ -202,7 +202,7 @@ class OwnTracksTest(unittest.TestCase):
         self.spool.add(body(HOUR + 60))
         r = self.run_cmd("health")
         self.assertEqual(r["status"], "ok", r)
-        self.assertIn("1 place.track v2 hour(s) from 1 spool line(s), every one conforming", r["result"])
+        self.assertIn("1 place.track v3 hour(s) from 1 spool line(s), every one conforming", r["result"])
         self.spool.add(body(HOUR + 120, lat="x"))
         self.assertEqual(self.run_cmd("health")["status"], "error")
 

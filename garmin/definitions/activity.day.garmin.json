@@ -1,7 +1,7 @@
 {
   "meta": {
     "facet_type": "activity.day.garmin",
-    "definition_version": 1,
+    "definition_version": 2,
     "kind": "measure",
     "family": "movement",
     "classification": "Sensitive",
@@ -21,7 +21,7 @@
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One day of a Garmin watch's daily summary as GarminDB 3.6.7's daily_summary table holds it, through the anam_garmin importer (source garmin). The device's record: values as Garmin wrote them, intensity times in minutes, empty columns absent. Steps and the day's heart rate are not here; they are activity.steps and health.heart-rate-day. A day the watch recorded nothing for is no facet. Its fact time is the start of the day Garmin counted, effective_time_frame's start, at the offset the watch was at: a London day begins at London midnight. This is the Garmin leaf of activity.day, GarminDB's own payload shape named for its vendor (anam card 192). Version 1 is activity.day v2 under its leaf's name (anam card 195), every field as v2 had it, with one change decided at anam card 197: activity.day read its fact time as the day at Sydney midnight, whatever zone the watch was in, and a type cannot change its fact-time rule, so the leaf's first version reads the interval start, and card 195's rename (renames/vendor-leaves.json in anam) carried each facet across as the next version of itself, placed by this rule.",
+    "description": "One day of a Garmin watch's daily summary as GarminDB 3.6.7's daily_summary table holds it, through the anam_garmin importer (source garmin). The device's record: values as Garmin wrote them, intensity times in minutes, empty columns absent. Steps and the day's heart rate are not here; they are activity.steps and health.heart-rate.day. A day the watch recorded nothing for is no facet. Its fact time is the start of the day Garmin counted, effective_time_frame's start, at the offset the watch was at: a London day begins at London midnight. This is the Garmin leaf of activity.day, GarminDB's own payload shape named for its vendor. Version 1 is activity.day v2 under its leaf's name, every field as v2 had it, with one change: activity.day read its fact time as the day at Sydney midnight, whatever zone the watch was in, and a type cannot change its fact-time rule, so the leaf's first version reads the interval start, and the vendor-leaf rename (renames/vendor-leaves.json in anam) carried each facet across as the next version of itself, placed by this rule. Version 2 only rewords this description.",
     "type": "object",
     "required": [
       "id",
@@ -270,7 +270,7 @@
       },
       "source_time": {
         "type": "object",
-        "description": "How Garmin's day was read (card 197): value is its date as Garmin Connect files it, read in the offset the day began at (basis source); a day Garmin gave no interval for is read in Australia/Sydney instead (basis assumption), and the importer logs it.",
+        "description": "How Garmin's day was read: value is its date as Garmin Connect files it, read in the offset the day began at (basis source); a day Garmin gave no interval for is read in Australia/Sydney instead (basis assumption), and the importer logs it.",
         "required": [
           "value",
           "zone",

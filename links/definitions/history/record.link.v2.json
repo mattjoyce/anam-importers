@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "facet_type": "record.link",
+    "definition_version": 2,
+    "classification": "Sensitive",
+    "validation_mode": "strict",
+    "source_schema": "links/link",
+    "payload_kind": "verbatim",
+    "kind": "event",
+    "family": "documents",
+    "time_semantics": {
+      "fact_time": {"pointer": "/date", "layout": "2006-01-02T15:04:05Z07:00", "zone": "UTC"}
+    },
+    "identity_key": ["/id"],
+    "min_binding_assurance": "medium"
+  },
+  "handling": {
+    "guidance": "A record.link is an observation that a file with this path, hash, size and date existed under the declared root, made by the importer when it read the file. Anam holds none of the bytes and follows no path: payload_kind is verbatim because the payload is the whole fact, not a pointer Anam can resolve, so a receipt over a record.link promises the observation and never the file, and a sha256 the library does not hold is admitted. id carries the identity mode as a prefix (path:<root>/<path>, content:<sha256>, id:<declared id>), identity repeats it, and one importer instance uses one mode for one folder: in path mode new bytes supersede and a move is a new facet; in content mode a move supersedes and new bytes are a new facet; in id mode both supersede, and a file with no declared id is skipped, never keyed by path. date is RFC 3339 with an offset, the first of frontmatter date, EXIF DateTimeOriginal, a YYYY-MM-DD prefix on the file name, then mtime; date_from says which answered, and a date that carried no zone was read in the instance's zone. unseen: true is a later version saying the importer looked for the file past its tolerance of complete runs and did not find it, with unseen_since the first complete run that missed it and last_seen the last that found it. It is a supersession and never a retraction: the earlier version stands as what was, and it says nothing about whether the file still exists. The importer decides unseen from its own count of runs (its unseen_after); Anam never does. A file that returns is superseded back with unseen absent."
+  },
+  "schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "description": "A file Anam remembers but does not hold (anam card 165): what the links importer observed of one file under a declared folder, the file's name, hash, size, media type and date. The bytes stay where they are and never reach Anam, so the facet is a record of what was, and a later version may say the importer no longer finds the file. Version 2 requires source_time (card 198), every other rule unchanged.",
+    "type": "object",
+    "required": ["id", "identity", "root", "path", "sha256", "media_type", "bytes", "date", "date_from", "source_time"],
+    "properties": {
+      "bytes": {"type": "integer", "minimum": 0, "description": "The file's size in bytes, measured by the importer when it read the file.", "examples": [184320]},
+      "date": {"type": "string", "minLength": 1, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "The file's own date as RFC 3339 with an offset, taken from the source date_from names; a source date with no zone was read in the importer instance's zone. This is the fact time.", "examples": ["2024-03-02T09:15:00+11:00"]},
+      "date_from": {"type": "string", "enum": ["frontmatter", "exif", "filename", "mtime"], "description": "Which source answered for date: a Markdown file's frontmatter date, the image's EXIF DateTimeOriginal, a YYYY-MM-DD prefix on the file name, or the file's modification time. mtime is weak: an edit moves it, and the importer refuses it for Markdown.", "examples": ["frontmatter"]},
+      "id": {"type": "string", "minLength": 1, "pattern": "^(path|content|id):.+$", "description": "Identity, composed by the importer from its instance's mode, which it carries as the prefix: path:<root>/<path>, content:<sha256>, or id:<the id declared in the file's frontmatter>. The same mode is in identity, so a reader need not parse this.", "examples": ["path:vault/notes/2024-03-02 referral.md", "content:3f1c9a0e7b2d4c6f8a1e5b9d0c3f7a2e6b4d8c1f9e0a3b5d7c2f4e6a8b1d3c5e", "id:note-20240302-0915"]},
+      "identity": {"type": "string", "enum": ["path", "content", "id"], "description": "The identity mode the id was composed under. One importer instance, one folder, one mode.", "examples": ["path"]},
+      "last_seen": {"type": "string", "minLength": 1, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "With unseen only: when the importer's last complete run that found the file ran, RFC 3339.", "examples": ["2026-10-01T03:00:00+00:00"]},
+      "media_type": {"type": "string", "minLength": 1, "description": "The media type the importer names from the file's extension, parameters stripped; the bytes are not sniffed. application/octet-stream when the extension is unknown.", "examples": ["text/markdown"]},
+      "path": {"type": "string", "minLength": 1, "description": "The file's path relative to the declared folder, with forward slashes; it may include subfolders. The folder's own location never enters the fact.", "examples": ["notes/2024-03-02 referral.md"]},
+      "root": {"type": "string", "minLength": 1, "description": "The name the importer instance gives the declared folder (its root_name), so a path says which folder it is under without naming where that folder is.", "examples": ["vault"]},
+      "sha256": {"type": "string", "minLength": 1, "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the file's bytes as lower-case hex, computed by the importer when it read the file. Anam's library is not consulted: the bytes are not held.", "examples": ["3f1c9a0e7b2d4c6f8a1e5b9d0c3f7a2e6b4d8c1f9e0a3b5d7c2f4e6a8b1d3c5e"]},
+      "title": {"type": "string", "minLength": 1, "description": "A Markdown file's frontmatter title, verbatim, when it has one.", "examples": ["Referral letter"]},
+      "unseen": {"type": "boolean", "const": true, "description": "Present and true on a version the importer sent after looking for the file past its tolerance of complete runs and not finding it. Absent on a version that observed the file. Never a retraction.", "examples": [true]},
+      "unseen_since": {"type": "string", "minLength": 1, "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(Z|[+-][0-9]{2}:[0-9]{2})$", "description": "With unseen only: when the importer's first complete run that did not find the file ran, RFC 3339.", "examples": ["2026-10-03T03:00:00+00:00"]},
+      "source_time": {"type": "object", "description": "How the file's date was read (card 198), by date_from. frontmatter: the date as written, in its own offset (basis source) or, with none, in the instance's zone key (basis configuration). exif: DateTimeOriginal as the camera wrote it, in OffsetTimeOriginal (basis source) or, without one, the zone key (basis configuration). filename: the name's YYYY-MM-DD, read in the zone key (basis configuration). mtime: the modification time's epoch as its digits, UTC (basis source). A file last seen before version 2 keeps its date in that date's own offset with basis assumption, since how it was read is no longer known.", "required": ["value", "zone", "basis"], "additionalProperties": false, "properties": {"value": {"type": "string", "minLength": 1, "description": "The fact time as the source supplied it, as text and never rewritten: a date, a wall clock, an RFC 3339 string, or an epoch as its digits.", "examples": ["2026-10-17", "2026-10-20T20:00:00+11:00", "1792269840000"]}, "zone": {"type": "string", "minLength": 1, "pattern": "^([A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$", "description": "The zone value is read in, and nothing else: an IANA name when one is known, UTC for a value that is UTC, else a fixed offset +HH:MM or -HH:MM. The gate refuses a name that is no zone.", "examples": ["Australia/Sydney", "UTC", "+01:00"]}, "basis": {"type": "string", "enum": ["source", "configuration", "assumption"], "description": "Who decided the zone. source: the source supplied it with the value, or the value is UTC by the source's own definition. configuration: a setting a person made for this source names it. assumption: the importer or writer chose it, with nothing behind it but its own default or the Definition's zone, and logged that it did."}}}
+    },
+    "dependentRequired": {"unseen": ["unseen_since", "last_seen"], "unseen_since": ["unseen"], "last_seen": ["unseen"]},
+    "additionalProperties": false
+  }
+}

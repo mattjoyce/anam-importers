@@ -3,7 +3,7 @@
 # requires-python = ">=3.10"
 # dependencies = ["pyyaml>=6"]
 # ///
-"""Rewrite the `type:` of every record in records files, per a rename table (anam cards 147, 191, 195).
+"""Rewrite the `type:` of every record in records files, per a rename table.
 
 The records importer sends each record under the type the file names, so after the
 rename run carries the ledger over, the files on the Library share must name the new
@@ -13,11 +13,10 @@ writes nothing without --yes.
 
     python3 -I records/extract/retype_records.py --table renames/taxonomy.json [--yes] <file-or-dir>...
 
-The table is one of anam's `renames/`, the one its rename run used: `taxonomy.json` (card
-147), `record-edge.json` (card 191), `kinds-segment.json` (card 196) or `vendor-leaves.json`
-(card 195). {"renames": [{"from": ..., "to": ..., "select": {...}}, ...]}, select optional.
+The table is one of anam's `renames/`, the one its rename run used: `taxonomy.json`,
+`record-edge.json`, `kinds-segment.json` or `vendor-leaves.json`. {"renames": [{"from": ..., "to": ..., "select": {...}}, ...]}, select optional.
 
-A row with a select (anam card 194) carries only the records it matches, as the rename
+A row with a select carries only the records it matches, as the rename
 run does: `source` matches when it is "records", the source every records file's facets
 come from, and `pointer` and `prefix` match when the record's field at the pointer is text
 that starts with the prefix. The pointer names a top-level field, such as /id, since a

@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: false
-description: "Shapes a folder of files into record.link envelopes (anam card 165), a file Anam remembers but does not hold: name, hash, size, media type and date, never the bytes. One instance is one folder under one identity mode (path, content or id). Emits anam_links.batch events, at most 49 to a batch, every run a snapshot; a file missing for unseen_after complete runs is superseded with unseen. Keeps its own count of runs in state_file, outside links_dir, the only state it keeps; reads the folder and writes nothing into it; holds no token and posts no bytes."
+description: "Shapes a folder of files into record.link envelopes, a file Anam remembers but does not hold: name, hash, size, media type and date, never the bytes. One instance is one folder under one identity mode (path, content or id). Emits anam_links.batch events, at most 49 to a batch, every run a snapshot; a file missing for unseen_after complete runs is superseded with unseen. Keeps its own count of runs in state_file, outside links_dir, the only state it keeps; reads the folder and writes nothing into it; holds no token and posts no bytes."
 commands:
   - name: handle
     type: read
