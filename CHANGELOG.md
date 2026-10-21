@@ -27,6 +27,13 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- Garmin sends one `health.heart-rate.day` a day, its resting, minimum and maximum heart rate
+  as fields, in place of three `health.heart-rate-day` facts a day (anam card 205). A figure Garmin
+  left empty is a field the day does not carry; a day assumed because Garmin gave no interval
+  (18 February 2026) still says so. `poll`'s snapshot also names `health.heart-rate-day` with
+  nothing of it carried, so the old facts are reported absent and `anam retract garmin`
+  tombstones them; the garmin principal keeps listing that type while the importer names it.
+
 - Every importer says how its clock was read (anam card 198). Each payload carries `source_time`
   (`value` as the source gave it, the `zone` it is read in, and `basis`: source, configuration or
   assumption). bp_csv reads `date_excel` in a new `zone` key (configuration) or the Definition's

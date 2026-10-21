@@ -66,18 +66,29 @@ class SleepEpisodeTest(unittest.TestCase):
         self.assertTrue(list(pinned("ieee-1752/sleep-episode-1.0").iter_errors(bad)))
 
 
-class HeartRateDailyTest(unittest.TestCase):
-    def test_garmin_s_daily_figures_pass_the_pinned_heart_rate_schema(self):
-        definition = json.loads((REPO / "garmin" / "definitions" / "health.heart-rate-day.json").read_text())
-        validator = pinned(definition["meta"]["source_schema"])
+class HeartRateDayTest(unittest.TestCase):
+    """health.heart-rate.day is Anam's own shape, since Open mHealth has no body for one
+    day's several statistics (anam card 205). Each figure stays an OMH heart rate, so a
+    reader that wants a portable body builds one from a field and the day's frame."""
+
+    def test_each_of_garmin_s_daily_figures_makes_a_pinned_heart_rate_body(self):
+        definition = json.loads((REPO / "garmin" / "definitions" / "health.heart-rate.day.json").read_text())
+        self.assertEqual(definition["meta"]["source_schema"], "anam/health.heart-rate.day")
+        validator = pinned("omh/heart-rate-2.0")
         garmin = module(REPO / "garmin" / "run.py")
         with tempfile.TemporaryDirectory() as d:
             db = garmin_db(Path(d) / "garmin.db", [], resting=[("2015-10-09", 61.0)], daily=[("2015-10-09", 59, 135)])
             summary(Path(d), "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
-            figures = garmin.days({"garmin_db": str(db), "fit_dir": d}, garmin.DEFAULT_BUSY_MS).heart
-        self.assertEqual([f["statistic"] for f in figures], ["resting", "minimum", "maximum"])
-        for figure in figures:
-            self.assertEqual([e.message for e in validator.iter_errors(figure)], [], figure)
+            days = garmin.days({"garmin_db": str(db), "fit_dir": d}, garmin.DEFAULT_BUSY_MS).heart
+        self.assertEqual(len(days), 1)
+        day = days[0]
+        self.assertEqual([k for k in garmin.HEART_FIGURES if k in day], ["resting", "minimum", "maximum"])
+        bodies = [{"heart_rate": day["resting"], "effective_time_frame": day["effective_time_frame"],
+                   "temporal_relationship_to_physical_activity": "at rest"}]
+        bodies += [{"heart_rate": day[k], "effective_time_frame": day["effective_time_frame"], "descriptive_statistic": k}
+                   for k in ("minimum", "maximum")]
+        for body in bodies:
+            self.assertEqual([e.message for e in validator.iter_errors(body)], [], body)
 
     def test_the_pinned_schema_refuses_a_statistic_omh_does_not_name(self):
         bad = {"heart_rate": {"value": 61, "unit": "beats/min"}, "descriptive_statistic": "resting",

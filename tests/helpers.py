@@ -87,7 +87,12 @@ class Daemon:
                 f"  - source: {src}\n    path: {path}\n" for src, path in imports))
             subprocess.run([seed, "ingest", "--imports", str(d / "imports.yaml")], env=self.env, check=True,
                            capture_output=True, timeout=60)
-        self.proc = subprocess.Popen([binary, "daemon"], env=self.env, stdout=subprocess.DEVNULL,
+        self.binary = binary
+        self.start()
+
+    def start(self) -> None:
+        """Run the daemon over the ledger, and wait until it answers."""
+        self.proc = subprocess.Popen([self.binary, "daemon"], env=self.env, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL)
         for _ in range(100):
             try:
@@ -98,7 +103,16 @@ class Daemon:
         self.close()
         raise RuntimeError("anam daemon did not become ready")
 
-    def close(self) -> None:
+    def stop(self) -> None:
+        """Stop the daemon and keep its files, for a command that opens them itself."""
         self.proc.terminate()
         self.proc.wait(timeout=30)
+
+    def cli(self, *args: str) -> subprocess.CompletedProcess:
+        """One anam command over the daemon's files, as the operator runs it beside a
+        stopped daemon."""
+        return subprocess.run([self.binary, *args], env=self.env, capture_output=True, text=True, timeout=60)
+
+    def close(self) -> None:
+        self.stop()
         self.dir.cleanup()
