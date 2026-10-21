@@ -116,6 +116,10 @@ All notable changes to this repo. The format follows
 
 ### Fixed
 
+- `bp_csv`: an export dropped in the watched folder is read. folder_watch reports the file's path
+  relative to the watch's root, and `handle` read the bare name, so every drop failed with "no export
+  at" and only a full poll brought readings in. `handle` now reads the path under the event's `root`,
+  or under `export_dir` when the event has none.
 - `garmin`: a `sleep.episode`'s start and end are now true UTC instants (anam card 174). GarminDB
   stores them as naive wall clock in its process's zone, and that process runs in the days' zone
   (Australia/Sydney), so the importer stamped Sydney wall clock with `Z` and every night sat 10 to
