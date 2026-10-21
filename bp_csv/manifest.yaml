@@ -17,7 +17,10 @@ commands:
       properties:
         path:
           type: string
-          description: "The export's absolute path, as folder_watch reports it."
+          description: "The export's path as folder_watch reports it, relative to root; an absolute path is read as it is."
+        root:
+          type: string
+          description: "The watch's root, which path is relative to, as folder_watch reports it."
         change_type:
           type: string
           description: "created, modified or deleted."

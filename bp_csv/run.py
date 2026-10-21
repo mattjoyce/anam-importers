@@ -346,7 +346,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     path = event.get("path")
     if not path:
         return ductile.error("the event names no path", retry=False)
-    path = Path(str(path))
+    path = export_path(event, config)
     rows = payloads(path)
     # An older export dropped in late must not undo a newer one's correction: with
     # export_dir known, readings a newer export holds are left to it.
@@ -360,6 +360,18 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     readings = sum(len(e["payload"]["envelopes"]) for e in shaped.events)
     return ductile.ok(f"{readings} reading(s) of {path.name} in {len(shaped.events)} batch(es)", events=shaped.events,
                       logs=shaped.skipped + clock_logs(clock))
+
+
+def export_path(event: Dict[str, Any], config: Dict[str, Any]) -> Path:
+    """The export an event names. folder_watch reports path relative to the watch's
+    root and sends root beside it; a bare name with no root is read under export_dir."""
+    path = Path(str(event["path"]))
+    if path.is_absolute():
+        return path
+    base = event.get("root") or config.get("export_dir")
+    if not base:
+        raise ductile.Failure(f"the event names {path} with no root, and no export_dir is set", retry=False)
+    return Path(str(base)) / path
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,5 +1,6 @@
 """anam_bp_csv: the export read as Anam's built-in bpcsv worker reads it."""
 
+import json
 import os
 import tempfile
 import unittest
@@ -53,6 +54,25 @@ class ShapeTest(unittest.TestCase):
         r = self.handle({"path": str(path), "change_type": "created"})
         self.assertEqual(r["status"], "ok", r)
         return [e["payload"] for ev in r["events"] for e in ev["payload"]["envelopes"]]
+
+    def test_a_path_relative_to_the_watchs_root_is_read_under_it(self):
+        # folder_watch sends the name relative to root, with root beside it.
+        export(self.dir, "BloodPressure_10-October-2026", ROWS)
+        r = self.handle({"root": str(self.dir), "path": "BloodPressure_10-October-2026", "change_type": "created"})
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(sum(len(ev["payload"]["envelopes"]) for ev in r["events"]), 3)
+
+    def test_a_bare_name_with_no_root_is_read_under_export_dir(self):
+        export(self.dir, "BloodPressure_10-October-2026", ROWS)
+        r = run_plugin(BP, {"command": "handle", "config": {"person_id": "person-a", "export_dir": str(self.dir)},
+                            "event": {"type": "bp.export",
+                                      "payload": {"path": "BloodPressure_10-October-2026", "change_type": "created"}}})
+        self.assertEqual(r["status"], "ok", r)
+
+    def test_a_bare_name_with_nowhere_to_read_it_is_refused(self):
+        r = self.handle({"path": "BloodPressure_10-October-2026", "change_type": "created"})
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("no root", json.dumps(r))
 
     def test_readings_sharing_a_timestamp_are_told_apart_by_their_ordinal(self):
         p = self.payloads(ROWS)
