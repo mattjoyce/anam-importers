@@ -1,6 +1,8 @@
 """The importer and anam_submit against a real Anam daemon. ANAM_BIN names the
 binary (make build in the anam repo); without it these are skipped."""
 
+import copy
+import json
 import os
 import tempfile
 import unittest
@@ -40,9 +42,32 @@ class AgainstAnamTest(unittest.TestCase):
         # refuses a version older than one it holds (anam card 198).
         client = Client(self.daemon.url, self.daemon.token)
         held = {d["type"]: d for d in client.definitions()}["health.measurement.withings"]
-        self.assertEqual((held["current"], held["versions"]), (2, [1, 2]))
+        self.assertEqual((held["current"], held["versions"]), (3, [1, 2, 3]))
         for d in load(REPO / "withings").every:
             self.assertEqual(client.definition(d.type, d.version), d.manifest)
+
+    def test_a_description_only_version_is_a_no_op_for_facets_already_admitted(self):
+        # A Definition's words can change without its rules: the next version carries the
+        # same schema under a reworded description, and the old body moves to history/.
+        # Facets admitted under the version before it, sent again under the new one with
+        # the same payloads, are no-ops: the gate hashes the payload, not the version.
+        db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)
+        shaped = run_plugin(WITHINGS, {"command": "poll", "config": {"db_path": str(db), "person_id": "person-a"}})
+        event = shaped["events"][0]
+        current = json.loads(event["payload"]["definitions"][-1])["meta"]["definition_version"]
+        earlier = copy.deepcopy(event)
+        earlier["payload"]["definitions"] = [m for m in event["payload"]["definitions"]
+                                             if json.loads(m)["meta"]["definition_version"] < current]
+        earlier["payload"].pop("snapshot", None)  # a snapshot part is one set of envelopes, once
+        for env in earlier["payload"]["envelopes"]:
+            env["definition_version"] = current - 1
+        before = self.submit(earlier)
+        self.assertEqual(before["events"][0]["payload"]["outcomes"], {"admitted": 3}, before)
+        after = self.submit(event)
+        self.assertEqual(after["status"], "ok", after)
+        self.assertEqual(after["events"][0]["payload"]["outcomes"], {"no-op": 3}, after)
+        client = Client(self.daemon.url, self.daemon.token)
+        self.assertEqual({d["type"]: d for d in client.definitions()}["health.measurement.withings"]["current"], current)
 
     def test_a_complete_resend_reports_what_the_source_no_longer_holds(self):
         db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)

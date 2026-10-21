@@ -1,7 +1,7 @@
 # The rebuild drill
 
 `scripts/rebuild-drill.py` proves that Anam owns no facts: it builds a fresh ledger from the
-importers alone and compares it with the live one (anam card 141). The procedure it follows, and
+importers alone and compares it with the live one. The procedure it follows, and
 what a rebuild cannot bring back, is `docs/IMPORTERS.md` §8.8 in the anam repo.
 
 ## What it does

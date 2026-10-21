@@ -24,7 +24,7 @@ commands:
           description: "The manifests the envelopes were shaped to, as JSON text. Registered if Anam does not hold them."
         documents:
           type: array
-          description: "Optional, for record.document batches (anam card 103): {path, file} for each document the envelopes name. Each file's bytes are handed to Anam's library at path (POST /v1/documents) before the envelopes are posted; the bytes are read from file, never carried in the event."
+          description: "Optional, for record.document batches: {path, file} for each document the envelopes name. Each file's bytes are handed to Anam's library at path (POST /v1/documents) before the envelopes are posted; the bytes are read from file, never carried in the event."
         batch:
           type: string
           description: "Optional label carried through to anam.admitted, such as 3/113."

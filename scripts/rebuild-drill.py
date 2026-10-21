@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild the record from its sources, as a drill (anam card 141).
+"""Rebuild the record from its sources, as a drill.
 
 Starts a scratch `anam daemon` on a fresh ledger, runs each importer in the plan
 through its resend-everything `poll` and `anam_submit`, exactly as the gateway would,
