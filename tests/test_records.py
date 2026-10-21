@@ -46,6 +46,9 @@ records:
       kept
 """
 
+# WEIGHTS holds the note beside the weights. record.edge v2 requires source_time, and the
+# offset in it is what places the note: the note was written in Australia/Sydney, which
+# kept +10:00 on 2 October 2026.
 WEIGHTS = """\
 records:
   - {type: health.weight, id: 0777, date: 2026-10-01 07:00, kg: 80.0, bmi: 24.10}
@@ -53,6 +56,7 @@ records:
   - type: record.edge
     id: n-1
     at: 2026-10-02 08:00
+    source_time: {value: 2026-10-02 08:00, zone: Australia/Sydney, offset: "+10:00", basis: source}
     about: [0b6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f, "1c6f2a52-3c1e-4d7a-9f00-1a2b3c4d5e6f"]
     text: ~not null
 """

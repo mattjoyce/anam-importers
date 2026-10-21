@@ -116,6 +116,12 @@ All notable changes to this repo. The format follows
 
 ### Fixed
 
+- The rebuild drill's records fixture says how the note's clock was read, so the drill passes
+  against a daemon built from anam master. `record.edge` v2 requires `source_time` and reads its
+  offset, so the note in the fixture was refused for a missing `source_time` and the whole batch
+  with it. The note now carries the wall clock as it was written, the zone it was written in and
+  the offset that zone kept then.
+
 - `garmin`: a `sleep.episode`'s start and end are now true UTC instants (anam card 174). GarminDB
   stores them as naive wall clock in its process's zone, and that process runs in the days' zone
   (Australia/Sydney), so the importer stamped Sydney wall clock with `Z` and every night sat 10 to
