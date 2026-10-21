@@ -45,17 +45,17 @@ steps:
     anchor: "events.append(ductile.event(FETCHED_EVENT"
   - actor: /components/importer-concept2.md
     label: shape each cached result
-    action: "`handle` reads the cache files modified within `lookback_days`, `poll` all of them. `session` derives the start from `date_utc` minus the duration, converts the Logbook's tenths of a second to seconds, and drops the monitor's zero heart rates as no figure."
+    action: "`handle` reads the cache files modified within `lookback_days`, `poll` all of them. `session` derives the start from `date_utc` minus the duration and keeps `date_utc` in `source_time` (UTC, basis source); a web entry's bare date is read at midnight in the Logbook's `timezone` for it (basis source) or, with none, in the Definition's zone (basis assumption, logged) (anam card 198). It converts the Logbook's tenths of a second to seconds, and drops the monitor's zero heart rates as no figure."
     reads: [/data-structures/cached-result.md]
     resource: concept2/run.py#session
-    anchor: "start, known = start_of(r, seconds)"
+    anchor: "start = start_of(r, seconds)"
   - actor: /components/importer-concept2.md
     label: validate, batch, and judge the snapshot
     action: "A cache file that will not read is logged and skipped, and the run then is not a snapshot. `poll` labels the batches only when every file read. The events go to `anam_submit` as in [submit a batch](/workflows/submit-a-batch.md)."
     writes: [/data-structures/envelope.md, /data-structures/batch-event.md]
     ends: true
     resource: concept2/run.py#run_over
-    anchor: 'events = batch_events(payloads, str(config["person_id"]), snapshot and not logs)'
+    anchor: 'events = batch_events(s.payloads, str(config["person_id"]), snapshot and not s.skipped)'
 ---
 
 The split keeps the network out of the shaping. `fetch` is the source's reader and owns every failure a remote API has. `handle` and `poll` are pure over a folder of files, which makes them testable with a fake Logbook for `fetch` and plain files for the rest.

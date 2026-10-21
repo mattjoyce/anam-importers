@@ -15,6 +15,6 @@ depends_on:
   - /components/plugin-protocol.md
 ---
 
-Source `withings`, type `health.measurement.withings` v1 (`health.measurement` v4 until anam card 195), identity `/withings_id` with `/type`, fact time `/date` in UTC. `handle` shapes the one measure group named by a `withings.measurement_recorded` event, or everything on `withings.reconciled`, since a reconcile can change old groups' attribution. `poll` shapes everything and labels the run a snapshot.
+Source `withings`, type `health.measurement.withings` v2 (`health.measurement` v4 until anam card 195; v2 adds `source_time`, `date` read as UTC, basis source, with the device's `timezone` left in its own field), identity `/withings_id` with `/type`, fact time `/date` in UTC. `handle` shapes the one measure group named by a `withings.measurement_recorded` event, or everything on `withings.reconciled`, since a reconcile can change old groups' attribution. `poll` shapes everything and labels the run a snapshot.
 
 The SQL reads every column except `value` through `CAST(... AS TEXT)`, so the payload carries the source's own text. A REAL has no text of its own and SQLite's rendering varies by build, so `value` is read as a double and written by `render` as the shortest decimal that round-trips, never with an exponent. The database opens with `mode=ro`, and a database that is locked or busy is a retryable failure while a missing file or a missing `measure_groups` table is not. A group marked ambiguous (`attrib` equal to `"1"`) asserts no person. The only optional key is `busy_timeout_ms`.

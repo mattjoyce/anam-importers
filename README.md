@@ -81,6 +81,13 @@ docs/defaults-and-invariants.md   every hard-coded value: a config key's default
    have hard-coded, read and range-checked by `anam_importer.config` at the start of each
    command. A value the data or Anam depends on stays a constant, commented why
    (`docs/defaults-and-invariants.md`, anam card 151).
+7. Say how the source's clock was read: each payload carries `source_time` (`value` as the source
+   gave it, the `zone` it is read in, and `basis`: `source`, `configuration` or `assumption`,
+   logged), built by `anam_importer.clock.source_time`. Read a wall clock with
+   `clock.local_instant`, which refuses one a zone skips or repeats rather than guessing, and
+   never in the host's zone (anam cards 197 and 198).
+8. A new version of a type keeps the old one in `definitions/history/<type>.v<n>.json`; `load`
+   sends every version of each type you emit, oldest first, so Anam holds them all.
 
 ## Running the tests
 
@@ -272,6 +279,14 @@ Not deployed. The same steps as Withings, with these differences:
 `pattern` (default `BloodPressure_*`, the app's export names) is the glob `poll` and `handle` find
 exports under `export_dir` by; set it if your exports are named otherwise.
 
+`zone` names the zone the cuff's clock is set to, and each reading's `source_time` then says
+`basis: configuration`; without it the reading is read in the Definition's zone, Australia/Sydney,
+as an assumption, and the run says so. The Definition reads `date_excel` in Australia/Sydney, so
+that is the only zone the key takes until a fact can name its own (anam card 198). A reading
+whose wall clock that zone skips or repeats is left out with a log line, and `poll` is then no
+snapshot. An export with no date in its name is ordered by its modification day in that zone,
+never the gateway's.
+
 `poll` resends every export under `export_dir`, so a rebuild reruns them all. Keep every export
 there; an overlapping later export admits only its new readings. The importer reads the file and
 never moves or deletes it. Exports are ordered by the date the app writes into the name
@@ -462,7 +477,11 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 | `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `health.lab-result`, `health.lab-panel` |
 | `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
 
-`--zone` is the IANA zone the export's wall clock reads in. `strong_csv.py --max-session-sec`
+`--zone` is the IANA zone the export's wall clock reads in, and each record's `source_time` says
+so (`basis: configuration`); a wall clock the zone skips or repeats stops the script, naming the
+row. `technogym_json.py` keeps Technogym's `on` with its own offset (`basis: source`), and
+`acl_pathology.py` reads collection times in Australia/Sydney, the lab types' zone, as an
+assumption, since the reports print none (anam card 198). `strong_csv.py --max-session-sec`
 (default 10800, 3 hours, the person's rule of 2026-10-08) caps a workout's duration, since Strong
 keeps a workout open until the next one starts; another cap writes other records. The scripts moved from Anam's
 `scripts/` (anam card 58) and write the same records; only `extracted.method` changed.

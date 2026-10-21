@@ -166,8 +166,11 @@ class Hour:
                 held["triggers"].append(t)
 
     def payload(self) -> Dict[str, Any]:
+        # The hour is the UTC hour of the fixes' tst, an epoch OwnTracks writes in
+        # UTC by its own definition (anam card 198).
         return {"id": f"loc:{self.device}:{self.hour}", "hour": self.hour, "device": self.device,
-                "points": [self.points[k] for k in sorted(self.points)]}
+                "points": [self.points[k] for k in sorted(self.points)],
+                "source_time": {"value": self.hour, "zone": "UTC", "basis": "source"}}
 
 
 @dataclass
@@ -266,14 +269,15 @@ def read_spool(root: Path) -> Read:
 
 
 def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) -> List[Dict[str, Any]]:
-    definition = load(HERE)[TRACK_TYPE]
+    definitions = load(HERE)
+    definition = definitions[TRACK_TYPE]
     envs = [envelope(definition, p, asserted_person=person) for p in payloads]
-    check({TRACK_TYPE: definition}, envs)
+    check(definitions, envs)
     groups = list(batches(envs))
     parts = snapshot_parts(len(groups), [TRACK_TYPE]) if snapshot and groups else [None] * len(groups)
     events = []
     for i, (g, part) in enumerate(zip(groups, parts)):
-        payload: Dict[str, Any] = {"envelopes": g, "definitions": [definition.body.decode()],
+        payload: Dict[str, Any] = {"envelopes": g, "definitions": definitions.manifests(),
                                    "batch": f"{TRACK_TYPE} {i + 1}/{len(groups)}"}
         if part is not None:
             payload["snapshot"] = part

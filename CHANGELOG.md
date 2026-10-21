@@ -27,6 +27,30 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- Every importer says how its clock was read (anam card 198). Each payload carries `source_time`
+  (`value` as the source gave it, the `zone` it is read in, and `basis`: source, configuration or
+  assumption). bp_csv reads `date_excel` in a new `zone` key (configuration) or the Definition's
+  zone (assumption, logged); the key may name only that zone until a fact can name its own, and an
+  undated export's mtime is read in it, never the host's zone. withings: `date`, UTC; the device's
+  `timezone` stays in its field. concept2: `date_utc`, UTC, or a web entry's date at midnight in
+  the Logbook's `timezone` for it (source) or Sydney (assumption, logged). documents: the sidecar's
+  date in Sydney (assumption, logged), and a sidecar may not declare `source_time`. links: by
+  `date_from`, and a file remembered from before keeps its date's offset as an assumption.
+  dreamstation_card, owntracks and stays: UTC epochs. `fitbit_sleep.py`, `strong_csv.py`,
+  `technogym_json.py` and `acl_pathology.py` write it too (extraction versions 3, 3, 3 and 2).
+  Wall clocks are read by `clock.local_instant`, so one a zone skips or repeats is left out with a
+  log line (an importer's run is then no snapshot) or stops an extractor, never guessed.
+  New versions: `health.measurement.withings`, `health.cpap-session.dreamstation`, `place.track`,
+  `place.stay` and `record.link` v2, each requiring `source_time`, the v1 bodies kept in
+  `definitions/history/`; `health.blood-pressure` v7 and `activity.exercise-session.concept2` v2
+  are Anam's bundled bodies, byte for byte. Deploy anam first.
+
+- `anam_importer.load` reads `definitions/history/<type>.v<n>.json` for the types an importer
+  emits now, and every batch carries every version, each type's oldest first, so a rebuilt
+  operational store holds every version an importer emitted (IMPORTERS.md §8.3). History under an
+  old name is not sent. `load` returns `Definitions`, a dict of the current ones with `every` and
+  `manifests()`.
+
 - Vendor-shaped types take the vendor leaf (anam card 195). garmin sends
   `activity.exercise-session.garmin` and `activity.day.garmin`, concept2
   `activity.exercise-session.concept2`, withings `health.measurement.withings` and dreamstation_card

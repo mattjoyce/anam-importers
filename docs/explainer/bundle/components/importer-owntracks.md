@@ -15,6 +15,6 @@ depends_on:
   - /components/plugin-protocol.md
 ---
 
-Source `owntracks`, type `place.track` v1, identity `/id` as `loc:<device>:<hour>`, fact time `/hour` in UTC. Messages are read in the receiver's id order, so the first message received for a fix wins. Two messages with one `tst` are one point, with their triggers merged. A second message at that time with a different latitude, longitude or accuracy is counted and dropped.
+Source `owntracks`, type `place.track` v2 (`source_time` is the UTC hour, basis source), identity `/id` as `loc:<device>:<hour>`, fact time `/hour` in UTC. Messages are read in the receiver's id order, so the first message received for a fix wins. Two messages with one `tst` are one point, with their triggers merged. A second message at that time with a different latitude, longitude or accuracy is counted and dropped.
 
 An hour's facet replaces the last one sent, so an hour is always sent whole, and `handle` sends the hours that gained a message received within `lookback_days`, and not only the new messages. Messages that are not locations, empty bodies and fields the Definition does not keep are counted in logs. A line that will not parse or an hour over `max_payload_bytes` is skipped and the run stops being a snapshot. Coordinates never appear in a log line, a result or an event name. See [coordinates stay in the payload](/invariants/coordinates-stay-in-the-payload.md).

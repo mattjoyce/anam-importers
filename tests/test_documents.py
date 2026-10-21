@@ -56,7 +56,10 @@ class ShapeTest(unittest.TestCase):
         letter = envs["scans/2024-03-01_letter.pdf"]["payload"]
         self.assertEqual(letter, {"date": "2024-03-01", "title": "A letter", "note": "synthetic",
                                   "path": "scans/2024-03-01_letter.pdf", "sha256": hashlib.sha256(LETTER).hexdigest(),
-                                  "bytes": len(LETTER), "media_type": "application/pdf"})
+                                  "bytes": len(LETTER), "media_type": "application/pdf",
+                                  # A sidecar's date names no zone: the Definition's, assumed (anam card 198).
+                                  "source_time": {"value": "2024-03-01", "zone": "Australia/Sydney", "basis": "assumption"}})
+        self.assertTrue(any("basis assumption" in line["message"] for line in out["logs"]), out["logs"])
         note = envs["2024-04-02_note.md"]["payload"]
         self.assertEqual((note["title"], note["media_type"]), ("0777", "text/markdown"))  # quoted text stays text
         self.assertEqual({doc["path"] for doc in ev["documents"]}, set(envs))
@@ -71,6 +74,8 @@ class ShapeTest(unittest.TestCase):
             "no date": ({"a.pdf": LETTER, "a.pdf.meta.yaml": "title: x\n"}, "date"),
             "a measured field declared": ({"a.pdf": LETTER, "a.pdf.meta.yaml": "date: 2024-01-01\nsha256: abc\n"}, "measured"),
             "not a mapping": ({"a.pdf": LETTER, "a.pdf.meta.yaml": "- 1\n"}, "mapping"),
+            "source_time declared": ({"a.pdf": LETTER, "a.pdf.meta.yaml": "date: 2024-01-01\nsource_time: x\n"},
+                                     "source_time is the importer's"),
         }
         for name, (files, says) in cases.items():
             with self.subTest(name), library(files) as d:
@@ -93,12 +98,23 @@ class AgainstAnamTest(unittest.TestCase):
                 outcomes[o] = outcomes.get(o, 0) + n
         return outcomes
 
+    def test_a_document_is_admitted_at_the_current_version_with_its_source_time_and_a_resend_is_no_op(self):
+        with library(GOOD) as d:
+            daemon = Daemon("documents", ["record.document"])
+            try:
+                self.assertEqual(self.submit(daemon, run("poll", d)["events"]), {"admitted": 2})
+                self.assertEqual(self.submit(daemon, run("poll", d)["events"]), {"no-op": 2})
+            finally:
+                daemon.close()
+
     def test_every_document_the_worker_admitted_resends_as_no_op_and_lands_in_the_library(self):
         with library(GOOD) as d:
             daemon = Daemon("documents", ["record.document"], imports=[("documents", d)])
             try:
                 shaped = run("poll", d)
-                self.assertEqual(self.submit(daemon, shaped["events"]), {"no-op": 2})
+                # The worker's facets carried no source_time; the first resend adds it
+                # to each (anam card 198), and the next is no-op.
+                self.assertEqual(self.submit(daemon, shaped["events"]), {"superseded": 2})
                 held = Path(daemon.dir.name) / "documents" / (hashlib.sha256(LETTER).hexdigest() + ".pdf")
                 self.assertEqual(held.read_bytes(), LETTER)  # named by its sha256 (anam card 150)
                 self.assertFalse(list((Path(daemon.dir.name) / "documents").rglob("*.meta.yaml")))

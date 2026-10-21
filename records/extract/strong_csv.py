@@ -21,19 +21,24 @@ session is 3 hours at most, the default of --max-session-sec. The interval's dur
 Strong's own figure when it is above 0 and at most the cap, and the cap otherwise; then
 `duration_capped: true` marks it, and Strong's number is always kept as reported_duration_sec.
 Another cap writes other records, and a resend of them supersedes. The start is Strong's local clock read in
-ZONE; a workout logged elsewhere is placed as if in ZONE.
+ZONE; a workout logged elsewhere is placed as if in ZONE. source_time keeps Strong's Date as written, read in
+ZONE by the person's --zone (basis configuration, anam card 198). A Date ZONE skips or repeats (daylight
+saving) stops the run, naming the workout: it names no one instant.
 
 Moved from Anam's scripts/extract-strong-csv.py (anam card 58); the records are the same.
 """
 import argparse
 import csv
 import hashlib
+import sys
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from anam_importer import clock  # noqa: E402
 
 # MAX_SESSION_SEC is the longest a session is taken to be, unless --max-session-sec
 # says otherwise.
@@ -51,7 +56,7 @@ def num(s):
 def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple:
     """The records file's content, and how many CSV rows it was read from. A
     session's duration is capped at max_session_sec."""
-    tz = ZoneInfo(zone)
+    clock.check_zone(zone)
     sha = hashlib.sha256(p.read_bytes()).hexdigest()
     with open(p, encoding="utf-8-sig", newline="") as f:
         rows = list(csv.DictReader(f, delimiter=";"))
@@ -62,7 +67,10 @@ def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple
     for start, wrows in workouts.items():
         first = wrows[0]
         iso = start.replace(" ", "T")
-        at = datetime.fromisoformat(start).replace(tzinfo=tz)
+        try:
+            at = clock.local_instant(datetime.fromisoformat(start), zone)
+        except clock.ClockError as exc:
+            raise SystemExit(f"workout {start}: {exc}") from exc
         reported = num(first["Duration (sec)"])
         capped = not (0 < reported <= max_session_sec)
         rec = {"type": "activity.exercise-session.strong", "id": f"strong:session:{iso}",
@@ -71,7 +79,8 @@ def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple
                    "start_date_time": at.isoformat(timespec="seconds"),
                    "duration": {"value": max_session_sec if capped else reported, "unit": "sec"}}},
                "source": "Strong", "workout_name": first["Workout Name"],
-               "reported_duration_sec": reported}
+               "reported_duration_sec": reported,
+               "source_time": clock.source_time(start, zone, "configuration")}
         if capped:
             rec["duration_capped"] = True
         notes = sorted({r["Workout Notes"] for r in wrows if r["Workout Notes"]})
@@ -95,7 +104,7 @@ def extract(p: Path, zone: str, max_session_sec: int = MAX_SESSION_SEC) -> tuple
             sets.append(s)
         rec["sets"] = sets
         records.append(rec)
-    return {"document": {"name": p.name, "sha256": sha}, "extracted": {"method": METHOD, "version": 2},
+    return {"document": {"name": p.name, "sha256": sha}, "extracted": {"method": METHOD, "version": 3},
             "records": records}, len(rows)
 
 

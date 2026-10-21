@@ -17,14 +17,20 @@ Identity is technogym:<on>. `on` is unique per session and carries its UTC offse
 stopped 11 seconds after Technogym's `on`. So the start is `on` minus the
 session's Duration, to the second, and `on` itself stays in the id.
 
+source_time keeps `on` as Technogym wrote it, with its own offset (basis source, anam card 198):
+the end, which is what the source gives, not the start derived from it.
+
 A measure name this script does not know stops it: a new name needs a decision, not a guess.
 Deterministic: sessions in `on` order, measures in a fixed order. Moved from Anam's
 scripts/extract-technogym-json.py (anam card 58); the records are the same.
 """
-import argparse, hashlib, json, zipfile
+import argparse, hashlib, json, sys, zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from anam_importer import clock  # noqa: E402
 
 # IEEE 1752.1 physical-activity fields: name -> (field, unit)
 IEEE = {
@@ -89,6 +95,7 @@ def session(s):
         "effective_time_frame": {"time_interval": {
             "start_date_time": start.isoformat(timespec="seconds"),
             "duration": {"value": num(m["Duration"]), "unit": "sec"}}},
+        "source_time": clock.source_time(on, clock.zone_written(on), "source"),
     }
     for name in ORDER:
         if name not in m:
@@ -130,7 +137,7 @@ def main():
         raise SystemExit("two sessions share an `on`; identity would collide")
     records = [session(s) for s in sorted(sessions, key=lambda s: datetime.fromisoformat(s["on"]))]
     doc = {"document": {"name": p.name, "sha256": sha},
-           "extracted": {"method": "records/extract/technogym_json.py", "version": 2},
+           "extracted": {"method": "records/extract/technogym_json.py", "version": 3},
            "records": records}
     out = Path(a.out_dir) / f"technogym.{sha[:12]}.yaml"
     out.write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100))

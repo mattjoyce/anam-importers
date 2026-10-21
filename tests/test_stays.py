@@ -2,6 +2,7 @@
 real Dubai points so the stay geometry is honest; no test reaches the network."""
 
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from stays.geocode import Cache, geocoder, name_from, place_from
 from stays.run import Fix, detect_stays, handle, health, poll
-from tests.helpers import REPO, run_plugin
+from tests.helpers import REPO, Daemon, run_plugin
 
 ENTRY = REPO / "stays" / "run.py"
 
@@ -177,6 +178,8 @@ class Plugin(unittest.TestCase):
         self.assertEqual(p["id"], "stay:tokay:2026-10-17T02:00:00Z")
         self.assertEqual(p["fixes"], 6)
         self.assertNotIn("place", p)  # the geocoder could not be reached
+        # The start is the first fix's tst, an epoch UTC by OwnTracks' definition (anam card 198).
+        self.assertEqual(p["source_time"], {"value": str(BASE), "zone": "UTC", "basis": "source"})
 
     def test_poll_labels_a_snapshot(self):
         resp = run_plugin(ENTRY, {"command": "poll", "config": self.config})
@@ -194,6 +197,32 @@ class Plugin(unittest.TestCase):
         self.assertEqual(resp["status"], "ok", resp)
         self.assertEqual(poll({"config": self.config})["status"], "ok")
         self.assertEqual(health({"config": self.config})["status"], "ok")
+
+
+
+@unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN is not set")
+class StaysAgainstAnamTest(unittest.TestCase):
+    def test_a_stay_registers_every_version_is_admitted_and_a_resend_is_no_op(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            write_spool(root / "spool", "tokay", [spool_line(i + 1, "tokay", BASE + i * 180, SPOT_A[0], SPOT_A[1])
+                                                  for i in range(6)])
+            config = {"spool_dir": str(root / "spool"), "person_id": "person-a", "geocache_dir": str(root / "cache"),
+                      "rate_limit_seconds": 0, "geocode_endpoint": "http://127.0.0.1:1/reverse"}
+            daemon = Daemon("osm", ["place.stay"])
+            try:
+                for want in ("admitted", "no-op"):
+                    shaped = run_plugin(ENTRY, {"command": "poll", "config": config})
+                    self.assertEqual(shaped["status"], "ok", shaped)
+                    for ev in shaped["events"]:
+                        r = run_plugin(REPO / "anam_submit" / "run.py", {
+                            "command": "handle", "event": ev,
+                            "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                            "secrets": {"anam_importer_token_test": daemon.token}})
+                        self.assertEqual(r["status"], "ok", r)
+                        self.assertEqual(r["events"][0]["payload"]["outcomes"], {want: 1})
+            finally:
+                daemon.close()
 
 
 if __name__ == "__main__":

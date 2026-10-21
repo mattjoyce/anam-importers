@@ -36,12 +36,12 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
-from zoneinfo import ZoneInfo
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import clock as clk  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
@@ -96,9 +96,10 @@ def settings(config: Dict[str, Any]) -> Settings:
     )
 
 # ZONE is where a result entered on the web, which names a day and no zone, is
-# placed. The Definition says so, in its fact_time; it is read from there so it is
-# stated once.
-ZONE = ZoneInfo(json.loads((HERE / "definitions" / f"{SESSION_TYPE}.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"])
+# placed when the Logbook names no timezone for it either, and such a result says
+# the zone was assumed (anam card 198). The Definition says so, in its fact_time; it
+# is read from there so it is stated once.
+ZONE = json.loads((HERE / "definitions" / f"{SESSION_TYPE}.json").read_text())["meta"]["time_semantics"]["fact_time"]["zone"]
 
 # ERG_NAMES maps the Logbook's result type to the Definition's activity name,
 # Google Fit's vocabulary. An erg not here is "other"; erg_type keeps the Logbook's
@@ -135,17 +136,33 @@ def positive(v: Any) -> Optional[Any]:
     return n if n is not None and n > 0 else None
 
 
-def start_of(result: Dict[str, Any], seconds: Any) -> Tuple[str, bool]:
-    """When the workout started, and whether the monitor says so. The Logbook's date
-    is the monitor's end of workout; date_utc is that instant in UTC, and the start
-    is seconds before it. A result entered on the web has no date_utc and a date at
-    midnight: its start is that day at midnight in ZONE."""
+class Start(NamedTuple):
+    """When a workout started, whether the monitor says so, and how the Logbook's
+    clock was read for it."""
+
+    at: str
+    known: bool
+    source_time: Dict[str, Any]
+    assumed: bool
+
+
+def start_of(result: Dict[str, Any], seconds: Any) -> Start:
+    """When the workout started. The Logbook's date is the monitor's end of workout;
+    date_utc is that instant in UTC, and the start is seconds before it, so
+    source_time keeps date_utc, the end, as the Logbook gave it. A result entered
+    on the web has no date_utc and a date at midnight: its start is that day's
+    midnight in the Logbook's timezone for it, or in ZONE when it names none, which
+    is an assumption. A midnight the zone skips or repeats is a ClockError."""
     utc = result.get("date_utc")
     if isinstance(utc, str) and utc:
         end = datetime.strptime(utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
-        return (end - timedelta(seconds=float(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ"), True
-    day = datetime.strptime(str(result["date"]), "%Y-%m-%d %H:%M:%S").replace(tzinfo=ZONE)
-    return day.isoformat(), False
+        return Start((end - timedelta(seconds=float(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ"), True,
+                     clk.source_time(utc, "UTC", "source"), False)
+    named = result.get("timezone")
+    zone, basis = (named, "source") if isinstance(named, str) and named else (ZONE, "assumption")
+    text = str(result["date"])
+    day = clk.local_instant(datetime.strptime(text, "%Y-%m-%d %H:%M:%S"), zone)
+    return Start(clk.at_offset(day, day.utcoffset()), False, clk.source_time(text, zone, basis), basis == "assumption")
 
 
 def heart(target: Dict[str, Any], rates: Any, names: Dict[str, str]) -> None:
@@ -191,14 +208,15 @@ def session(cached: Dict[str, Any]) -> Dict[str, Any]:
     seconds = tenths(r.get("time"))
     if seconds is None:
         raise ValueError(f"result {r.get('id')}: no time")
-    start, known = start_of(r, seconds)
+    start = start_of(r, seconds)
     p: Dict[str, Any] = {
         "id": f"concept2:session:{int(r['id'])}",
         "activity_name": ERG_NAMES.get(str(r.get("type")), "other"),
-        "effective_time_frame": {"time_interval": {"start_date_time": start, "duration": {"value": seconds, "unit": "sec"}}},
+        "effective_time_frame": {"time_interval": {"start_date_time": start.at, "duration": {"value": seconds, "unit": "sec"}}},
         "duration": {"value": seconds, "unit": "sec"},
         "source": "Concept2 Logbook",
-        "start_time_known": known,
+        "start_time_known": start.known,
+        "source_time": start.source_time,
     }
     if positive(r.get("distance")) is not None:
         p["distance"] = {"value": positive(r["distance"]), "unit": "m"}
@@ -402,30 +420,44 @@ def fetch(request: Dict[str, Any]) -> Dict[str, Any]:
     return ductile.ok(f"{len(listed)} result(s) listed, {len(fetched)} fetched, {len(removed)} removed", events=events)
 
 
-def shape(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Every cached result in files as a payload, by id, and a log line per file that
-    would not read."""
-    payloads: List[Dict[str, Any]] = []
-    logs: List[str] = []
+class Shaped(NamedTuple):
+    """Every cached result that read, as a payload by id; a log line per file that
+    would not read, which leaves its workout out; and a log line per workout whose
+    zone was assumed, which leaves nothing out."""
+
+    payloads: List[Dict[str, Any]]
+    skipped: List[str]
+    assumed: List[str]
+
+
+def shape(files: List[Path]) -> Shaped:
+    """Every cached result in files as a payload, by id."""
+    out = Shaped([], [], [])
     for path in files:
         try:
-            payloads.append(session(read_cached(path)))
+            p = session(read_cached(path))
         except FileNotFoundError:
             raise ductile.Failure(f"{path.name} went while the run read it", retry=True) from None
         except (ValueError, KeyError, TypeError) as exc:
-            logs.append(f"skipped {path.name}: {exc}")
-    return payloads, logs
+            out.skipped.append(f"skipped {path.name}: {exc}")
+            continue
+        out.payloads.append(p)
+        if p["source_time"]["basis"] == "assumption":
+            out.assumed.append(f"{p['id']}: the Logbook names no timezone for its date, so it is read in {ZONE} "
+                               "(basis assumption)")
+    return out
 
 
 def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) -> List[Dict[str, Any]]:
-    definition = load(HERE)[SESSION_TYPE]
+    definitions = load(HERE)
+    definition = definitions[SESSION_TYPE]
     envs = [envelope(definition, p, asserted_person=person) for p in payloads]
-    check({SESSION_TYPE: definition}, envs)
+    check(definitions, envs)
     groups = list(batches(envs))
     parts = snapshot_parts(len(groups), [SESSION_TYPE]) if snapshot and groups else [None] * len(groups)
     events = []
     for i, (g, part) in enumerate(zip(groups, parts)):
-        payload: Dict[str, Any] = {"envelopes": g, "definitions": [definition.body.decode()],
+        payload: Dict[str, Any] = {"envelopes": g, "definitions": definitions.manifests(),
                                    "batch": f"{SESSION_TYPE} {i + 1}/{len(groups)}"}
         if part is not None:
             payload["snapshot"] = part
@@ -434,11 +466,11 @@ def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) ->
 
 
 def run_over(config: Dict[str, Any], files: List[Path], snapshot: bool) -> Dict[str, Any]:
-    payloads, logs = shape(files)
+    s = shape(files)
     # A file that would not read leaves its workout out, so the run is not everything.
-    events = batch_events(payloads, str(config["person_id"]), snapshot and not logs)
-    return ductile.ok(f"{len(payloads)} workout(s) from {len(files)} cached result(s), {len(events)} batch(es)",
-                      events=events, logs=logs)
+    events = batch_events(s.payloads, str(config["person_id"]), snapshot and not s.skipped)
+    return ductile.ok(f"{len(s.payloads)} workout(s) from {len(files)} cached result(s), {len(events)} batch(es)",
+                      events=events, logs=s.skipped + s.assumed)
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -459,12 +491,15 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     settings(config)  # every command checks the whole config, so a bad value fails at start
     files = cached_files(cache_dir(config))
-    payloads, logs = shape(files)
-    definition = load(HERE)[SESSION_TYPE]
-    check({SESSION_TYPE: definition}, [envelope(definition, p) for p in payloads])
-    if logs:
-        return ductile.error(f"{len(logs)} of {len(files)} cached result(s) would not read", retry=False, logs=logs)
-    return ductile.ok(f"{len(payloads)} {SESSION_TYPE} v{definition.version} from {len(files)} cached result(s), every one conforming")
+    s = shape(files)
+    definitions = load(HERE)
+    definition = definitions[SESSION_TYPE]
+    check(definitions, [envelope(definition, p) for p in s.payloads])
+    if s.skipped:
+        return ductile.error(f"{len(s.skipped)} of {len(files)} cached result(s) would not read", retry=False,
+                             logs=s.skipped + s.assumed)
+    return ductile.ok(f"{len(s.payloads)} {SESSION_TYPE} v{definition.version} from {len(files)} cached result(s), "
+                      f"every one conforming; {len(s.assumed)} read in an assumed zone", logs=s.assumed)
 
 
 if __name__ == "__main__":

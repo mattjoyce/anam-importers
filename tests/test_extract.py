@@ -95,6 +95,20 @@ class FitbitSleep(unittest.TestCase):
         self.assertEqual(r["wake_after_sleep_onset"], {"value": 30, "unit": "min"})
         self.assertEqual((r["awake_count"], r["restless_count"], r["restless_minutes"]), (2, 9, 2))
         self.assertNotIn("is_main_sleep", r)
+        # The person's --zone read the workbook's clock (anam card 198).
+        self.assertEqual(r["source_time"], {"value": "June 3, 2001 at 10:30PM", "zone": "Pacific/Auckland",
+                                            "basis": "configuration"})
+
+    def test_a_wall_clock_the_zone_skips_or_repeats_stops_it(self):
+        fs = module("fitbit_sleep")
+        for start, end, word in (("October 4, 2026 at 02:30AM", "October 4, 2026 at 07:30AM", "skip"),
+                                 ("April 5, 2026 at 02:30AM", "April 5, 2026 at 07:30AM", "twice")):
+            with self.subTest(start), tempfile.TemporaryDirectory() as d:
+                p = workbook(Path(d) / "s.xlsx", [{**self.ROW, "A": start, "L": end, "C": 16200.0}])
+                with self.assertRaises(SystemExit) as ctx:
+                    fs.extract(p, "Australia/Sydney")
+                self.assertIn(word, str(ctx.exception))
+                self.assertIn("row 1", str(ctx.exception))
 
     def test_columns_that_do_not_fill_the_interval_stop_it(self):
         fs = module("fitbit_sleep")
@@ -140,6 +154,23 @@ class Strong(unittest.TestCase):
         self.assertTrue(pull["duration_capped"])
         self.assertEqual(pull["effective_time_frame"]["time_interval"]["duration"]["value"], 3 * 3600)
         self.assertEqual(pull["reported_duration_sec"], 200000)
+        self.assertEqual(legs["source_time"], {"value": "2001-07-02 17:30:00", "zone": "UTC", "basis": "configuration"})
+
+    def test_a_start_the_zone_skips_or_repeats_stops_it_and_one_that_exists_carries_its_offset(self):
+        sc = module("strong_csv")
+        for start, word in (("2026-10-04 02:30:00", "skip"), ("2026-04-05 02:30:00", "twice")):
+            with self.subTest(start), tempfile.TemporaryDirectory() as d:
+                p = Path(d) / "strong1.csv"
+                p.write_text(STRONG.replace("2001-07-04 06:00:00", start))
+                with self.assertRaises(SystemExit) as ctx:
+                    sc.extract(p, "Australia/Sydney")
+                self.assertIn(word, str(ctx.exception))
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "strong1.csv"
+            p.write_text(STRONG.replace("2001-07-04 06:00:00", "2026-04-05 03:30:00"))
+            doc, _ = sc.extract(p, "Australia/Sydney")
+        self.assertEqual(doc["records"][1]["effective_time_frame"]["time_interval"]["start_date_time"],
+                         "2026-04-05T03:30:00+10:00")
 
     def test_max_session_sec_moves_the_cap(self):
         sc = module("strong_csv")
@@ -187,6 +218,8 @@ class Technogym(unittest.TestCase):
         self.assertEqual(s["avg_hr_bpm"], 140)
         self.assertNotIn("mets", s)
         self.assertEqual(s["splits"], [{"position": 1, "duration_sec": 600, "distance_m": 2000}])
+        # on is the end as Technogym wrote it, with its own offset (anam card 198).
+        self.assertEqual(s["source_time"], {"value": "2001-03-04T10:15:00+11:00", "zone": "+11:00", "basis": "source"})
 
     def test_an_unknown_measure_stops_it(self):
         odd = json.loads(json.dumps(SESSION))
@@ -226,6 +259,18 @@ class Pathology(unittest.TestCase):
         self.assertEqual(own[0]["date"], "2001-02-02")
         self.assertEqual([r["value"] for r in results if r["lab"] == "11111111"], ["140", "4.1"])
         self.assertEqual(comment, "Repeat in three months.")
+
+    def test_a_collection_time_keeps_what_the_report_printed_and_says_its_zone_is_assumed(self):
+        acl = module("acl_pathology")
+        self.assertEqual(acl.collection_time("2001-02-02", "09:10", "x"),
+                         {"value": "2001-02-02 09:10", "zone": "Australia/Sydney", "basis": "assumption"})
+        # No time printed: the date alone, never a midnight the report did not print.
+        self.assertEqual(acl.collection_time("2001-02-02", None, "x")["value"], "2001-02-02")
+        for day, at, word in (("2026-10-04", "02:30", "skip"), ("2026-04-05", "02:30", "twice")):
+            with self.subTest(day), self.assertRaises(SystemExit) as ctx:
+                acl.collection_time(day, at, "acl:1/sodium")
+            self.assertIn(word, str(ctx.exception))
+            self.assertIn("acl:1/sodium", str(ctx.exception))
 
 
 class BloodPressureDiary(unittest.TestCase):
@@ -280,6 +325,65 @@ class ExerciseLeaves(unittest.TestCase):
                         for o, n in r["events"][0]["payload"]["outcomes"].items():
                             outcomes[o] = outcomes.get(o, 0) + n
                     self.assertEqual(outcomes, {want: 3})
+            finally:
+                daemon.close()
+
+
+@unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
+class RecordsSayHowTheirClocksWereRead(unittest.TestCase):
+    def test_every_extract_s_records_are_admitted_with_source_time(self):
+        # Anam card 198: health.sleep-episode and the Strong leaf require source_time,
+        # the Technogym leaf and the lab types declare it, and every extract writes it.
+        types = ["health.sleep-episode", "activity.exercise-session.strong", "activity.exercise-session.technogym",
+                 "health.lab-result"]
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d) / "records"
+            out.mkdir()
+            sleep = workbook(Path(d) / "Sleep Logs.xlsx", [FitbitSleep.ROW])
+            subprocess.run([sys.executable, str(EXTRACT / "fitbit_sleep.py"), "--out-dir", str(out), "--zone",
+                            "Australia/Sydney", str(sleep)], check=True, capture_output=True)
+            csv = Path(d) / "strong1.csv"
+            csv.write_text(STRONG)
+            subprocess.run([sys.executable, str(EXTRACT / "strong_csv.py"), "--out-dir", str(out), "--zone",
+                            "Australia/Sydney", str(csv)], check=True, capture_output=True)
+            subprocess.run([sys.executable, str(EXTRACT / "technogym_json.py"), "--out-dir", str(out),
+                            str(technogym_zip(Path(d) / "export.zip", [SESSION]))], check=True, capture_output=True)
+            acl = module("acl_pathology")
+            lab = {"type": "health.lab-result", "id": "acl:12345678/sodium", "collected": "2001-02-02 09:10",
+                   "lab_number": "12345678", "analyte": "Sodium", "value": "137",
+                   "source_time": acl.collection_time("2001-02-02", "09:10", "acl:12345678/sodium")}
+            (out / "acl.yaml").write_text(yaml.safe_dump({"records": [lab]}, sort_keys=False))
+            daemon = Daemon("records", types)
+            try:
+                shaped = run_plugin(RECORDS, {"command": "poll", "config": {"records_dir": str(out), "person_id": "person-a"}})
+                self.assertEqual(shaped["status"], "ok", shaped)
+                for want in ("admitted", "no-op"):
+                    outcomes: dict = {}
+                    for ev in shaped["events"]:
+                        r = run_plugin(SUBMIT, {"command": "handle", "event": ev,
+                                                "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                                                "secrets": {"anam_importer_token_test": daemon.token}})
+                        self.assertEqual(r["status"], "ok", r)
+                        for o, n in r["events"][0]["payload"]["outcomes"].items():
+                            outcomes[o] = outcomes.get(o, 0) + n
+                    self.assertEqual(outcomes, {want: 5})
+                # A Strong record without source_time is refused now that the leaf
+                # requires it; a Technogym one, extracted before, is still admitted.
+                bare = {"records": [
+                    {k: v for k, v in yaml.safe_load(f.read_text())["records"][0].items() if k != "source_time"}
+                    for f in sorted(out.glob("*.yaml")) if f.name.startswith(("strong", "technogym"))]}
+                for f in out.glob("*.yaml"):
+                    f.unlink()
+                (out / "bare.yaml").write_text(yaml.safe_dump(bare, sort_keys=False))
+                shaped = run_plugin(RECORDS, {"command": "poll", "config": {"records_dir": str(out), "person_id": "person-a"}})
+                r = run_plugin(SUBMIT, {"command": "handle", "event": shaped["events"][0],
+                                        "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                                        "secrets": {"anam_importer_token_test": daemon.token}})
+                self.assertEqual(r["status"], "error", r)
+                reasons = " ".join(log["message"] for log in r["logs"])
+                self.assertIn("activity.exercise-session.strong", reasons)
+                self.assertIn("source_time", reasons)
+                self.assertNotIn("technogym", reasons)
             finally:
                 daemon.close()
 

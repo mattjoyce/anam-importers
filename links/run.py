@@ -57,6 +57,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import clock as clk  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
@@ -191,9 +192,11 @@ def frontmatter(path: Path) -> Dict[str, Any]:
     return front
 
 
-def read_date(text: str, zone: zoneinfo.ZoneInfo) -> datetime:
+def read_date(text: str, zone: zoneinfo.ZoneInfo) -> Tuple[datetime, Dict[str, Any]]:
     """A date as a person writes one: YYYY-MM-DD, or that with a time, with or
-    without an offset. No offset means the instance's zone; a bare date is midnight."""
+    without an offset, and how it was read. No offset means the instance's zone; a
+    bare date is midnight. A wall clock the zone skips or repeats names no one
+    instant, and the file is left out until its date says which it means."""
     t = text.strip()
     if t.endswith("Z"):
         t = t[:-1] + "+00:00"
@@ -201,7 +204,19 @@ def read_date(text: str, zone: zoneinfo.ZoneInfo) -> datetime:
         dt = datetime.fromisoformat(t)
     except ValueError as exc:
         raise Skipped(f"frontmatter date {text!r} is not YYYY-MM-DD, with or without a time and offset") from exc
-    return dt if dt.tzinfo else dt.replace(tzinfo=zone)
+    if dt.tzinfo:
+        written = "UTC" if text.strip().endswith("Z") else clk.offset_text(dt.utcoffset())
+        return dt, clk.source_time(text.strip(), written, "source")
+    return in_zone(dt, zone, f"frontmatter date {text!r}"), clk.source_time(text.strip(), zone.key, "configuration")
+
+
+def in_zone(wall: datetime, zone: zoneinfo.ZoneInfo, what: str) -> datetime:
+    """wall read in zone, the instance's zone key. One the zone skips or repeats is
+    left out, and unread, so the run claims no snapshot without it."""
+    try:
+        return clk.local_instant(wall, zone.key)
+    except clk.ClockError as exc:
+        raise Skipped(f"{what}: {exc}", unread=True) from exc
 
 
 def exif_original(path: Path) -> Optional[Tuple[str, Optional[str]]]:
@@ -277,33 +292,47 @@ def _ascii(tiff: bytes, order: str, entry: Optional[Tuple[int, int, bytes]]) -> 
     return text or None
 
 
-def fact_time(path: Path, front: Dict[str, Any], zone: zoneinfo.ZoneInfo) -> Tuple[str, str]:
-    """The file's date as RFC 3339 with an offset, and which source answered."""
+def fact_time(path: Path, front: Dict[str, Any], zone: zoneinfo.ZoneInfo) -> Tuple[str, str, Dict[str, Any]]:
+    """The file's date as RFC 3339 with an offset, which source answered, and how
+    its clock was read (anam card 198): an offset written with the date is the
+    source's, the instance's zone key is configuration, and mtime is an epoch, UTC."""
     if "date" in front:
         if not isinstance(front["date"], str) or not front["date"].strip():
             raise Skipped("frontmatter date is not text")
-        return read_date(front["date"], zone).isoformat(timespec="seconds"), "frontmatter"
+        when, how = read_date(front["date"], zone)
+        return when.isoformat(timespec="seconds"), "frontmatter", how
     if path.suffix.lower() in EXIF_KINDS:
         found = exif_original(path)
         if found:
             try:
                 taken = datetime.strptime(found[0], "%Y:%m:%d %H:%M:%S")
-                offset = datetime.strptime(found[1], "%z").tzinfo if found[1] else zone
-                return taken.replace(tzinfo=offset).isoformat(timespec="seconds"), "exif"
+                offset = datetime.strptime(found[1], "%z").utcoffset() if found[1] else None
             except ValueError:
-                pass  # a camera that wrote something else: the next source answers
+                offset, taken = None, None  # a camera that wrote something else: the next source answers
+            if taken is not None and offset is not None:
+                written = clk.offset_text(offset)
+                return (clk.at_offset(taken.replace(tzinfo=timezone(offset)), offset), "exif",
+                        clk.source_time(found[0], written, "source"))
+            if taken is not None:
+                when = in_zone(taken, zone, f"EXIF DateTimeOriginal {found[0]!r}")
+                return when.isoformat(timespec="seconds"), "exif", clk.source_time(found[0], zone.key, "configuration")
     m = FILENAME_DATE.match(path.name)
     if m:
         try:
-            when = datetime(int(m[1]), int(m[2]), int(m[3]), tzinfo=zone)
-            return when.isoformat(timespec="seconds"), "filename"
+            day = datetime(int(m[1]), int(m[2]), int(m[3]))
         except ValueError:
-            pass  # 2024-13-45 is a name, not a date
+            day = None  # 2024-13-45 is a name, not a date
+        if day is not None:
+            when = in_zone(day, zone, f"the name's date {m[0]}")
+            return when.isoformat(timespec="seconds"), "filename", clk.source_time(m[0], zone.key, "configuration")
     if path.suffix.lower() in MARKDOWN:
         raise Skipped("no date: write `date:` in its frontmatter or prefix the name with YYYY-MM-DD "
                       "(mtime is refused for Markdown, since every edit would move the fact)")
-    mtime = datetime.fromtimestamp(int(path.stat().st_mtime), tz=zone)
-    return mtime.isoformat(timespec="seconds"), "mtime"
+    seconds = int(path.stat().st_mtime)
+    mtime = datetime.fromtimestamp(seconds, tz=zone)
+    # A modification time is an epoch, UTC by the filesystem's definition; the
+    # zone key only chooses the offset date is written at.
+    return mtime.isoformat(timespec="seconds"), "mtime", clk.source_time(str(seconds), "UTC", "source")
 
 
 def describe(s: Settings, path: Path) -> Dict[str, Any]:
@@ -316,9 +345,10 @@ def describe(s: Settings, path: Path) -> Dict[str, Any]:
         for chunk in iter(lambda: f.read(1 << 20), b""):
             h.update(chunk)
             size += len(chunk)
-    date, date_from = fact_time(path, front, s.zone)
+    date, date_from, how = fact_time(path, front, s.zone)
     payload: Dict[str, Any] = {"identity": s.identity, "root": s.root_name, "path": rel, "sha256": h.hexdigest(),
-                               "bytes": size, "media_type": media_type(path), "date": date, "date_from": date_from}
+                               "bytes": size, "media_type": media_type(path), "date": date, "date_from": date_from,
+                               "source_time": how}
     if s.identity == "path":
         payload["id"] = f"path:{s.root_name}/{rel}"
     elif s.identity == "content":
@@ -419,11 +449,28 @@ def reconcile(known: Dict[str, Dict[str, Any]], seen: Dict[str, Dict[str, Any]],
                 "unseen_since": entry.get("unseen_since") or now}
         out[fid] = kept
         payload = dict(entry["payload"])
+        if "source_time" not in payload:
+            payload["source_time"] = remembered(payload["date"])
         if misses >= unseen_after:
             payload.update({"unseen": True, "unseen_since": kept["unseen_since"], "last_seen": kept["last_seen"]})
             unseen += 1
         payloads.append(payload)
     return out, payloads, unseen
+
+
+def remembered(date: str) -> Dict[str, Any]:
+    """How the date of a file last seen before record.link v2 was read, which the
+    state file did not keep: date is RFC 3339 with its offset, and that offset is all
+    that is known of its zone, so the basis is an assumption (anam card 198)."""
+    return clk.source_time(date, clk.zone_written(date), "assumption")
+
+
+def assumed(payloads: List[Dict[str, Any]]) -> List[str]:
+    """A log line for the files whose date's zone is an assumption."""
+    n = sum(1 for p in payloads if p["source_time"]["basis"] == "assumption")
+    if not n:
+        return []
+    return [f"{n} unseen file(s) last seen before source_time: their date keeps its own offset (basis assumption)"]
 
 
 def envelopes_of(definition: Definition, payloads: List[Dict[str, Any]], person: str) -> List[Dict[str, Any]]:
@@ -442,15 +489,15 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     check(definitions, envs)
     save_state(s.state_file, known)
     groups = list(batches(envs))
-    manifest = definition.body.decode()
-    events = [ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"links {i + 1}/{len(groups)}"})
+    manifests = definitions.manifests()
+    events = [ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": manifests, "batch": f"links {i + 1}/{len(groups)}"})
               for i, g in enumerate(groups)]
     # Everything the importer stands behind, seen or unseen, so the run is a snapshot,
     # unless a file went unread: Anam must not call its facet absent for that.
     if not found.unread:
         for ev, part in zip(events, snapshot_parts(len(events), [TYPE])):
             ev["payload"]["snapshot"] = part
-    logs = found.skipped
+    logs = found.skipped + assumed(payloads)
     if found.weak:
         logs.append(f"{found.weak} file(s) dated by mtime, which every edit moves")
     summary = f"{len(found.seen)} file(s) seen, {unseen} unseen, {len(found.skipped)} skipped, in {len(events)} batch(es)"
@@ -471,7 +518,7 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
     now = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     _, payloads, unseen = reconcile(known, found.seen, now, s.unseen_after)
     check(definitions, envelopes_of(definitions[TYPE], payloads, "health-check"))
-    logs = found.skipped
+    logs = found.skipped + assumed(payloads)
     if found.weak:
         logs.append(f"{found.weak} file(s) dated by mtime, which every edit moves")
     return ductile.ok(f"{len(found.seen)} file(s) under {s.links_dir}, keyed by {s.identity}; {len(known)} known, "

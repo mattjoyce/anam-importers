@@ -62,4 +62,4 @@ commands:
       status: string
 config_keys:
   required: [person_id]
-  optional: [export_dir, pattern]
+  optional: [export_dir, pattern, zone]

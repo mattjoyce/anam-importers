@@ -33,6 +33,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import clock as clk  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 TYPE = "health.cpap-session.dreamstation"
@@ -80,6 +81,9 @@ def payload(device, session) -> Dict[str, Any]:
     counts = full.get("event_counts")
     if counts:
         p["event_counts"] = counts
+    # The card times a session by an epoch, UTC by the device's own definition; the
+    # decoder writes it as RFC 3339, and start keeps what it wrote (anam card 198).
+    p["source_time"] = clk.source_time(full["start"], clk.zone_written(full["start"]), "source")
     return {k: v for k, v in p.items() if v not in (None, "")}
 
 
@@ -92,7 +96,7 @@ def batch_events(request: Dict[str, Any]) -> Dict[str, Any]:
     envs = [envelope(definition, payload(card.device, s), asserted_person=person) for s in card.sessions]
     check(definitions, envs)
     groups = list(batches(envs))
-    manifest = definition.body.decode()
+    manifests = definitions.manifests()
     # The card holds every session the device recorded, so a run is a snapshot, unless
     # the decoder skipped a file. A skipped file is an events file whose summary is not
     # on the card: part of a session this run cannot send, which Anam would otherwise
@@ -101,7 +105,7 @@ def batch_events(request: Dict[str, Any]) -> Dict[str, Any]:
     parts = snapshot_parts(len(groups), [TYPE]) if groups and whole else [None] * len(groups)
     events = []
     for i, (g, part) in enumerate(zip(groups, parts)):
-        batch: Dict[str, Any] = {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"}
+        batch: Dict[str, Any] = {"envelopes": g, "definitions": manifests, "batch": f"{i + 1}/{len(groups)}"}
         if part is not None:
             batch["snapshot"] = part
         events.append(ductile.event(BATCH_EVENT, batch))

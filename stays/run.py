@@ -133,7 +133,10 @@ class Stay:
         lat, lon = round(self.lat, 6), round(self.lon, 6)
         p: Dict[str, Any] = {"id": f"stay:{self.device}:{self.start}", "device": self.device,
                              "start": self.start, "end": self.end, "lat": lat, "lon": lon,
-                             "fixes": len(self.fixes), "radius_m": round(self.radius_m(), 1)}
+                             "fixes": len(self.fixes), "radius_m": round(self.radius_m(), 1),
+                             # The start is the first fix's tst, an epoch OwnTracks
+                             # writes in UTC by its own definition (anam card 198).
+                             "source_time": {"value": str(self.fixes[0].tst), "zone": "UTC", "basis": "source"}}
         entry = geocode(lat, lon)
         if entry is not None:
             place = place_from(entry["data"], entry["at"])
@@ -264,14 +267,15 @@ def sized(payloads: List[Dict[str, Any]], logs: List[str]) -> List[Dict[str, Any
 
 
 def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) -> List[Dict[str, Any]]:
-    definition = load(HERE)[STAY_TYPE]
+    definitions = load(HERE)
+    definition = definitions[STAY_TYPE]
     envs = [envelope(definition, p, asserted_person=person) for p in payloads]
-    check({STAY_TYPE: definition}, envs)
+    check(definitions, envs)
     groups = list(batches(envs))
     parts = snapshot_parts(len(groups), [STAY_TYPE]) if snapshot and groups else [None] * len(groups)
     events = []
     for i, (g, part) in enumerate(zip(groups, parts)):
-        payload: Dict[str, Any] = {"envelopes": g, "definitions": [definition.body.decode()],
+        payload: Dict[str, Any] = {"envelopes": g, "definitions": definitions.manifests(),
                                    "batch": f"{STAY_TYPE} {i + 1}/{len(groups)}"}
         if part is not None:
             payload["snapshot"] = part

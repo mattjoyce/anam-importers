@@ -21,6 +21,12 @@ History columns rarely print a collection time; --known-times supplies the time 
 lab number (one draw is one collection event), and a draw with no known time is
 written at 00:00 with `time_unknown: true`.
 
+Each record's source_time keeps the collection time as the report printed it, or its date
+alone when it printed none, read in Australia/Sydney (anam card 198). The report prints no
+zone, so the basis is an assumption, and the script says so once per run on stderr; it is
+the zone health.lab-result and health.lab-panel read collected in. A collection time that
+zone skips or repeats (daylight saving) stops the run: it names no one instant.
+
 Deterministic: the same PDF yields the same records, so a re-run is a no-op at the gate.
 Moved from Anam's scripts/extract-acl-pathology.py (anam card 58); the records are the same.
 """
@@ -28,12 +34,34 @@ import argparse
 import hashlib
 import re
 import subprocess
+import sys
+from datetime import datetime
 from pathlib import Path
 
 import yaml
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from anam_importer import clock  # noqa: E402
+
 METHOD = "records/extract/acl_pathology.py"
-VERSION = 1
+VERSION = 2
+
+# ZONE is where health.lab-result and health.lab-panel read collected. An Australian
+# Clinical Labs report prints no zone, so a record read in it says the zone is an
+# assumption. Not configurable: the Definitions place the draw, and another zone here
+# would make source_time say an instant fact_time denies.
+ZONE = "Australia/Sydney"
+
+
+def collection_time(day: str, time_of_day, where: str) -> dict:
+    """source_time for a draw collected on day at time_of_day (HH:MM, or None when
+    the report printed no time): the report's own text, never a time it did not print."""
+    value = f"{day} {time_of_day}" if time_of_day else day
+    try:
+        clock.local_instant(datetime.strptime(f"{day} {time_of_day or '00:00'}", "%Y-%m-%d %H:%M"), ZONE)
+    except clock.ClockError as exc:
+        raise SystemExit(f"{where}: {exc}") from exc
+    return clock.source_time(value, ZONE, "assumption")
 
 TERMINATORS = re.compile(
     r"^\s*(This request has other tests|All tests on this request|Glucose Reference Ranges|"
@@ -269,6 +297,8 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    print(f"collection times are read as {ZONE} wall clock (basis assumption): the reports print no zone",
+          file=sys.stderr)
     for pdf in args.pdfs:
         p = Path(pdf)
         sha = hashlib.sha256(p.read_bytes()).hexdigest()
@@ -299,6 +329,7 @@ def main():
             }
             if t is None:
                 rec["time_unknown"] = True
+            rec["source_time"] = collection_time(r["date"], t, rec["id"])
             for k in ("value_num", "unit", "range", "flagged", "collection_type"):
                 if r.get(k) is not None:
                     rec[k] = r[k]
@@ -318,6 +349,9 @@ def main():
             "panel": panel,
             "lab_ref": hdr["lab_ref"],
         }
+        panel_rec["source_time"] = collection_time(cd, known.get(lab), panel_rec["id"]) if cd else None
+        if panel_rec["source_time"] is None:
+            del panel_rec["source_time"]
         if specimen:
             panel_rec["specimen"] = specimen
         if hdr["referred"]:

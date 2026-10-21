@@ -188,6 +188,8 @@ class ConceptTest(unittest.TestCase):
             "effective_time_frame": {"time_interval": {"start_date_time": "2026-10-04T04:13:00Z",
                                                        "duration": {"value": 480, "unit": "sec"}}},
             "duration": {"value": 480, "unit": "sec"}, "source": "Concept2 Logbook", "start_time_known": True,
+            # date_utc is when the workout ended, UTC by the Logbook's definition (anam card 198).
+            "source_time": {"value": "2026-10-04 04:21:00", "zone": "UTC", "basis": "source"},
             "distance": {"value": 2000, "unit": "m"}, "kcal_burned": {"value": 120, "unit": "kcal"},
             "base_movement_quantity": {"value": 180, "unit": "strokes"}, "average_cadence": {"value": 22, "unit": "strokes/min"},
             "drag_factor": 110, "watt_minutes": 1200, "avg_hr_bpm": 150, "ending_hr_bpm": 155,
@@ -220,9 +222,39 @@ class ConceptTest(unittest.TestCase):
             "effective_time_frame": {"time_interval": {"start_date_time": "2021-01-15T00:00:00+11:00",
                                                        "duration": {"value": 1300, "unit": "sec"}}},
             "duration": {"value": 1300, "unit": "sec"}, "source": "Concept2 Logbook", "start_time_known": False,
+            "source_time": {"value": "2021-01-15 00:00:00", "zone": "Australia/Sydney", "basis": "assumption"},
             "distance": {"value": 5000, "unit": "m"}, "erg_type": "rower", "workout_type": "unknown",
             "logbook_source": "Web", "logbook_date": "2021-01-15 00:00:00", "weight_class": "H",
             "verified": False, "ranked": False})
+
+    def test_a_web_entry_the_logbook_names_a_zone_for_starts_at_that_zone_s_midnight(self):
+        # Card 197's acceptance example 3: a local clock with no offset is read by an
+        # explicit policy, here the source's own zone, and says so. Without one it
+        # is Sydney's, logged as an assumption.
+        london = {**WEB, "id": 1004, "date": "2026-10-18 00:00:00", "timezone": "Europe/London"}
+        self.logbook.results.append(london)
+        self.run_cmd("fetch")
+        r = self.run_cmd("poll")
+        web = {p["id"]: p for p in payloads(r)}
+        self.assertEqual(web["concept2:session:1004"]["effective_time_frame"]["time_interval"]["start_date_time"],
+                         "2026-10-18T00:00:00+01:00")
+        self.assertEqual(web["concept2:session:1004"]["source_time"],
+                         {"value": "2026-10-18 00:00:00", "zone": "Europe/London", "basis": "source"})
+        assumed = [line["message"] for line in r["logs"] if "basis assumption" in line["message"]]
+        self.assertEqual(len(assumed), 1, r["logs"])
+        self.assertIn("concept2:session:1000", assumed[0])
+        self.assertIn("snapshot", r["events"][0]["payload"], "an assumed zone leaves nothing out")
+
+    def test_a_web_entry_s_midnight_the_zone_skips_is_left_out_and_the_run_is_no_snapshot(self):
+        # Card 197's acceptance example 4. Santiago's clocks went from 00:00 to 01:00
+        # on 7 September 2025, so that day had no midnight to start at.
+        self.logbook.results.append({**WEB, "id": 1005, "date": "2025-09-07 00:00:00", "timezone": "America/Santiago"})
+        self.run_cmd("fetch")
+        r = self.run_cmd("poll")
+        self.assertEqual(r["status"], "ok", r)
+        self.assertNotIn("concept2:session:1005", {p["id"] for p in payloads(r)})
+        self.assertTrue(any("1005.json" in line["message"] and "skip" in line["message"] for line in r["logs"]), r["logs"])
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
 
     def test_handle_reads_only_recently_cached_results_and_is_no_snapshot(self):
         self.run_cmd("fetch")
@@ -245,7 +277,8 @@ class ConceptTest(unittest.TestCase):
         (self.cache / "1003.json").unlink()
         h = self.run_cmd("health")
         self.assertEqual(h["status"], "ok", h)
-        self.assertEqual(h["result"], "3 activity.exercise-session.concept2 v1 from 3 cached result(s), every one conforming")
+        self.assertEqual(h["result"], "3 activity.exercise-session.concept2 v2 from 3 cached result(s), every one "
+                                      "conforming; 1 read in an assumed zone")
 
     def test_a_missing_cache_dir_is_not_retried(self):
         r = self.run_cmd("poll", cache_dir=str(self.cache / "nowhere"))

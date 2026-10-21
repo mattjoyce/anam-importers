@@ -18,8 +18,11 @@ under the applet's names. D/E, time to fall asleep, is always zero and left out.
 
 Each record is the IEEE 1752 sleep-episode body of anam_garmin's health.sleep-episode: the
 interval in UTC, total_sleep_time and wake_after_sleep_onset in minutes. is_main_sleep
-is not written, since Fitbit does not say. Ids are fitbit:sleep:<local start>, distinct
-from Garmin's sleep:<day>. Deterministic: the same workbook yields the same records.
+is not written, since Fitbit does not say. source_time keeps A, the start as the workbook
+wrote it, read in ZONE by the person's --zone (basis configuration, anam card 198). A
+wall clock ZONE skips or repeats (daylight saving) stops the run, naming the row: it
+names no one instant. Ids are fitbit:sleep:<local start>, distinct from Garmin's
+sleep:<day>. Deterministic: the same workbook yields the same records.
 """
 import argparse
 import hashlib
@@ -27,11 +30,12 @@ import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from anam_importer import clock  # noqa: E402
 from xlsx import rows  # noqa: E402
 
 METHOD = "records/extract/fitbit_sleep.py"
@@ -43,14 +47,23 @@ def minutes(seconds: str) -> object:
     return int(m) if m.is_integer() else m
 
 
+def wall(text: str, zone: str, n: int):
+    """The workbook's wall clock text, read in zone; one zone skips or repeats stops
+    the run."""
+    try:
+        return clock.local_instant(datetime.strptime(text, LAYOUT), zone)
+    except clock.ClockError as exc:
+        raise SystemExit(f"row {n}: {exc}") from exc
+
+
 def extract(p: Path, zone: str) -> dict:
-    tz = ZoneInfo(zone)
+    clock.check_zone(zone)
     sha = hashlib.sha256(p.read_bytes()).hexdigest()
     records, ids = [], set()
     with zipfile.ZipFile(p) as z:
         for n, c in enumerate(rows(z), start=1):
-            start = datetime.strptime(c["A"], LAYOUT).replace(tzinfo=tz)
-            end = datetime.strptime(c["L"], LAYOUT).replace(tzinfo=tz)
+            start = wall(c["A"], zone, n)
+            end = wall(c["L"], zone, n)
             asleep, awake = float(c["C"]), float(c["G"])
             if asleep + awake != (end - start).total_seconds():
                 raise SystemExit(f"row {n} ({c['A']}): asleep {asleep}s and awake {awake}s do not fill "
@@ -69,8 +82,9 @@ def extract(p: Path, zone: str) -> dict:
                 "awake_count": int(float(c["H"])),
                 "restless_count": int(float(c["I"])),
                 "restless_minutes": minutes(c["K"]),
+                "source_time": clock.source_time(c["A"], zone, "configuration"),
             })
-    return {"document": {"name": p.name, "sha256": sha}, "extracted": {"method": METHOD, "version": 2},
+    return {"document": {"name": p.name, "sha256": sha}, "extracted": {"method": METHOD, "version": 3},
             "records": records}
 
 
