@@ -143,7 +143,6 @@ class Start(NamedTuple):
     at: str
     known: bool
     source_time: Dict[str, Any]
-    assumed: bool
 
 
 def start_of(result: Dict[str, Any], seconds: Any) -> Start:
@@ -157,12 +156,12 @@ def start_of(result: Dict[str, Any], seconds: Any) -> Start:
     if isinstance(utc, str) and utc:
         end = datetime.strptime(utc, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         return Start((end - timedelta(seconds=float(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ"), True,
-                     clk.source_time(utc, "UTC", "source"), False)
+                     clk.source_time(utc, "UTC", "source"))
     named = result.get("timezone")
     zone, basis = (named, "source") if isinstance(named, str) and named else (ZONE, "assumption")
     text = str(result["date"])
     day = clk.local_instant(datetime.strptime(text, "%Y-%m-%d %H:%M:%S"), zone)
-    return Start(clk.at_offset(day, day.utcoffset()), False, clk.source_time(text, zone, basis), basis == "assumption")
+    return Start(clk.at_offset(day, day.utcoffset()), False, clk.source_time(text, zone, basis))
 
 
 def heart(target: Dict[str, Any], rates: Any, names: Dict[str, str]) -> None:

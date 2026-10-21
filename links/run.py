@@ -206,8 +206,17 @@ def read_date(text: str, zone: zoneinfo.ZoneInfo) -> Tuple[datetime, Dict[str, A
         raise Skipped(f"frontmatter date {text!r} is not YYYY-MM-DD, with or without a time and offset") from exc
     if dt.tzinfo:
         written = "UTC" if text.strip().endswith("Z") else clk.offset_text(dt.utcoffset())
-        return dt, clk.source_time(text.strip(), written, "source")
+        return dt, read_as(text.strip(), written, "source")
     return in_zone(dt, zone, f"frontmatter date {text!r}"), clk.source_time(text.strip(), zone.key, "configuration")
+
+
+def read_as(value: str, zone: str, basis: str) -> Dict[str, Any]:
+    """source_time for a date, or the file left out, and unread, when the offset it
+    was written with is no zone's."""
+    try:
+        return clk.source_time(value, zone, basis)
+    except ValueError as exc:
+        raise Skipped(f"date {value!r}: {exc}", unread=True) from exc
 
 
 def in_zone(wall: datetime, zone: zoneinfo.ZoneInfo, what: str) -> datetime:
@@ -312,7 +321,7 @@ def fact_time(path: Path, front: Dict[str, Any], zone: zoneinfo.ZoneInfo) -> Tup
             if taken is not None and offset is not None:
                 written = clk.offset_text(offset)
                 return (clk.at_offset(taken.replace(tzinfo=timezone(offset)), offset), "exif",
-                        clk.source_time(found[0], written, "source"))
+                        read_as(found[0], written, "source"))
             if taken is not None:
                 when = in_zone(taken, zone, f"EXIF DateTimeOriginal {found[0]!r}")
                 return when.isoformat(timespec="seconds"), "exif", clk.source_time(found[0], zone.key, "configuration")

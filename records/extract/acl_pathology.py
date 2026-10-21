@@ -349,9 +349,8 @@ def main():
             "panel": panel,
             "lab_ref": hdr["lab_ref"],
         }
-        panel_rec["source_time"] = collection_time(cd, known.get(lab), panel_rec["id"]) if cd else None
-        if panel_rec["source_time"] is None:
-            del panel_rec["source_time"]
+        if cd:
+            panel_rec["source_time"] = collection_time(cd, known.get(lab), panel_rec["id"])
         if specimen:
             panel_rec["specimen"] = specimen
         if hdr["referred"]:

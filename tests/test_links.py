@@ -182,6 +182,11 @@ class ShapeTest(unittest.TestCase):
         self.assertIn("skip", logs["skipped gap.md"])
         self.assertIn("twice", logs["skipped twice.jpg"])
         self.assertNotIn("snapshot", out["events"][0]["payload"])
+        with folder({"far.md": "---\ndate: 2024-07-02T09:15:00+15:00\n---\n", "near.md": NOTE}) as d:
+            out = run("poll", d)
+        self.assertEqual(out["status"], "ok", out)
+        self.assertIn("no zone", " ".join(l["message"] for l in out["logs"]))
+        self.assertNotIn("snapshot", out["events"][0]["payload"])
 
     def test_a_file_remembered_from_before_source_time_says_its_zone_is_assumed(self):
         with folder({"2024-01-01 b.png": PHOTO}) as d:
