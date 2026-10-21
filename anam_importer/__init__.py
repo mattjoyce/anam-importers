@@ -8,7 +8,7 @@ validate against those Definitions, batch, publish the Definitions, submit.
 from pathlib import Path
 
 from .client import AnamError, Client, Refused
-from .definitions import Definition, ensure_published, load, parse
+from .definitions import Definition, Definitions, ensure_published, load, parse
 from .envelopes import MAX_BATCH, Invalid, batches, check, envelope, snapshot_parts
 
 # __version__ is the repo's version (VERSION): the base, anam_submit and every importer
@@ -21,6 +21,7 @@ __all__ = [
     "AnamError",
     "Client",
     "Definition",
+    "Definitions",
     "Invalid",
     "Refused",
     "batches",

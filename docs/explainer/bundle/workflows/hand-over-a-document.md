@@ -24,10 +24,10 @@ steps:
     anchor: "is measured from the file, not declared"
   - actor: /components/importer-documents.md
     label: hash and measure the file
-    action: "The file is read in 1 MiB chunks for its sha256 and size, and its media type comes from a fixed table, then `mimetypes`, then `application/octet-stream`. The envelope's payload is the sidecar's fields plus those four."
+    action: "The file is read in 1 MiB chunks for its sha256 and size, and its media type comes from a fixed table, then `mimetypes`, then `application/octet-stream`. The envelope's payload is the sidecar's fields plus those four, and `source_time`: the sidecar's date read in Australia/Sydney, the zone `record.document` reads it in, with basis assumption, logged once a run (anam card 198)."
     writes: [/data-structures/envelope.md, /data-structures/document-ref.md]
     resource: documents/run.py#describe
-    anchor: 'payload.update({"path": rel, "sha256": h.hexdigest(), "bytes": size, "media_type": media_type(path)})'
+    anchor: 'payload.update({"path": rel, "sha256": h.hexdigest(), "bytes": size, "media_type": media_type(path),'
   - actor: /components/importer-documents.md
     label: name the files each batch needs
     action: "Each batch event lists `{path, file}` for exactly the documents its envelopes describe, sets `current_versions`, and is labelled `documents i/n`. The run is a snapshot of `record.document`."

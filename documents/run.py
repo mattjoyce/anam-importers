@@ -62,6 +62,13 @@ TYPE = "record.document"
 SIDECAR = ".meta.yaml"
 MEASURED = ("path", "sha256", "bytes", "media_type")
 
+# ZONE is where record.document's Definition reads a sidecar's date, a day with no
+# zone. Nothing else says where the day was, so each document's source_time says the
+# zone is an assumption (anam card 198). Not configurable: the Definition, which this
+# importer does not carry, places the day, and another zone here would make
+# source_time say an instant fact_time denies.
+ZONE = "Australia/Sydney"
+
 
 class BadDocuments(ductile.Failure):
     """A document that cannot be described. Retrying will not help."""
@@ -104,6 +111,8 @@ def sidecar(path: Path) -> Dict[str, Any]:
     for k in MEASURED:
         if k in fields:
             raise BadDocuments(f"{side}: {k} is measured from the file, not declared")
+    if "source_time" in fields:
+        raise BadDocuments(f"{side}: source_time is the importer's, saying how date was read; not declared")
     return fields
 
 
@@ -153,7 +162,8 @@ def describe(root: Path, path: Path, person: str) -> Tuple[Dict[str, Any], Dict[
                 size += len(chunk)
     except OSError as exc:
         raise ductile.Failure(f"document {path}: {exc}", retry=True) from exc
-    payload.update({"path": rel, "sha256": h.hexdigest(), "bytes": size, "media_type": media_type(path)})
+    payload.update({"path": rel, "sha256": h.hexdigest(), "bytes": size, "media_type": media_type(path),
+                    "source_time": {"value": payload["date"], "zone": ZONE, "basis": "assumption"}})
     env: Dict[str, Any] = {"type": TYPE, "payload": payload}
     if person:
         env["asserted_person"] = person
@@ -172,6 +182,13 @@ def scan(config: Dict[str, Any], person: str) -> Tuple[List[Dict[str, Any]], Lis
     return envs, files
 
 
+def assumed(envs: List[Dict[str, Any]]) -> List[str]:
+    """The log line that says each sidecar's date was read in an assumed zone."""
+    if not envs:
+        return []
+    return [f"{len(envs)} document date(s) read as {ZONE} days (basis assumption): a sidecar's date names no zone"]
+
+
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     envs, files = scan(config, str(config["person_id"]))
@@ -186,7 +203,7 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
     if events:
         for ev, part in zip(events, snapshot_parts(len(events), [TYPE])):
             ev["payload"]["snapshot"] = part
-    return ductile.ok(f"{len(envs)} document(s) in {len(events)} batch(es)", events=events)
+    return ductile.ok(f"{len(envs)} document(s) in {len(events)} batch(es)", events=events, logs=assumed(envs))
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -196,7 +213,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     envs, _ = scan(config, "health-check")
-    return ductile.ok(f"{len(envs)} document(s), each with a usable sidecar")
+    return ductile.ok(f"{len(envs)} document(s), each with a usable sidecar", logs=assumed(envs))
 
 
 if __name__ == "__main__":

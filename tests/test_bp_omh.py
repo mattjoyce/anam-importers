@@ -26,6 +26,25 @@ class OMHTest(unittest.TestCase):
             with self.subTest(local):
                 self.assertEqual(bp.omh({**ROW, "date_excel": local})["effective_time_frame"]["date_time"], want)
 
+    def test_source_time_keeps_date_excel_as_written_with_its_zone_and_basis(self):
+        # Card 197's acceptance example 3: a local time with no offset names the
+        # policy that read it.
+        self.assertEqual(bp.omh(ROW)["source_time"],
+                         {"value": "2001-1-24 06:36:00", "zone": "Australia/Sydney", "basis": "assumption"})
+        named = bp.omh(ROW, bp.Clock("Australia/Sydney", "configuration"))
+        self.assertEqual(named["source_time"]["basis"], "configuration")
+
+    def test_a_wall_clock_the_zone_skips_or_repeats_is_refused(self):
+        for local, word in (("2026-10-4 02:30:00", "skip"), ("2026-4-5 02:30:00", "twice")):
+            with self.subTest(local), self.assertRaises(bp.clk.ClockError) as caught:
+                bp.omh({**ROW, "date_excel": local})
+            self.assertIn(word, str(caught.exception))
+        # An hour either side exists once.
+        self.assertEqual(bp.omh({**ROW, "date_excel": "2026-4-5 03:30:00"})["effective_time_frame"]["date_time"],
+                         "2026-04-05T03:30:00+10:00")
+        self.assertEqual(bp.omh({**ROW, "date_excel": "2026-10-4 01:30:00"})["effective_time_frame"]["date_time"],
+                         "2026-10-04T01:30:00+10:00")
+
     def test_identity_and_the_export_s_own_fields_stay_as_written(self):
         p = bp.omh(ROW)
         for key in ("date_excel", "reading", "pulse", "location", "date"):

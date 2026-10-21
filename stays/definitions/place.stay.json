@@ -1,7 +1,7 @@
 {
   "meta": {
     "facet_type": "place.stay",
-    "definition_version": 1,
+    "definition_version": 2,
     "kind": "event",
     "family": "location",
     "classification": "Sensitive",
@@ -21,9 +21,9 @@
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One place a phone stayed: a run of consecutive place.track fixes that held within a small radius for a while, with its centroid and, when a geocoder could name it, the place. Derived by the stays importer (source osm) from the same spool the owntracks importer reads, never by changing a place.track fact. The identity is the device and the stay's start instant; a stay still open is re-emitted whole as it grows and when it closes, so a resend replaces it. The place is optional: a stay with no geocode yet is still the fact that the phone was here then, and the place backfills on a later run. start is the fact time.",
+    "description": "One place a phone stayed: a run of consecutive place.track fixes that held within a small radius for a while, with its centroid and, when a geocoder could name it, the place. Derived by the stays importer (source osm) from the same spool the owntracks importer reads, never by changing a place.track fact. The identity is the device and the stay's start instant; a stay still open is re-emitted whole as it grows and when it closes, so a resend replaces it. The place is optional: a stay with no geocode yet is still the fact that the phone was here then, and the place backfills on a later run. start is the fact time. Version 2 requires source_time (card 198), every other rule unchanged.",
     "type": "object",
-    "required": ["id", "device", "start", "end", "lat", "lon", "fixes"],
+    "required": ["id", "device", "start", "end", "lat", "lon", "fixes", "source_time"],
     "additionalProperties": false,
     "properties": {
       "id": {
@@ -127,7 +127,8 @@
             "examples": ["2026-10-17T03:00:00Z"]
           }
         }
-      }
+      },
+      "source_time": {"type": "object", "description": "How the phone's clock was read (card 198): value is the first fix's tst, the epoch OwnTracks writes in UTC by its definition, as its digits (basis source).", "required": ["value", "zone", "basis"], "additionalProperties": false, "properties": {"value": {"type": "string", "minLength": 1, "description": "The fact time as the source supplied it, as text and never rewritten: a date, a wall clock, an RFC 3339 string, or an epoch as its digits.", "examples": ["2026-10-17", "2026-10-20T20:00:00+11:00", "1792269840000"]}, "zone": {"type": "string", "minLength": 1, "pattern": "^([A-Za-z][A-Za-z0-9_+-]*(/[A-Za-z0-9_+-]+)*|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$", "description": "The zone value is read in, and nothing else: an IANA name when one is known, UTC for a value that is UTC, else a fixed offset +HH:MM or -HH:MM. The gate refuses a name that is no zone.", "examples": ["Australia/Sydney", "UTC", "+01:00"]}, "basis": {"type": "string", "enum": ["source", "configuration", "assumption"], "description": "Who decided the zone. source: the source supplied it with the value, or the value is UTC by the source's own definition. configuration: a setting a person made for this source names it. assumption: the importer or writer chose it, with nothing behind it but its own default or the Definition's zone, and logged that it did."}}}
     }
   }
 }

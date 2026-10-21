@@ -14,7 +14,7 @@ depends_on:
   - /components/plugin-protocol.md
 ---
 
-Source `documents`, type `record.document`, carried by Anam, so there is no Definition here. Identity is the folder-relative path. The payload is the sidecar's fields plus `path`, `sha256`, `bytes` and `media_type`, which the importer measures from the file and the sidecar may not declare.
+Source `documents`, type `record.document`, carried by Anam, so there is no Definition here. Identity is the folder-relative path. The payload is the sidecar's fields plus `path`, `sha256`, `bytes` and `media_type`, which the importer measures from the file and the sidecar may not declare, and `source_time`, the sidecar's date read in Australia/Sydney with basis assumption (anam card 198), which the sidecar may not declare either.
 
 `documents` walks the folder in path order and skips dot-files, dot-directories, sidecars and symlinks. `describe` hashes the file in 1 MiB chunks. `media_type` uses a fixed table of common extensions, then `mimetypes`, then `application/octet-stream`; another spelling would supersede every reference that carries it. The importer reuses the records importer's YAML reader by loading `records/run.py` from its path, so both agree on a sidecar's scalars. See [that coupling](/gaps/documents-load-the-records-importer-by-path.md).
 

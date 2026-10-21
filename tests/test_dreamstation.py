@@ -22,6 +22,23 @@ def run(command, card):
 
 
 class NoCardTest(unittest.TestCase):
+    def test_a_session_says_its_start_is_the_card_s_utc_epoch(self):
+        import importlib.util
+        import sys
+        from types import SimpleNamespace
+
+        sys.path.insert(0, str(REPO))
+        spec = importlib.util.spec_from_file_location("dreamstation_run", DS)
+        ds = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ds)
+        device = SimpleNamespace(serial="X000000000000", model="DreamStation", software_version="1.0")
+        session = SimpleNamespace(number=7, to_dict=lambda: {
+            "start": "2026-10-20T11:42:10Z", "duration_seconds": 25200, "mask_on_spans": [[0, 25200]],
+            "settings": {"mode": "CPAP"}})
+        p = ds.payload(device, session)
+        self.assertEqual(p["source_time"], {"value": "2026-10-20T11:42:10Z", "zone": "UTC", "basis": "source"})
+        self.assertEqual(ds.load(REPO / "dreamstation_card")[ds.TYPE].errors(p), [])
+
     def test_a_missing_card_copy_is_not_retried(self):
         with tempfile.TemporaryDirectory() as d:
             r = run("poll", Path(d) / "P-SERIES")

@@ -35,6 +35,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from anam_importer import Definition, batches, check, envelope, load, snapshot_parts  # noqa: E402
+from anam_importer import clock as clk  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
@@ -121,6 +122,12 @@ def payloads(conn: sqlite3.Connection, withings_id: Optional[int] = None) -> Lis
         p = {k: v for k, v in zip(FIELDS, row) if v is not None}
         if "value" in p:
             p["value"] = render(p["value"])
+        if "date" in p:
+            # date is UTC: the Definition has read it so since anam card 12, which
+            # found the withings plugin writes UTC (anam card 198). The group's
+            # timezone, the zone the device was set to, says where the reading was
+            # taken; it is not what date is read in, so it stays in its own field.
+            p["source_time"] = clk.source_time(p["date"], "UTC", "source")
         out.append(p)
     return out
 
@@ -154,9 +161,9 @@ def batch_events(request: Dict[str, Any], withings_id: Optional[int]) -> Dict[st
     check(definitions, envs)
 
     groups = list(batches(envs))
-    manifest = definition.body.decode()
+    manifests = definitions.manifests()
     events = [
-        ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": [manifest], "batch": f"{i + 1}/{len(groups)}"})
+        ductile.event(BATCH_EVENT, {"envelopes": g, "definitions": manifests, "batch": f"{i + 1}/{len(groups)}"})
         for i, g in enumerate(groups)
     ]
     if withings_id is None and events:

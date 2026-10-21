@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -33,10 +34,15 @@ class WithingsTest(unittest.TestCase):
         self.assertEqual([e["payload"]["value"] for e in envs], ["80.5", "29.371", "99.0"])
         self.assertEqual(envs[0]["payload"], {
             "withings_id": "101", "date": "2026-10-09 07:30:00", "type": "1", "value": "80.5", "unit": "-3",
-            "attrib": "0", "model": "Body Smart", "deviceid": "ab12", "timezone": "Australia/Sydney"})
+            "attrib": "0", "model": "Body Smart", "deviceid": "ab12", "timezone": "Australia/Sydney",
+            # date is UTC, so source_time names UTC, not the device's timezone (anam card 198).
+            "source_time": {"value": "2026-10-09 07:30:00", "zone": "UTC", "basis": "source"}})
         self.assertEqual(envs[0]["asserted_person"], "person-a")
         self.assertNotIn("asserted_person", envs[2], "an ambiguous group asserts no one")
-        self.assertEqual(len(batch["payload"]["definitions"]), 1)
+        # Every version of the type it emits, oldest first; the old name's history is not sent.
+        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in batch["payload"]["definitions"]], [1, 2])
+        self.assertEqual({json.loads(m)["meta"]["facet_type"] for m in batch["payload"]["definitions"]},
+                         {"health.measurement.withings"})
 
     def test_handle_shapes_one_group(self):
         r = run_plugin(ENTRY, {"command": "handle", "config": self.config,

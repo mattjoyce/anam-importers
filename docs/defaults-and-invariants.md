@@ -30,6 +30,7 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | 2 days | `owntracks/run.py:53` | `lookback_days` (owntracks) | depends on how long a phone may be offline |
 | 290 KiB | `owntracks/run.py:59` | `max_payload_bytes` | follows Anam's payload limit, the daemon's `max_payload_bytes` (300 KiB by default since anam card 151); a daemon set to another limit needs another value here |
 | 3 runs | `links/run.py` `DEFAULT_UNSEEN_AFTER` | `unseen_after` (links) | how long a person tolerates a file being missing before its facet says so is theirs: a synced folder wants more, a tidy one less |
+| unset (assumption) | `bp_csv/run.py` `clock_of` | `zone` (bp_csv) | the zone a person says the cuff's clock is set to; set, `source_time` says configuration, unset, assumption (anam card 198). Only the Definition's zone is accepted until a fact can name its own zone |
 | 3 hours | `records/extract/strong_csv.py:40` | `--max-session-sec` | the person's rule of 2026-10-08 for capping Strong's open-ended workouts; someone else's rule may differ |
 
 `timeout`, `busy_timeout_ms` (withings), `pattern`, `logbook_url`, `logbook_user` and every
@@ -60,7 +61,8 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 | Draft 2020-12 validator, `verbatim` mode | `definitions.py:29-33` | Anam's manifest format |
 | `"level": "info"`, protocol 2 shapes | `ductile.py:55` | the ductile protocol |
 | range checks in `config.py` | `config.py` | the checks themselves |
-| `BASES`, `OFFSET` | `clock.py:21`, `:26` | `source_time`'s vocabulary and its offset form, Anam's shape (anam card 197) |
+| `BASES`, `OFFSET`, `WRITTEN_OFFSET` | `clock.py` | `source_time`'s vocabulary and its offset form, Anam's shape (anam card 197), and RFC 3339's offset |
+| history as `definitions/history/<type>.v<n>.json`, sent oldest first | `definitions.py` `load` | Anam refuses a version older than one it holds (IMPORTERS.md §8.3) |
 
 ### anam_submit
 
@@ -85,7 +87,7 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 
 | Value | Where | Why not configurable |
 |---|---|---|
-| `ZONE` | `bp_csv/run.py:187` | now read from the Definition's `fact_time.zone`, no longer restated |
+| `ZONE` | `bp_csv/run.py` | read from the Definition's `fact_time.zone`; the `zone` key may only confirm it, since the Definition places the reading there |
 | `POSTURES` | `:193` | Open mHealth's vocabulary; a change rewrites facets |
 | `%Y-%m-%d %H:%M:%S`, `%d-%B-%Y`, `mmHg` | `:201`, `:226`, `:203-204` | the app's formats and OMH's unit |
 | Go `encoding/csv` splitting, UTF-8 with replacement | `records()`, `:151` | how the built-in worker read it, so the same row is the same facet |
@@ -114,6 +116,7 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 | Value | Where | Why not configurable |
 |---|---|---|
 | `SIDECAR = ".meta.yaml"`, `MEASURED` | `documents/run.py:62-63` | the worker's name, which every sidecar follows; the Definition's measured fields |
+| `ZONE = "Australia/Sydney"` | `documents/run.py` | where `record.document`'s Definition reads a sidecar's date; another zone would make `source_time` deny the fact time (anam card 198) |
 | the media type table, `application/octet-stream` | `media_type` | another spelling supersedes every reference |
 | dot-files, dot-directories and symlinks skipped | `:134-137` | the worker's walk; a change alters the snapshot |
 | 1 MiB hash chunk | `:151` | a buffer size |
@@ -182,6 +185,7 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 | `yaml.safe_dump(width=100)`, file name `<sha256[:12]>` | each script | a rerun writes the same file |
 | `TERMINATORS`, `SECTION_WORDS`, `VALUE_RE`, `RANGE_RE` | `acl_pathology.py:38-44` | the lab report's layout |
 | two-digit year is 20yy; unknown time `00:00` with `time_unknown` | `acl_pathology.py:60`, `:301` | the reports' dates; the flag records the gap |
+| `ZONE = "Australia/Sydney"` | `acl_pathology.py` | where the lab types' Definitions read `collected`; the reports print no zone, so it is an assumption (anam card 198) |
 | `LAYOUT` | `fitbit_sleep.py:38` | Fitbit's format |
 | `;` delimiter | `strong_csv.py:57` | Strong's format |
 | `IEEE`, `EXTRA`, `IGNORED`, `SPLIT`, `ORDER`; round to the second | `technogym_json.py:30-53`, `:84` | the payload's vocabulary; a deterministic start |

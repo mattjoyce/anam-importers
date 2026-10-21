@@ -592,7 +592,8 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
     parts = snapshot_parts(len(shaped), list(by_type)) if snapshot and shaped else [None] * len(shaped)
     events = []
     for (definition, g, label), part in zip(shaped, parts):
-        payload: Dict[str, Any] = {"envelopes": g, "definitions": [definition.body.decode()], "batch": label}
+        payload: Dict[str, Any] = {"envelopes": g, "definitions": definitions.manifests([definition.type]),
+                                   "batch": label}
         if part is not None:
             payload["snapshot"] = part
         events.append(ductile.event(BATCH_EVENT, payload))

@@ -69,7 +69,76 @@ class ShapeTest(unittest.TestCase):
             "body_posture": "sitting",
             "date_excel": "2001-1-24 06:36:00", "date": "24 January 2001 6:36", "pulse": "63.0",
             "weight_kg": "88.8", "location": "Left Arm", "comment": "No cofee", "reading": "1",
+            # No zone key: the Definition's zone, an assumption (anam card 198).
+            "source_time": {"value": "2001-1-24 06:36:00", "zone": "Australia/Sydney", "basis": "assumption"},
         })
+
+    def test_the_zone_key_makes_the_cuff_s_zone_configuration_and_only_the_definition_s_is_taken(self):
+        path = export(self.dir, "BloodPressure_10-October-2026", ROWS)
+        event = {"type": "bp.export", "payload": {"path": str(path), "change_type": "created"}}
+
+        def run(config):
+            return run_plugin(BP, {"command": "handle", "config": {"person_id": "person-a", **config}, "event": event})
+
+        assumed = run({})
+        self.assertTrue(any("basis assumption" in line["message"] for line in assumed["logs"]), assumed["logs"])
+        named = run({"zone": "Australia/Sydney"})
+        self.assertEqual(named["status"], "ok", named)
+        envs = [e["payload"] for ev in named["events"] for e in ev["payload"]["envelopes"]]
+        self.assertEqual({e["source_time"]["basis"] for e in envs}, {"configuration"})
+        self.assertEqual(envs[0]["effective_time_frame"]["date_time"], "2001-01-24T06:36:00+11:00")
+        self.assertFalse(any("basis assumption" in line["message"] for line in named["logs"]), named["logs"])
+        # The Definition reads date_excel in Sydney, so a cuff set to London cannot be
+        # placed truly yet; a misspelt zone is no zone.
+        for zone, want in (("Europe/London", "anam card 198"), ("Europe/Londn", "not an IANA zone"), ("Local", "no zone")):
+            with self.subTest(zone):
+                r = run({"zone": zone})
+                self.assertEqual(r["status"], "error", r)
+                self.assertFalse(r["retry"])
+                self.assertIn("config zone", r["error"])
+                self.assertIn(want, r["error"])
+
+    def test_a_wall_clock_sydney_skips_or_repeats_is_left_out_and_poll_is_no_snapshot(self):
+        # Card 197's acceptance example 4: 02:30 on 4 October 2026 never happened in
+        # Sydney, and 02:30 on 5 April 2026 happened twice.
+        gap = ROWS[1].replace("2001-2-10 05:04:00", "2026-10-4 02:30:00")
+        overlap = ROWS[1].replace("2001-2-10 05:04:00", "2026-4-5 02:30:00")
+        export(self.dir, "BloodPressure_10-October-2026", [ROWS[0], gap, overlap])
+        r = run_plugin(BP, {"command": "poll", "config": {"person_id": "person-a", "export_dir": str(self.dir)}})
+        self.assertEqual(r["status"], "ok", r)
+        sent = [e["payload"]["date_excel"] for ev in r["events"] for e in ev["payload"]["envelopes"]]
+        self.assertEqual(sent, ["2001-1-24 06:36:00"])
+        messages = " | ".join(line["message"] for line in r["logs"])
+        self.assertIn("2026-10-4 02:30:00 #1", messages)
+        self.assertIn("skip", messages)
+        self.assertIn("twice", messages)
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
+        self.assertIn("no snapshot", r["result"])
+
+    def test_an_export_with_no_date_in_its_name_is_dated_by_mtime_in_the_cuff_s_zone_not_the_host_s(self):
+        import importlib.util
+        import time
+
+        spec = importlib.util.spec_from_file_location("bp_csv_run_mtime", BP)
+        bp = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bp)
+        path = export(self.dir, "BloodPressure_undated", ROWS)
+        # 2026-10-20T14:30:00Z is 21 October in Sydney and 20 October in London and UTC.
+        when = 1792506600
+        os.utime(path, (when, when))
+        before = os.environ.get("TZ")
+        try:
+            for host in ("UTC", "Europe/London", "America/Los_Angeles"):
+                with self.subTest(host):
+                    os.environ["TZ"] = host
+                    time.tzset()
+                    self.assertEqual(bp.exported_on(path).isoformat(), "2026-10-21")
+        finally:
+            if before is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = before
+            time.tzset()
 
     def test_a_posture_nobody_has_named_stops_the_run(self):
         row = ROWS[0].replace('"Seated"', '"Reclined"')

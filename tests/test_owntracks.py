@@ -75,6 +75,8 @@ class OwnTracksTest(unittest.TestCase):
             "loc:phone-a:2026-01-01T00:00:00Z", "loc:phone-b:2026-01-01T00:00:00Z", "loc:phone-a:2026-01-01T01:00:00Z"])
         first = envs[0]["payload"]
         self.assertEqual(first["hour"], "2026-01-01T00:00:00Z")
+        # The hour of tst epochs, UTC by OwnTracks' definition (anam card 198).
+        self.assertEqual(first["source_time"], {"value": "2026-01-01T00:00:00Z", "zone": "UTC", "basis": "source"})
         self.assertEqual(first["device"], "phone-a")
         self.assertEqual([p["t"] for p in first["points"]], ["2026-01-01T00:01:00Z", "2026-01-01T00:59:59Z"])
         self.assertEqual(envs[0]["type"], "place.track")
@@ -200,7 +202,7 @@ class OwnTracksTest(unittest.TestCase):
         self.spool.add(body(HOUR + 60))
         r = self.run_cmd("health")
         self.assertEqual(r["status"], "ok", r)
-        self.assertIn("1 place.track v1 hour(s) from 1 spool line(s), every one conforming", r["result"])
+        self.assertIn("1 place.track v2 hour(s) from 1 spool line(s), every one conforming", r["result"])
         self.spool.add(body(HOUR + 120, lat="x"))
         self.assertEqual(self.run_cmd("health")["status"], "error")
 

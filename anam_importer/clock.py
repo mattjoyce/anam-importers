@@ -55,6 +55,24 @@ def source_time(value: str, zone: str, basis: str) -> Dict[str, Any]:
     return {"value": value, "zone": zone, "basis": basis}
 
 
+# WRITTEN_OFFSET is the offset at the end of an RFC 3339 instant as a source writes
+# one. Not configurable: it is RFC 3339's.
+WRITTEN_OFFSET = re.compile(r"([+-]\d\d:\d\d)$")
+
+
+def zone_written(text: str) -> str:
+    """The zone an RFC 3339 instant is written in, as source_time names it: UTC for
+    one written with Z, else its own offset, +HH:MM. One with neither is a
+    ValueError: it is a wall clock, and its zone is not in it."""
+    if text.endswith(("Z", "z")):
+        return "UTC"
+    m = WRITTEN_OFFSET.search(text)
+    if not m:
+        raise ValueError(f"{text!r} carries no offset")
+    check_zone(m.group(1))
+    return m.group(1)
+
+
 def offset_text(offset: timedelta) -> str:
     """A UTC offset as RFC 3339 writes one: +11:00, -03:30, +00:00."""
     minutes = int(offset.total_seconds()) // 60

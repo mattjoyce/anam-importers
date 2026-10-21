@@ -36,6 +36,13 @@ class AgainstAnamTest(unittest.TestCase):
         self.assertEqual(first["events"][0]["payload"]["outcomes"], {"admitted": 3})
         again = self.submit(shaped["events"][0])
         self.assertEqual(again["events"][0]["payload"]["outcomes"], {"no-op": 3})
+        # Every version the importer emitted is registered, oldest first, since Anam
+        # refuses a version older than one it holds (anam card 198).
+        client = Client(self.daemon.url, self.daemon.token)
+        held = {d["type"]: d for d in client.definitions()}["health.measurement.withings"]
+        self.assertEqual((held["current"], held["versions"]), (2, [1, 2]))
+        for d in load(REPO / "withings").every:
+            self.assertEqual(client.definition(d.type, d.version), d.manifest)
 
     def test_a_complete_resend_reports_what_the_source_no_longer_holds(self):
         db = withings_db(Path(self.tmp.name) / "withings.db", GROUPS)

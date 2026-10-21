@@ -93,7 +93,8 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(note, {"id": "path:vault/notes/2024-03-02 note.md", "identity": "path", "root": "vault",
                                 "path": "notes/2024-03-02 note.md", "sha256": SHA(NOTE), "bytes": len(NOTE.encode()),
                                 "media_type": "text/markdown", "date": "2024-03-02T00:00:00+11:00",
-                                "date_from": "frontmatter", "title": "A synthetic note"})
+                                "date_from": "frontmatter", "title": "A synthetic note",
+                                "source_time": {"value": "2024-03-02", "zone": "Australia/Sydney", "basis": "configuration"}})
         photo = got["path:vault/photos/2024-04-05 scan.png"]
         self.assertEqual((photo["date"], photo["date_from"], photo["media_type"]),
                          ("2024-04-05T00:00:00+11:00", "filename", "image/png"))
@@ -103,6 +104,8 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual(ev["type"], "anam_links.batch")
         self.assertEqual(ev["payload"]["snapshot"]["types"], ["record.link"])
         self.assertIn('"facet_type": "record.link"', ev["payload"]["definitions"][0])
+        # Every version of record.link, oldest first (anam card 198).
+        self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in ev["payload"]["definitions"]], [1, 2])
         self.assertNotIn("documents", ev["payload"])  # no bytes are handed to anyone
         for env in ev["payload"]["envelopes"]:
             self.assertEqual((env["type"], env["asserted_person"]), ("record.link", "person-a"))
@@ -144,6 +147,60 @@ class ShapeTest(unittest.TestCase):
                 (got,) = payloads(out).values()
                 self.assertEqual(got["date_from"], source)
                 self.assertEqual(got["date"], date or "2023-11-15T09:13:20+11:00")
+
+    def test_each_date_says_how_its_clock_was_read(self):
+        # Anam card 198: an offset written with the date is the source's, the zone key
+        # is configuration, and mtime is an epoch, UTC. value is what was written.
+        cases = {
+            "frontmatter bare date": ("n.md", "---\ndate: 2024-03-02\n---\n", ("2024-03-02", "Australia/Sydney", "configuration")),
+            "frontmatter time no zone": ("n.md", "---\ndate: 2024-07-02 09:15\n---\n", ("2024-07-02 09:15", "Australia/Sydney", "configuration")),
+            "frontmatter with offset": ("n.md", "---\ndate: 2024-07-02T09:15:00+02:00\n---\n", ("2024-07-02T09:15:00+02:00", "+02:00", "source")),
+            "frontmatter Z": ("n.md", "---\ndate: 2024-07-02T09:15:00Z\n---\n", ("2024-07-02T09:15:00Z", "UTC", "source")),
+            "exif in the zone": ("p.jpg", jpeg_with_exif("2024:07:02 09:15:30"), ("2024:07:02 09:15:30", "Australia/Sydney", "configuration")),
+            "exif with its own offset": ("p.jpg", jpeg_with_exif("2024:07:02 09:15:30", "+02:00"), ("2024:07:02 09:15:30", "+02:00", "source")),
+            "file name prefix": ("2024-04-05_scan.png", PHOTO, ("2024-04-05", "Australia/Sydney", "configuration")),
+            "mtime": ("scan.png", PHOTO, ("1700000000", "UTC", "source")),
+        }
+        for name, (file, body, (value, zone, basis)) in cases.items():
+            with self.subTest(name), folder({file: body}) as d:
+                os.utime(d / file, (1_700_000_000, 1_700_000_000))
+                out = run("poll", d, identity="content")
+                self.assertEqual(out["status"], "ok", out)
+                (got,) = payloads(out).values()
+                self.assertEqual(got["source_time"], {"value": value, "zone": zone, "basis": basis})
+
+    def test_a_wall_clock_the_zone_skips_or_repeats_leaves_the_file_out_and_the_run_is_no_snapshot(self):
+        # Card 197's acceptance example 4, in London: 01:30 on 29 March 2026 never
+        # happened and 01:30 on 25 October 2026 happened twice. An offset settles it.
+        files = {"gap.md": "---\ndate: 2026-03-29 01:30\n---\n", "twice.jpg": jpeg_with_exif("2026:10:25 01:30:00"),
+                 "said.md": "---\ndate: 2026-10-25T01:30:00+01:00\n---\n"}
+        with folder(files) as d:
+            out = run("poll", d, zone="Europe/London")
+        self.assertEqual(out["status"], "ok", out)
+        self.assertEqual(sorted(payloads(out)), ["path:vault/said.md"])
+        logs = {l["message"].split(":")[0]: l["message"] for l in out["logs"]}
+        self.assertIn("skip", logs["skipped gap.md"])
+        self.assertIn("twice", logs["skipped twice.jpg"])
+        self.assertNotIn("snapshot", out["events"][0]["payload"])
+        with folder({"far.md": "---\ndate: 2024-07-02T09:15:00+15:00\n---\n", "near.md": NOTE}) as d:
+            out = run("poll", d)
+        self.assertEqual(out["status"], "ok", out)
+        self.assertIn("no zone", " ".join(l["message"] for l in out["logs"]))
+        self.assertNotIn("snapshot", out["events"][0]["payload"])
+
+    def test_a_file_remembered_from_before_source_time_says_its_zone_is_assumed(self):
+        with folder({"2024-01-01 b.png": PHOTO}) as d:
+            run("poll", d)
+            state = json.loads(state_of(d).read_text())
+            for entry in state["known"].values():
+                del entry["payload"]["source_time"]  # as a state file written before record.link v2
+            state_of(d).write_text(json.dumps(state))
+            (d / "2024-01-01 b.png").unlink()
+            out = run("poll", d)
+        self.assertEqual(out["status"], "ok", out)
+        (got,) = payloads(out).values()
+        self.assertEqual(got["source_time"], {"value": "2024-01-01T00:00:00+11:00", "zone": "+11:00", "basis": "assumption"})
+        self.assertTrue(any("basis assumption" in l["message"] for l in out["logs"]), out["logs"])
 
     def test_mtime_is_refused_for_markdown_and_a_bad_frontmatter_date_is_reported(self):
         files = {"undated.md": "# no frontmatter\n", "bad.md": "---\ndate: March 2nd\n---\n",
