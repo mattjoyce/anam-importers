@@ -1,12 +1,12 @@
 {
   "meta": {
-    "facet_type": "health.heart-rate-day",
-    "definition_version": 2,
+    "facet_type": "health.heart-rate.day",
+    "definition_version": 1,
     "kind": "measure",
     "family": "vitals",
     "classification": "Sensitive",
     "validation_mode": "strict",
-    "source_schema": "omh/heart-rate-2.0",
+    "source_schema": "anam/health.heart-rate.day",
     "time_semantics": {
       "fact_time": {
         "pointer": "/effective_time_frame/time_interval/start_date_time",
@@ -15,47 +15,49 @@
       }
     },
     "identity_key": [
-      "/id",
-      "/statistic"
+      "/id"
     ],
     "min_binding_assurance": "medium"
   },
   "schema": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
-    "description": "One figure for one day's heart rate as an Open mHealth heart-rate-2.0 body (omh:heart-rate:2.0, pinned), with the source's day and which figure it is beside it. A day has up to three: resting, the minimum and the maximum. Garmin writes them through the anam_garmin importer (source garmin): resting from GarminDB's resting_hr table, minimum and maximum from its daily_summary.",
+    "description": "One day's heart rate: its resting, minimum and maximum figures as one fact, in Anam's own shape, since Open mHealth has no body for one day's several statistics. It replaces health.heart-rate-day, which held the same figures as three facts a day, one Open mHealth heart-rate-2.0 body each (card 205). A day the source gave no figure for is a day without that field; a day needs at least one. Garmin writes them through the anam_garmin importer (source garmin): resting from GarminDB's resting_hr table, minimum and maximum from its daily_summary.",
     "type": "object",
     "required": [
       "id",
-      "statistic",
-      "heart_rate",
       "effective_time_frame",
       "source_time"
     ],
     "additionalProperties": false,
+    "anyOf": [
+      {
+        "required": [
+          "resting"
+        ]
+      },
+      {
+        "required": [
+          "minimum"
+        ]
+      },
+      {
+        "required": [
+          "maximum"
+        ]
+      }
+    ],
     "properties": {
       "id": {
         "type": "string",
         "minLength": 1,
-        "description": "The source's key for the day. For Garmin, the day as GarminDB files it, a local date.",
+        "description": "The source's key for the day, and the identity: one facet per day. For Garmin, the day as GarminDB files it, a local date.",
         "examples": [
           "2026-10-09"
         ]
       },
-      "statistic": {
-        "type": "string",
-        "enum": [
-          "resting",
-          "minimum",
-          "maximum"
-        ],
-        "description": "Which of the day's figures this is. With id, the identity: one facet per figure per day.",
-        "examples": [
-          "resting"
-        ]
-      },
-      "heart_rate": {
+      "resting": {
         "type": "object",
-        "description": "The figure as an OMH unit-value, in beats per minute.",
+        "description": "The day's resting heart rate, in beats per minute. For Garmin, GarminDB's resting_hr.",
         "required": [
           "value",
           "unit"
@@ -67,7 +69,59 @@
             "minimum": 0,
             "description": "Beats per minute, as the source gave it.",
             "examples": [
-              61
+              57
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "beats/min"
+            ],
+            "description": "Always beats/min."
+          }
+        }
+      },
+      "minimum": {
+        "type": "object",
+        "description": "The lowest heart rate of the day, in beats per minute. For Garmin, daily_summary's hr_min.",
+        "required": [
+          "value",
+          "unit"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Beats per minute, as the source gave it.",
+            "examples": [
+              52
+            ]
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "beats/min"
+            ],
+            "description": "Always beats/min."
+          }
+        }
+      },
+      "maximum": {
+        "type": "object",
+        "description": "The highest heart rate of the day, in beats per minute. For Garmin, daily_summary's hr_max.",
+        "required": [
+          "value",
+          "unit"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "value": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Beats per minute, as the source gave it.",
+            "examples": [
+              133
             ]
           },
           "unit": {
@@ -81,7 +135,7 @@
       },
       "effective_time_frame": {
         "type": "object",
-        "description": "The day Garmin counted, as an OMH time interval: Garmin Connect's own start and end, each RFC 3339 at the offset the watch was at then. A day the watch crossed zones in has two offsets (17 October 2026 runs +11:00 to +01:00, 34 hours); a day still in progress ends where Garmin had counted to. The start is the fact time. The figure covers it.",
+        "description": "The day Garmin counted, as an Open mHealth time interval: Garmin Connect's own start and end, each RFC 3339 at the offset the watch was at then. A day the watch crossed zones in has two offsets (17 October 2026 runs +11:00 to +01:00, 34 hours); a day still in progress ends where Garmin had counted to. The start is the fact time. Every figure covers it.",
         "required": [
           "time_interval"
         ],
@@ -114,27 +168,6 @@
             }
           }
         }
-      },
-      "temporal_relationship_to_physical_activity": {
-        "type": "string",
-        "enum": [
-          "at rest"
-        ],
-        "description": "OMH's \"at rest\", on the resting figure only.",
-        "examples": [
-          "at rest"
-        ]
-      },
-      "descriptive_statistic": {
-        "type": "string",
-        "enum": [
-          "minimum",
-          "maximum"
-        ],
-        "description": "OMH's statistic over the day, on the minimum and maximum figures only.",
-        "examples": [
-          "minimum"
-        ]
       },
       "source_time": {
         "type": "object",

@@ -13,8 +13,8 @@ else holds the alert. This is the health ETL's fit_events.py (ductile-healthdata
 moved: the same event decoded the same way, and the same payload the health-db
 worker built from the ETL's events table. From GarminDB's garmin.db: each night's
 sleep (health.sleep-episode, the IEEE 1752 body with Garmin's score and averages beside
-it), each day's resting, minimum and maximum heart rate (health.heart-rate-day,
-Open mHealth), steps (activity.steps, Open mHealth) and the rest of the day as
+it), each day's resting, minimum and maximum heart rate as one fact
+(health.heart-rate.day, Anam's own shape), steps (activity.steps, Open mHealth) and the rest of the day as
 Garmin wrote it (activity.day.garmin). From the activity FIT files under GarminDB's
 FitFiles/Activities, each session the watch recorded (activity.exercise-session.garmin, the IEEE
 1752 body with Garmin's measures beside it): the FIT file holds the start as a true
@@ -51,7 +51,14 @@ from anam_importer import ductile  # noqa: E402
 
 ALERT_TYPE = "health.heart-rate-alert"
 SLEEP_TYPE = "health.sleep-episode"
-HEART_TYPE = "health.heart-rate-day"
+HEART_TYPE = "health.heart-rate.day"
+# RETIRED_TYPES are types this importer sent once and sends no more. A poll's snapshot
+# still names them, carrying none, so Anam reports their live facts absent and the
+# operator's anam retract garmin tombstones them by the normal reconciliation (anam
+# card 205: health.heart-rate-day's three figures a day became health.heart-rate.day's
+# one fact). The daemon's importers file must keep listing them for garmin while they
+# are here, or it refuses the snapshot.
+RETIRED_TYPES = ("health.heart-rate-day",)
 STEPS_TYPE = "activity.steps"
 DAY_TYPE = "activity.day.garmin"
 SESSION_TYPE = "activity.exercise-session.garmin"
@@ -512,14 +519,16 @@ def query(config: Dict[str, Any], busy_ms: int, sql: str, since: Optional[date])
         raise ductile.Failure(f"garmin_db {path}: {exc}", retry=True) from exc
 
 
-def heart_figure(day: str, statistic: str, bpm: float, f: Frame) -> Dict[str, Any]:
-    p: Dict[str, Any] = {"id": day, "statistic": statistic,
-                         "heart_rate": {"value": number(bpm), "unit": "beats/min"},
-                         "effective_time_frame": f.frame, "source_time": f.source_time}
-    if statistic == "resting":
-        p["temporal_relationship_to_physical_activity"] = "at rest"
-    else:
-        p["descriptive_statistic"] = statistic
+# HEART_FIGURES are health.heart-rate.day's fields, in the order a payload carries them.
+HEART_FIGURES = ("resting", "minimum", "maximum")
+
+
+def heart_day(day: str, figures: Dict[str, float], f: Frame) -> Dict[str, Any]:
+    """One day's heart rate as one health.heart-rate.day payload: each figure Garmin
+    gave as beats per minute, and a figure it left empty not there at all."""
+    p: Dict[str, Any] = {"id": day}
+    p.update({k: {"value": number(figures[k]), "unit": "beats/min"} for k in HEART_FIGURES if k in figures})
+    p.update({"effective_time_frame": f.frame, "source_time": f.source_time})
     return p
 
 
@@ -535,9 +544,10 @@ class Days(NamedTuple):
 def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> Days:
     """Each day of daily_summary as an activity.steps and an activity.day.garmin, and each
     day's resting heart rate (resting_hr) and its minimum and maximum
-    (daily_summary) as health.heart-rate-day figures. A day holding only goals and
-    zero times is a day the watch recorded nothing: no steps and no record. A figure
-    Garmin left empty is no facet."""
+    (daily_summary) as one health.heart-rate.day. A day holding only goals and zero
+    times is a day the watch recorded nothing: no steps and no record. A figure Garmin
+    left empty is a field the day does not carry, and a day with none has no heart
+    rate fact."""
     cols = ", ".join(("day", "steps", "distance", "hr_min", "hr_max") + DAY_COLUMNS + tuple(DAY_MINUTES))
     daily = query(config, busy_ms, f"SELECT {cols} FROM daily_summary WHERE day >= ? ORDER BY day", since)
     resting = query(config, busy_ms, "SELECT day, resting_heart_rate FROM resting_hr "
@@ -562,14 +572,14 @@ def days(config: Dict[str, Any], busy_ms: int, since: Optional[date] = None) -> 
         if measured or r["steps"] is not None:
             out.records.append({"id": f"day:{r['day']}", "day": r["day"], **rec,
                                 "effective_time_frame": f.frame, "source_time": f.source_time})
-    figures = [heart_figure(r["day"], "resting", r["resting_heart_rate"], timed[r["day"]])
-               for r in resting if r["day"] in timed]
+    figures: Dict[str, Dict[str, float]] = {}
+    for r in resting:
+        figures.setdefault(r["day"], {})["resting"] = r["resting_heart_rate"]
     for r in daily:
-        figures += [heart_figure(r["day"], stat, r[col], timed[r["day"]])
-                    for stat, col in (("minimum", "hr_min"), ("maximum", "hr_max"))
-                    if r[col] is not None and r["day"] in timed]
-    order = {"resting": 0, "minimum": 1, "maximum": 2}
-    out.heart.extend(sorted(figures, key=lambda f: (f["id"], order[f["statistic"]])))
+        for name, col in (("minimum", "hr_min"), ("maximum", "hr_max")):
+            if r[col] is not None:
+                figures.setdefault(r["day"], {})[name] = r[col]
+    out.heart.extend(heart_day(day, figures[day], timed[day]) for day in sorted(figures) if day in timed)
     return out
 
 
@@ -589,7 +599,10 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
         check(definitions, envs)
         groups = list(batches(envs))
         shaped += [(definition, g, f"{typ} {i + 1}/{len(groups)}") for i, g in enumerate(groups)]
-    parts = snapshot_parts(len(shaped), list(by_type)) if snapshot and shaped else [None] * len(shaped)
+    # A snapshot speaks for the retired types too, so what Anam still holds of them is
+    # reported absent.
+    parts = (snapshot_parts(len(shaped), list(by_type) + list(RETIRED_TYPES)) if snapshot and shaped
+             else [None] * len(shaped))
     events = []
     for (definition, g, label), part in zip(shaped, parts):
         payload: Dict[str, Any] = {"envelopes": g, "definitions": definitions.manifests([definition.type]),
@@ -630,7 +643,7 @@ def run_over(config: Dict[str, Any], s: Settings, monitoring: List[Path], activi
     n = {t: len(ps) for t, ps in shaped.by_type.items()}
     return ductile.ok(f"{n[ALERT_TYPE]} alert(s) in {len(monitoring)} monitoring FIT file(s), {n[SESSION_TYPE]} "
                       f"session(s) in {len(activities)} activity FIT file(s), {n[SLEEP_TYPE]} night(s) of sleep, "
-                      f"{n[HEART_TYPE]} daily heart rate figure(s), {n[STEPS_TYPE]} day(s) of steps and "
+                      f"{n[HEART_TYPE]} day(s) of heart rate, {n[STEPS_TYPE]} day(s) of steps and "
                       f"{n[DAY_TYPE]} day record(s), {len(events)} batch(es)", events=events, logs=shaped.logs)
 
 

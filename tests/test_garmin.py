@@ -13,6 +13,7 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
+from anam_importer import Client
 from tests.helpers import REPO, Daemon, run_plugin
 
 GARMIN = REPO / "garmin" / "run.py"
@@ -158,6 +159,18 @@ def logged(r):
     return [line["message"] for line in r.get("logs", [])]
 
 
+# What a poll's snapshot speaks for: the six types it sends, and health.heart-rate-day,
+# which it sends no more, so Anam reports that type's live facts absent (anam card 205).
+POLLED_TYPES = ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert",
+                "health.heart-rate-day", "health.heart-rate.day", "health.sleep-episode"]
+# GARMIN_TYPES are what the garmin principal lists in the daemon's importers file.
+GARMIN_TYPES = POLLED_TYPES
+
+
+def bpm(v):
+    return {"value": v, "unit": "beats/min"}
+
+
 class ModuleTest(unittest.TestCase):
     """What the plugin decides without the FIT SDK, loaded as a module."""
 
@@ -197,7 +210,7 @@ class ModuleTest(unittest.TestCase):
         # for is read in.
         zones = {json.loads((REPO / "garmin" / "definitions" / f"{t}.json").read_text())
                  ["meta"]["time_semantics"]["fact_time"]["zone"]
-                 for t in ("activity.day.garmin", "health.heart-rate-day", "activity.steps")}
+                 for t in ("activity.day.garmin", "health.heart-rate.day", "activity.steps")}
         self.assertEqual(zones, {self.mod.ZONE})
 
     def frame(self, day, start, end, steps=None, given=None):
@@ -319,7 +332,7 @@ class AlertTest(unittest.TestCase):
         os.utime(old, (week_ago, week_ago))
         polled = run("poll", self.dir)
         self.assertEqual(len(payloads(polled)), 2)
-        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
+        self.assertEqual(polled["events"][0]["payload"]["snapshot"]["types"], POLLED_TYPES)
         handled = run("handle", self.dir)
         self.assertEqual([p["heart_rate"] for p in payloads(handled)], [117])
         self.assertNotIn("snapshot", handled["events"][0]["payload"])
@@ -353,7 +366,7 @@ class AlertTest(unittest.TestCase):
             "wake_after_sleep_onset": {"value": 9, "unit": "min"},
             "is_main_sleep": True, "score": 75, "qualifier": "FAIR", "avg_rr": 14, "avg_stress": 19,
         }])
-        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert", "health.heart-rate-day", "health.sleep-episode"])
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], POLLED_TYPES)
 
     def test_a_london_night_is_london_s_whatever_zone_garmin_db_runs_in(self):
         # A night in London: garmin.db holds it as Sydney wall clock, the zone GarminDB runs
@@ -374,31 +387,32 @@ class AlertTest(unittest.TestCase):
         self.assertNotIn("snapshot", r["events"][0]["payload"])
         self.assertEqual(run("health", self.dir)["status"], "error")
 
-    def test_a_day_s_heart_rate_is_three_omh_figures_and_an_empty_one_is_none(self):
-        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0)],
-                  daily=[("2015-10-09", 59, 135), ("2015-04-05", None, 120)])
-        # Garmin's interval for the 9th; none for 5 April, the day Sydney's clocks went back,
-        # so that day is assumed, 25 hours of Sydney, and the run says so and is still everything.
+    def test_a_day_s_heart_rate_is_one_fact_and_a_figure_garmin_left_empty_is_no_field(self):
+        # Anam card 205: resting, minimum and maximum are one health.heart-rate.day. 5 April
+        # has a maximum only and no interval from Garmin, the day Sydney's clocks went back,
+        # so it is assumed, 25 hours of Sydney. 18 February 2026 is the live day with a resting
+        # figure only and no summary: resting_hr holds it and daily_summary does not. Both
+        # say they were assumed, and the run is still everything.
+        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0), ("2026-02-18", 59.0)],
+                  daily=[("2015-10-09", 59, 135), ("2015-04-05", None, 120), ("2015-04-06", None, None)])
         summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
         r = run("poll", self.dir)
         self.assertEqual(r["status"], "ok", r)
-        sydney_day = day_of("2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00")
-        given = source("2015-10-09", "+11:00")
         self.assertEqual(payloads(r), [
-            {"id": "2015-04-05", "statistic": "maximum", "heart_rate": {"value": 120, "unit": "beats/min"},
+            {"id": "2015-04-05", "maximum": bpm(120),
              "effective_time_frame": day_of("2015-04-05T00:00:00+11:00", "2015-04-06T00:00:00+10:00"),
-             "source_time": source("2015-04-05", "Australia/Sydney", "assumption"),
-             "descriptive_statistic": "maximum"},
-            {"id": "2015-10-09", "statistic": "resting", "heart_rate": {"value": 61, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "source_time": given,
-             "temporal_relationship_to_physical_activity": "at rest"},
-            {"id": "2015-10-09", "statistic": "minimum", "heart_rate": {"value": 59, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "source_time": given, "descriptive_statistic": "minimum"},
-            {"id": "2015-10-09", "statistic": "maximum", "heart_rate": {"value": 135, "unit": "beats/min"},
-             "effective_time_frame": sydney_day, "source_time": given, "descriptive_statistic": "maximum"},
+             "source_time": source("2015-04-05", "Australia/Sydney", "assumption")},
+            {"id": "2015-10-09", "resting": bpm(61), "minimum": bpm(59), "maximum": bpm(135),
+             "effective_time_frame": day_of("2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00"),
+             "source_time": source("2015-10-09", "+11:00")},
+            {"id": "2026-02-18", "resting": bpm(59),
+             "effective_time_frame": day_of("2026-02-18T00:00:00+11:00", "2026-02-19T00:00:00+11:00"),
+             "source_time": source("2026-02-18", "Australia/Sydney", "assumption")},
         ])
-        self.assertTrue(any("day 2015-04-05: Garmin gave no interval" in m for m in logged(r)), logged(r))
-        self.assertIn("snapshot", r["events"][0]["payload"])
+        self.assertEqual({e["type"] for ev in r["events"] for e in ev["payload"]["envelopes"]}, {"health.heart-rate.day"})
+        for day in ("2015-04-05", "2026-02-18"):
+            self.assertTrue(any(f"day {day}: Garmin gave no interval" in m for m in logged(r)), logged(r))
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], POLLED_TYPES)
 
     def test_a_day_is_omh_steps_and_garmin_s_record_and_an_empty_day_is_neither(self):
         garmin_db(self.dir.parent / "garmin.db", [], daily=[DAY, EMPTY_DAY])
@@ -504,8 +518,7 @@ class AlertTest(unittest.TestCase):
         summary(self.dir, "2015-10-09", "2015-10-09T00:00:00+11:00", "2015-10-10T00:00:00+11:00", steps=6219)
         for day in ("2015-10-08", "2015-10-09"):
             sleep_json(self.dir.parent / "Sleep", day, "2015-10-07T12:44:00+11:00", "2015-10-07T18:42:00+11:00")
-        daemon = Daemon("garmin", ["activity.exercise-session.garmin", "activity.day.garmin", "health.heart-rate-alert",
-                                   "health.heart-rate-day", "activity.steps", "health.sleep-episode"])
+        daemon = Daemon("garmin", GARMIN_TYPES)
         try:
             shaped = run("poll", self.dir)
             for want in ("admitted", "no-op"):
@@ -516,7 +529,61 @@ class AlertTest(unittest.TestCase):
                                             "secrets": {"anam_importer_token_test": daemon.token}})
                     self.assertEqual(r["status"], "ok", r)
                     got.append(r["events"][0]["payload"]["outcomes"])
-                self.assertEqual(got, [{want: 2}, {want: 2}, {want: 3}, {want: 1}, {want: 1}, {want: 2}])
+                self.assertEqual(got, [{want: 2}, {want: 2}, {want: 1}, {want: 1}, {want: 1}, {want: 2}])
+        finally:
+            daemon.close()
+
+    @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
+    def test_a_poll_leaves_the_old_figures_absent_and_retract_tombstones_them(self):
+        # Anam card 205, by the normal reconciliation: before it the importer sent three
+        # health.heart-rate-day facts a day. The new poll sends one health.heart-rate.day
+        # a day and its snapshot names the old type too, so every old fact is absent,
+        # and anam retract garmin tombstones those and nothing else.
+        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0), ("2015-10-10", 60.0)],
+                  daily=[("2015-10-09", 59, 135), ("2015-10-10", 58, 140)])
+        frames = {}
+        for day, end in (("2015-10-09", "2015-10-10"), ("2015-10-10", "2015-10-11")):
+            summary(self.dir, day, f"{day}T00:00:00+11:00", f"{end}T00:00:00+11:00")
+            frames[day] = day_of(f"{day}T00:00:00+11:00", f"{end}T00:00:00+11:00")
+        figures = {"2015-10-09": (61, 59, 135), "2015-10-10": (60, 58, 140)}
+        old = []
+        for day, (resting, low, high) in figures.items():
+            common = {"id": day, "effective_time_frame": frames[day], "source_time": source(day, "+11:00")}
+            old += [{**common, "statistic": "resting", "heart_rate": bpm(resting),
+                     "temporal_relationship_to_physical_activity": "at rest"},
+                    {**common, "statistic": "minimum", "heart_rate": bpm(low), "descriptive_statistic": "minimum"},
+                    {**common, "statistic": "maximum", "heart_rate": bpm(high), "descriptive_statistic": "maximum"}]
+        daemon = Daemon("garmin", GARMIN_TYPES)
+        try:
+            client = Client(daemon.url, daemon.token)
+            sent = client.submit([{"type": "health.heart-rate-day", "definition_version": 2, "payload": p} for p in old])
+            self.assertEqual(sent["changed"], 6)
+
+            results = [run_plugin(SUBMIT, {"command": "handle", "event": ev,
+                                           "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                                           "secrets": {"anam_importer_token_test": daemon.token}})
+                       for ev in run("poll", self.dir)["events"]]
+            self.assertTrue(all(r["status"] == "ok" for r in results), results)
+            alerts = [e["payload"] for r in results for e in r["events"] if e["type"] == "anam.snapshot_absent"]
+            self.assertEqual([(a["absent"], a["live"], a["carried"], a["types"]) for a in alerts],
+                             [(6, 8, 2, POLLED_TYPES)])
+
+            daemon.stop()
+            dry = daemon.cli("retract", "garmin", "--max-fraction", "0.75")
+            self.assertEqual(dry.returncode, 0, dry.stderr)
+            self.assertIn("garmin: 8 live facets in the ledger, 2 rows in the source, 6 no longer held", dry.stdout)
+            self.assertEqual(dry.stdout.count("  health.heart-rate-day  v"), 6, dry.stdout)
+            done = daemon.cli("retract", "garmin", "--max-fraction", "0.75", "--yes")
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertIn("tombstoned 6 facets", done.stdout)
+            again = daemon.cli("retract", "garmin", "--max-fraction", "0.75")
+            self.assertIn("2 live facets in the ledger, 2 rows in the source, 0 no longer held", again.stdout, again.stderr)
+            daemon.start()
+
+            status, coverage = client._call("GET", "/v1/coverage")
+            self.assertEqual(status, 200, coverage)
+            live = {t["type"]: t["count"] for t in coverage["types"]}
+            self.assertEqual(live, {"health.heart-rate.day": 2})
         finally:
             daemon.close()
 
