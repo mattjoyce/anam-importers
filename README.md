@@ -38,7 +38,7 @@ records/              anam_records: records files, facts written down as YAML, a
 documents/            anam_documents: a folder of documents with sidecars as record.document; anam_submit hands the bytes to Anam's library
 links/                anam_links: a folder of files as record.link, remembered by name, hash and date; the bytes stay where they are
   extract/            one-off extractors that turn an export into a records file
-garmin/               anam_garmin: a Garmin watch's alerts, sessions, sleep, heart rate, steps and days from GarminDB
+garmin/               anam_garmin: a Garmin watch's alerts, hourly and daily heart rate, sessions, sleep, steps and days from GarminDB
 concept2/             anam_concept2: Concept2 Logbook workouts as activity.exercise-session.concept2
 owntracks/            anam_owntracks: a phone's OwnTracks positions as place.track, one facet per hour
   definitions/        the Definitions it emits, in Anam's manifest format
@@ -489,9 +489,9 @@ keeps a workout open until the next one starts; another cap writes other records
 ## Wiring an importer into a gateway (Garmin)
 
 Not deployed, and not to be switched on alone. Source `garmin`, types
-`[health.heart-rate-alert, activity.exercise-session.garmin, health.sleep-episode, health.heart-rate.day,
-activity.steps, activity.day.garmin, health.heart-rate-day]`, the last kept while its poll's snapshot names it
-(below), secret `anam_importer_token_garmin`, principal
+`[health.heart-rate-alert, health.heart-rate.hour, activity.exercise-session.garmin, health.sleep-episode,
+health.heart-rate.day, activity.steps, activity.day.garmin, health.heart-rate-day]`, the last kept while its
+poll's snapshot names it (below), secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
 runs would hold every alert twice. It goes live when the
@@ -502,6 +502,17 @@ SDK, which its uv script header pins, and decodes FIT event 66, the abnormal hig
 alert, as the health ETL's `fit_events.py` does. It keeps no state: `handle` reads the files
 modified in the last `lookback_days` (default 3), so a pipeline on GarminDB's sync event runs it;
 `poll` reads every file and labels the run a snapshot.
+
+The same files hold the watch's heart rate: each UTC hour with a sample is one
+`health.heart-rate.hour`, 60 slots, slot *i* minute *i*, each the watch's reading in that
+minute or `null` for a minute it recorded none (an hour with no sample is no facet). Nothing
+is averaged and no bucket is kept, so a reader computes any window's figures from the slots
+and sees where the gaps are. They come from the files rather than GarminDB's `monitoring_hr`,
+which stores each sample as local wall clock and drops a message that carries a heart rate and
+nothing else. A FIT timestamp is UTC by the format's definition, so the hours are UTC's and a
+day of them is the same 24 whatever zone the watch was in; a message's 16-bit short timestamp
+is placed by the last full one in its file, and a sample that cannot be placed is logged and
+makes the run no snapshot.
 
 Sleep comes from GarminDB's `garmin.db`, opened read-only: one `health.sleep-episode` per day its `sleep`
 table holds a start for, as the IEEE 1752 `sleep-episode-1.0` body (the stage durations in
@@ -541,7 +552,8 @@ wall clock, so the importer reads the file. The FIT sport and sub-sport map to G
 payload keeps both as the watch wrote them. `activity.exercise-session.garmin` is bundled in Anam: the importer
 carries Anam's v1 body unchanged, and `anam_submit` refuses to send until Anam publishes it.
 
-Their ids name what they are: `garmin:session:2015-10-04T03:49:17Z`, `sleep:2015-10-08`, `steps:2015-10-09`, `day:2015-10-09`. A
+Their ids name what they are: `garmin:session:2015-10-04T03:49:17Z`, `sleep:2015-10-08`, `steps:2015-10-09`, `day:2015-10-09`, and an hour's `2026-10-11T03:00:00Z`, which needs no
+prefix because no other type of this source keys on an instant. A
 facet's id is the source plus its identity values, without the type, so two types keyed on a
 bare date would be one facet, the second superseding the first. `tests/conformance` pins the
 IEEE and Open mHealth schemas the payloads are tested against. Read against GarminDB

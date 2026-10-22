@@ -29,3 +29,8 @@ Anam-importers at a4d2155 (master, after the taxonomy merge). The purpose page's
 
 - Code: Garmin sends one `health.heart-rate.day` a day, its resting, minimum and maximum as fields, in place of three `health.heart-rate-day` facts. The new Definition is Anam's, bundled, and the copy in `garmin/definitions/` is byte for byte; the old copy is gone. `poll`'s snapshot names `RETIRED_TYPES` with none carried, so the old facts are reported absent and `anam retract garmin` tombstones them, which `tests/test_garmin.py` proves against a real daemon.
 - Bundle: the Definition manifest page and the Garmin page name `health.heart-rate.day` v1, and the ids decision says why its bare-day id collides with nothing.
+
+## 2026-10-22, anam card 129
+
+- Code: Garmin sends an hour's heart rate, `health.heart-rate.hour` (a new Definition, the importer's own), read from the monitoring FIT files beside the alert. Each UTC hour with a sample is one facet of 60 slots, slot *i* minute *i*, the watch's reading in that minute or `null` for a minute with none; an hour with no sample is no facet, a minute sampled twice keeps the last sample, and nothing is averaged or bucketed. A monitoring message's 16-bit short timestamp is resolved against the last full one in its file, and a sample that cannot be placed is logged and makes the run no snapshot. Reading the file rather than GarminDB's `monitoring_hr` keeps the samples that table drops and the UTC instants it rewrites as local wall clock.
+- Bundle: the Definition manifest page lists fourteen types in fourteen files; the Garmin page and the ids decision name the hour, whose id is the bare RFC 3339 instant because no other type of this source keys on one. Page counts are unchanged.

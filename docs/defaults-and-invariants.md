@@ -138,18 +138,20 @@ by setting a module global now passes `max_response` to `Client`, and a second t
 
 | Value | Where | Why not configurable |
 |---|---|---|
-| the six type names, `BATCH_EVENT` | `garmin/run.py:50-55`, `:76` | Definitions and the routed event |
-| `DAY_COLUMNS`, `DAY_MINUTES`, `DAY_GOALS` | `:61-69` | GarminDB's schema and the Definition's fields |
-| `ZONE` | `:75` | read from the Definition already; used only for a day Garmin gave no interval for |
-| `HR_HIGH_ALERT = 66`, `data >> 8`, `& 0xFF` | `:81`, `:123` | what the watch writes |
-| `ACTIVITY_NAMES`, `SESSION_MEASURES`, `SESSION_UNITS`, `"unknown"` | `:209-250`, `:220` | the payload's vocabulary; a change supersedes every session |
-| id prefixes `garmin:session:`, `sleep:`, `steps:`, `day:`; `"source": "garmin"` | `:120`, `:260`, `:446`, `:552`, `:561` | identity |
-| `is_main_sleep: true` | `:455` | the Definition records that Garmin's table holds the main sleep |
-| `*.fit` | `:143` | the format |
-| `MAX_OFFSET` | `:307` | the widest offset any zone keeps |
-| `WELLNESS`, `SLEEP_CLOCKS`, `daily_summary_<day>.json` under the year, `sleep_<day>.json` | `:345`, `:418` | Garmin Connect's JSON as GarminDB 3.6.7 keeps it |
-| `since` minus one day for `garmin.db` | `:641` | covers the local day holding the cutoff; follows `lookback_days` |
-| 86400 | `:637` | seconds in a day |
+| the seven type names, `BATCH_EVENT` | `garmin/run.py:52-65`, `:89` | Definitions and the routed event |
+| `DAY_COLUMNS`, `DAY_MINUTES`, `DAY_GOALS` | `:74-82` | GarminDB's schema and the Definition's fields |
+| `ZONE` | `:87` | read from the Definition already; used only for a day Garmin gave no interval for |
+| `HR_HIGH_ALERT = 66`, `data >> 8`, `& 0xFF` | `:92`, `:126` | what the watch writes |
+| `FIT_EPOCH`, `WIDE`, `HALF` | `:98-99` | the FIT format's epoch and the width of a monitoring message's short timestamp |
+| `MINUTES = 60` | `:103` | the hour facet's slots, one a minute: the payload's shape |
+| `ACTIVITY_NAMES`, `SESSION_MEASURES`, `SESSION_UNITS`, `"unknown"` | `:261-302`, `:272` | the payload's vocabulary; a change supersedes every session |
+| id prefixes `garmin:session:`, `sleep:`, `steps:`, `day:`; `"source": "garmin"` | `:142`, `:394`, `:580`, `:689`, `:698` | identity |
+| `is_main_sleep: true` | `:589` | the Definition records that Garmin's table holds the main sleep |
+| `*.fit` | `:230` | the format |
+| `MAX_OFFSET` | `:441` | the widest offset any zone keeps |
+| `WELLNESS`, `SLEEP_CLOCKS`, `daily_summary_<day>.json` under the year, `sleep_<day>.json` | `:479`, `:552` | Garmin Connect's JSON as GarminDB 3.6.7 keeps it |
+| `since` minus one day for `garmin.db` | `:784` | covers the local day holding the cutoff; follows `lookback_days` |
+| 86400 | `:780` | seconds in a day |
 
 ### concept2
 
