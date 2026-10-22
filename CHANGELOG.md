@@ -9,6 +9,14 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `garmin/` sends an hour's heart rate (anam card 129): `health.heart-rate.hour`, one facet a UTC
+  hour that has a sample, read from the watch's monitoring FIT files beside the alert. A payload
+  is 60 slots, slot *i* minute *i*, each the watch's reading in that minute or `null` for one it
+  recorded none; nothing is averaged and no bucket is kept. A monitoring message's 16-bit short
+  timestamp is placed by the last full one in its file, and a sample that cannot be placed is
+  logged and makes the run no snapshot. `poll`'s snapshot names the type, so the garmin principal
+  must list it.
+
 - `links/` (`anam_links`): a folder of files as `record.link`, a file Anam remembers but does not
   hold (anam card 165). Each file's name, hash, size, media type and date are sent and the bytes
   never are; one instance is one folder under one identity mode (`path`, `content` or `id`),
