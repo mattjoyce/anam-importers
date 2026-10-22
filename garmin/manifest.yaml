@@ -5,11 +5,11 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Six types: health.heart-rate-alert, decoded from the monitoring FIT files GarminDB downloads (FIT event 66); activity.exercise-session.garmin, one per session in the activity FIT files it downloads; health.sleep-episode, health.heart-rate.day (one fact a day), activity.steps and activity.day.garmin, from GarminDB's garmin.db, each timed by the Garmin Connect JSON GarminDB keeps beside it (daily summaries under fit_dir, sleep under sleep_dir), with source_time saying how. Reads them all, garmin.db read-only; holds no token and writes nothing."
+description: "Shapes what a Garmin watch recorded into Anam envelopes and emits them as anam_garmin.batch events, at most 49 to a batch, for anam_submit to post. Seven types: health.heart-rate-alert (FIT event 66) and health.heart-rate.hour (a UTC hour, a slot a minute), decoded from the monitoring FIT files GarminDB downloads; activity.exercise-session.garmin, one per session in the activity FIT files it downloads; health.sleep-episode, health.heart-rate.day (one fact a day), activity.steps and activity.day.garmin, from GarminDB's garmin.db, each timed by the Garmin Connect JSON GarminDB keeps beside it (daily summaries under fit_dir, sleep under sleep_dir), with source_time saying how. Reads them all, garmin.db read-only; holds no token and writes nothing."
 commands:
   - name: handle
     type: read
-    description: "After a GarminDB sync: the alerts and sessions in the FIT files modified in the last lookback_days (default 3), and garmin.db's days from then on. Idempotent in Anam: what is already held is a no-op."
+    description: "After a GarminDB sync: the alerts, heart rate hours and sessions in the FIT files modified in the last lookback_days (default 3), and garmin.db's days from then on. Idempotent in Anam: what is already held is a no-op."
     idempotent: true
     retry_safe: true
     input_schema: {}
@@ -26,7 +26,7 @@ commands:
             - payload.batch
   - name: poll
     type: read
-    description: "Every alert in every FIT file under fit_dir, every session under activities_dir and every day in garmin_db, in batches: the resend-everything mode, labelled one snapshot unless a FIT file would not decode. The snapshot also names health.heart-rate-day, which it no longer sends, so its facts are reported absent for the operator to retract."
+    description: "Every alert and every heart rate hour in every FIT file under fit_dir, every session under activities_dir and every day in garmin_db, in batches: the resend-everything mode, labelled one snapshot unless a FIT file would not decode. The snapshot also names health.heart-rate-day, which it no longer sends, so its facts are reported absent for the operator to retract."
     idempotent: true
     retry_safe: true
     input_schema: {}

@@ -6,7 +6,8 @@
 """anam_garmin: shapes what a Garmin watch recorded into Anam envelopes, one batch
 event at a time.
 
-Six types. The abnormal high heart rate alert (health.heart-rate-alert), read
+Seven types. The abnormal high heart rate alert (health.heart-rate-alert) and the
+hour's heart rate (health.heart-rate.hour, 60 slots a facet, one a minute), both read
 straight from the watch's monitoring FIT files under GarminDB's FitFiles/Monitoring:
 GarminDB downloads those files but drops their event messages on import, so nothing
 else holds the alert. This is the health ETL's fit_events.py (ductile-healthdata),
@@ -52,6 +53,7 @@ from anam_importer import ductile  # noqa: E402
 ALERT_TYPE = "health.heart-rate-alert"
 SLEEP_TYPE = "health.sleep-episode"
 HEART_TYPE = "health.heart-rate.day"
+HOUR_TYPE = "health.heart-rate.hour"
 # RETIRED_TYPES are types this importer sent once and sends no more. A poll's snapshot
 # still names them, carrying none, so Anam reports their live facts absent and the
 # operator's anam retract garmin tombstones them by the normal reconciliation (anam
@@ -88,6 +90,17 @@ BATCH_EVENT = "anam_garmin.batch"
 # heart rate alert. Garmin does not document it; it was read from a watch's files.
 # Not configurable: it is what the watch writes.
 HR_HIGH_ALERT = 66
+
+# FIT_EPOCH is the instant a FIT timestamp counts seconds from, 1989-12-31T00:00:00Z,
+# by the format's definition; WIDE is the width of a monitoring message's short
+# timestamp and HALF the window around the last full one that names one instant. Not
+# configurable: they are what the files mean.
+FIT_EPOCH = datetime(1989, 12, 31, tzinfo=timezone.utc)
+WIDE, HALF = 1 << 16, 1 << 15
+
+# MINUTES is the slots one hour's facet holds, one a minute. Not configurable: it is
+# the payload's shape, and a change to it is a new Definition version.
+MINUTES = 60
 
 # DEFAULT_LOOKBACK_DAYS bounds handle to the files a sync can have touched, unless
 # config's lookback_days says otherwise. A monitoring file covers one day and the
@@ -137,10 +150,75 @@ def alert(mesg: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def alerts_in(path: Path) -> List[Dict[str, Any]]:
-    """The alerts in one monitoring FIT file."""
-    return [alert(m) for m in decode(path).get("event_mesgs", [])
-            if m.get("event") == HR_HIGH_ALERT and m.get("timestamp") is not None and m.get("data") is not None]
+class Beats(NamedTuple):
+    """One heart rate sample: the instant the watch took it, and its beats a minute."""
+
+    at: datetime
+    bpm: int
+
+
+class Held(NamedTuple):
+    """What one monitoring FIT file holds of the two types read from it: the alerts in
+    its event messages, the samples in its monitoring messages, and how many of those
+    carried no instant that could be told."""
+
+    alerts: List[Dict[str, Any]]
+    beats: List[Beats]
+    unplaced: int
+
+
+def utc(t: datetime) -> datetime:
+    """t as the UTC instant it names. A FIT timestamp is UTC by the format's definition."""
+    return (t if t.tzinfo else t.replace(tzinfo=timezone.utc)).astimezone(timezone.utc)
+
+
+def short_instant(anchor: datetime, short: int) -> datetime:
+    """The instant a monitoring message's 16-bit timestamp names: the one congruent to
+    short modulo the field's width nearest anchor, the last full timestamp in the file.
+    The SDK reads the short timestamp and leaves it unresolved, so it is resolved here;
+    a file's messages are close enough together that one window of 9 hours either side
+    holds the one instant meant."""
+    at = int((anchor - FIT_EPOCH).total_seconds())
+    full = (at & ~(WIDE - 1)) | (int(short) & (WIDE - 1))
+    if full < at - HALF:
+        full += WIDE
+    elif full > at + HALF:
+        full -= WIDE
+    return FIT_EPOCH + timedelta(seconds=full)
+
+
+def scan(msgs: Dict[str, List[Dict[str, Any]]]) -> Held:
+    """What one FIT file's messages hold of the two types read from it. A monitoring
+    message carries the sample's full timestamp or a 16-bit one relative to the last
+    full timestamp in the file, which the SDK leaves unresolved and this resolves. A
+    message with neither, or with no heart rate (the watch writes zero, or an invalid
+    byte the SDK reads as none, when it took no reading), is no sample."""
+    anchor: Optional[datetime] = None
+    beats: List[Beats] = []
+    unplaced = 0
+    for m in msgs.get("monitoring_mesgs", []):
+        at = utc(m["timestamp"]) if m.get("timestamp") is not None else None
+        if at is not None:
+            anchor = at
+        elif anchor is not None and m.get("timestamp_16") is not None:
+            at = short_instant(anchor, m["timestamp_16"])
+        rate = measure(m.get("heart_rate"))
+        if rate is None or rate <= 0:
+            continue
+        if at is None:
+            # A sample whose instant cannot be told is left out, and the run says so
+            # rather than shaping it into the wrong hour.
+            unplaced += 1
+            continue
+        beats.append(Beats(at, int(rate)))
+    return Held([alert(m) for m in msgs.get("event_mesgs", [])
+                 if m.get("event") == HR_HIGH_ALERT and m.get("timestamp") is not None and m.get("data") is not None],
+                beats, unplaced)
+
+
+def monitoring(path: Path) -> Held:
+    """What one monitoring FIT file holds."""
+    return scan(decode(path))
 
 
 def fit_files(config: Dict[str, Any], key: str, since: Optional[float] = None) -> List[Path]:
@@ -168,11 +246,58 @@ def vanished(exc: FileNotFoundError) -> ductile.Failure:
     return ductile.Failure(f"{exc.filename} went while the run read it", retry=True)
 
 
-def alerts(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[str]]:
-    """Every alert in files, once each, ordered by fact_time, and a log line per
-    file that would not decode. The same alert in two files is one alert: the first
-    file by name keeps it, as the ETL's INSERT OR IGNORE did."""
-    return each_once(files, alerts_in, "fact_time")
+def read_monitoring(files: List[Path]) -> Tuple[List[Dict[str, Any]], List[Beats], List[str]]:
+    """Every alert and every heart rate sample in files, and a log line for everything
+    it could not use: a file that would not decode, or a sample with no instant to
+    place it by. The same alert in two files is one alert: the first file by name keeps
+    it, as the ETL's INSERT OR IGNORE did."""
+    alerts: Dict[str, Dict[str, Any]] = {}
+    beats: List[Beats] = []
+    logs: List[str] = []
+    for path in files:
+        try:
+            held = monitoring(path)
+        except FileNotFoundError as exc:
+            raise vanished(exc) from exc
+        except ValueError as exc:
+            logs.append(f"skipped {path.name}: {exc}")
+            continue
+        for a in held.alerts:
+            alerts.setdefault(a["fact_time"], a)
+        beats += held.beats
+        if held.unplaced:
+            logs.append(f"skipped {held.unplaced} sample(s) in {path.name}: no full timestamp to place them by")
+    return [alerts[k] for k in sorted(alerts)], beats, logs
+
+
+def hour_of(at: datetime) -> datetime:
+    """The UTC hour at falls in, as its start."""
+    return at.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
+
+
+def hour_payload(start: datetime, slots: Dict[int, Beats]) -> Dict[str, Any]:
+    """One UTC hour as a health.heart-rate.hour payload: a slot a minute, each the last
+    sample taken in it, null for a minute with none. The values are the watch's, nothing
+    averaged, and the hour's end is the next hour's start."""
+    at = clk.utc_text(start)
+    return {"id": at,
+            "bpm": [slots[m].bpm if m in slots else None for m in range(MINUTES)],
+            "unit": "beats/min",
+            "effective_time_frame": {"time_interval": {
+                "start_date_time": at, "end_date_time": clk.utc_text(start + timedelta(hours=1))}},
+            "source_time": clk.source_time(at, "UTC", "source")}
+
+
+def hour_payloads(beats: List[Beats]) -> List[Dict[str, Any]]:
+    """One payload per UTC hour beats holds a sample in, in order. A minute's slot is
+    the last sample taken in that minute; the same instant in two files is one sample,
+    the first file by name keeping it, as beats keep the order they were read in."""
+    hours: Dict[datetime, Dict[int, Beats]] = {}
+    for b in beats:
+        slots = hours.setdefault(hour_of(b.at), {})
+        if b.at.minute not in slots or slots[b.at.minute].at < b.at:
+            slots[b.at.minute] = b
+    return [hour_payload(start, hours[start]) for start in sorted(hours)]
 
 
 def each_once(files: List[Path], read, key: str) -> Tuple[List[Dict[str, Any]], List[str]]:
@@ -615,7 +740,8 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
 
 class Shaped(NamedTuple):
     """One run's payloads by type, its log lines, and whether it left anything out:
-    a FIT file that would not decode, or a day or night Garmin did not time."""
+    a FIT file that would not decode, a heart rate sample with no instant to place it
+    by, or a day or night Garmin did not time."""
 
     by_type: Dict[str, List[Dict[str, Any]]]
     logs: List[str]
@@ -625,14 +751,14 @@ class Shaped(NamedTuple):
 def shape(config: Dict[str, Any], busy_ms: int, monitoring: List[Path], activities: List[Path],
           since: Optional[date]) -> Shaped:
     """Every type's payloads from the given FIT files and garmin.db from since on."""
-    found, alert_logs = alerts(monitoring)
+    found, beats, monitor_logs = read_monitoring(monitoring)
     held, session_logs = sessions(activities)
     nights, slept = sleeps(config, busy_ms, since)
     d = days(config, busy_ms, since)
-    return Shaped({ALERT_TYPE: found, SLEEP_TYPE: nights, HEART_TYPE: d.heart, STEPS_TYPE: d.steps,
-                   DAY_TYPE: d.records, SESSION_TYPE: held},
-                  alert_logs + session_logs + slept.logs + d.read.logs,
-                  not (alert_logs or session_logs or slept.lost or d.read.lost))
+    return Shaped({ALERT_TYPE: found, HOUR_TYPE: hour_payloads(beats), SLEEP_TYPE: nights, HEART_TYPE: d.heart,
+                   STEPS_TYPE: d.steps, DAY_TYPE: d.records, SESSION_TYPE: held},
+                  monitor_logs + session_logs + slept.logs + d.read.logs,
+                  not (monitor_logs or session_logs or slept.lost or d.read.lost))
 
 
 def run_over(config: Dict[str, Any], s: Settings, monitoring: List[Path], activities: List[Path],
@@ -641,8 +767,9 @@ def run_over(config: Dict[str, Any], s: Settings, monitoring: List[Path], activi
     # A run that left something out is not everything, so it is no snapshot.
     events = batch_events(load(HERE), shaped.by_type, str(config["person_id"]), snapshot and shaped.complete)
     n = {t: len(ps) for t, ps in shaped.by_type.items()}
-    return ductile.ok(f"{n[ALERT_TYPE]} alert(s) in {len(monitoring)} monitoring FIT file(s), {n[SESSION_TYPE]} "
-                      f"session(s) in {len(activities)} activity FIT file(s), {n[SLEEP_TYPE]} night(s) of sleep, "
+    return ductile.ok(f"{n[ALERT_TYPE]} alert(s) in {len(monitoring)} monitoring FIT file(s), "
+                      f"{n[HOUR_TYPE]} hour(s) of heart rate in them, {n[SESSION_TYPE]} session(s) in "
+                      f"{len(activities)} activity FIT file(s), {n[SLEEP_TYPE]} night(s) of sleep, "
                       f"{n[HEART_TYPE]} day(s) of heart rate, {n[STEPS_TYPE]} day(s) of steps and "
                       f"{n[DAY_TYPE]} day record(s), {len(events)} batch(es)", events=events, logs=shaped.logs)
 

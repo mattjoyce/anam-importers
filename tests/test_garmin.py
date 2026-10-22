@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from anam_importer import Client
@@ -159,10 +159,10 @@ def logged(r):
     return [line["message"] for line in r.get("logs", [])]
 
 
-# What a poll's snapshot speaks for: the six types it sends, and health.heart-rate-day,
+# What a poll's snapshot speaks for: the seven types it sends, and health.heart-rate-day,
 # which it sends no more, so Anam reports that type's live facts absent (anam card 205).
 POLLED_TYPES = ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert",
-                "health.heart-rate-day", "health.heart-rate.day", "health.sleep-episode"]
+                "health.heart-rate-day", "health.heart-rate.day", "health.heart-rate.hour", "health.sleep-episode"]
 # GARMIN_TYPES are what the garmin principal lists in the daemon's importers file.
 GARMIN_TYPES = POLLED_TYPES
 
@@ -294,6 +294,63 @@ class ModuleTest(unittest.TestCase):
                          datetime(2026, 10, 20, 9, 0, tzinfo=timezone.utc))
         self.assertEqual(f.source_time, source(str(ms("2026-10-20T09:00:00+00:00"))))
 
+    def test_a_short_timestamp_names_the_instant_nearest_the_last_full_one(self):
+        # A monitoring message may carry 16 bits of its timestamp, the FIT epoch's seconds
+        # modulo 65536, which the SDK leaves unresolved: the nearest such instant to the
+        # file's last full timestamp is the one meant.
+        epoch = self.mod.FIT_EPOCH
+        anchor = datetime(2026, 10, 11, 3, 2, tzinfo=timezone.utc)
+        at = int((anchor - epoch).total_seconds())
+        for delta in (-3600, -2, 0, 60, 3599):
+            with self.subTest(delta=delta):
+                self.assertEqual(self.mod.short_instant(anchor, (at + delta) % 65536),
+                                 anchor + timedelta(seconds=delta))
+        wrap = epoch + timedelta(seconds=65530)
+        self.assertEqual(self.mod.short_instant(wrap, 4), epoch + timedelta(seconds=65540))
+        self.assertEqual(self.mod.short_instant(wrap, 65535), epoch + timedelta(seconds=65535))
+
+    def test_a_sample_needs_an_instant_and_a_heart_rate(self):
+        # The watch writes zero for a heart rate it did not take, and an invalid byte the
+        # SDK reads as none; a sample with no instant this can place is counted, not
+        # shaped into the wrong hour.
+        at = datetime(2026, 10, 11, 3, 2, tzinfo=timezone.utc)
+        held = self.mod.scan({"monitoring_mesgs": [
+            {"timestamp": at, "heart_rate": 54},
+            {"timestamp": at + timedelta(minutes=1), "heart_rate": 0},
+            {"timestamp": at + timedelta(minutes=2), "heart_rate": None},
+            {"timestamp_16": 3600, "heart_rate": 55},
+            {"heart_rate": 60},
+        ]})
+        self.assertEqual(held.beats, [self.mod.Beats(at, 54),
+                                      self.mod.Beats(self.mod.short_instant(at, 3600), 55)])
+        self.assertEqual(held.unplaced, 1)
+        self.assertEqual(held.alerts, [])
+
+    def test_an_hour_has_a_slot_a_minute_and_a_minute_with_no_sample_is_null(self):
+        at = datetime(2026, 10, 11, 3, tzinfo=timezone.utc)
+        got = self.mod.hour_payloads([self.mod.Beats(at, 54),
+                                      self.mod.Beats(at + timedelta(minutes=1, seconds=30), 55),
+                                      self.mod.Beats(at + timedelta(minutes=59), 60)])
+        self.assertEqual(got, [{
+            "id": "2026-10-11T03:00:00Z",
+            "bpm": [54, 55] + [None] * 57 + [60],
+            "unit": "beats/min",
+            "effective_time_frame": {"time_interval": {
+                "start_date_time": "2026-10-11T03:00:00Z", "end_date_time": "2026-10-11T04:00:00Z"}},
+            "source_time": source("2026-10-11T03:00:00Z")}])
+
+    def test_a_minute_s_last_sample_is_its_slot_and_one_facet_is_one_utc_hour(self):
+        at = datetime(2026, 10, 11, 3, 7, 10, tzinfo=timezone.utc)
+        got = self.mod.hour_payloads([self.mod.Beats(at, 54),
+                                      self.mod.Beats(at + timedelta(seconds=25), 57),
+                                      self.mod.Beats(at + timedelta(hours=1), 62),
+                                      self.mod.Beats(at + timedelta(hours=1), 62)])
+        self.assertEqual([p["id"] for p in got], ["2026-10-11T03:00:00Z", "2026-10-11T04:00:00Z"])
+        self.assertEqual(got[0]["bpm"][7], 57)
+        self.assertEqual(sum(v is not None for v in got[0]["bpm"]), 1)
+        self.assertEqual(got[1]["bpm"][7], 62)
+        self.assertEqual(sum(v is not None for v in got[1]["bpm"]), 1)
+
 
 @unittest.skipUnless(UV, "no uv to run the plugin under")
 class AlertTest(unittest.TestCase):
@@ -345,6 +402,68 @@ class AlertTest(unittest.TestCase):
         self.assertEqual(len(payloads(r)), 1)
         self.assertNotIn("snapshot", r["events"][0]["payload"])
         self.assertTrue(any("b_WELLNESS.fit" in line["message"] for line in r.get("logs", [])), r.get("logs"))
+        self.assertEqual(run("health", self.dir)["status"], "error")
+
+    def test_an_hour_is_one_facet_of_sixty_slots_and_a_gap_is_null(self):
+        write_fit(self.dir / "a_WELLNESS.fit", {"monitoring": [
+            {"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54},
+            {"timestamp": "2026-10-11T03:01:10+00:00", "heart_rate": 55},
+            {"timestamp": "2026-10-11T03:04:00+00:00", "heart_rate": 58},
+            {"timestamp": "2026-10-11T04:00:00+00:00", "heart_rate": 62},
+        ]})
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual(typed(r), {"health.heart-rate.hour": [
+            {"id": "2026-10-11T03:00:00Z", "bpm": [54, 55, None, None, 58] + [None] * 55, "unit": "beats/min",
+             "effective_time_frame": day_of("2026-10-11T03:00:00Z", "2026-10-11T04:00:00Z"),
+             "source_time": source("2026-10-11T03:00:00Z")},
+            {"id": "2026-10-11T04:00:00Z", "bpm": [62] + [None] * 59, "unit": "beats/min",
+             "effective_time_frame": day_of("2026-10-11T04:00:00Z", "2026-10-11T05:00:00Z"),
+             "source_time": source("2026-10-11T04:00:00Z")},
+        ]})
+        self.assertEqual(r["events"][0]["payload"]["snapshot"]["types"], POLLED_TYPES)
+
+    def test_the_hours_of_a_day_the_clocks_change_are_utc_s(self):
+        # Sydney's clocks went back on 5 April 2026 and forward on 4 October; London's went
+        # back on 25 October. A FIT timestamp is UTC by the format's definition, so each of
+        # those days is 24 hours of 24 facets, their boundaries unmoved.
+        for day in ("2026-04-05", "2026-10-04", "2026-10-25"):
+            with self.subTest(day=day):
+                d = self.dir / day
+                write_fit(d / f"{day}_WELLNESS.fit", {"monitoring": [
+                    {"timestamp": f"{day}T{hour:02d}:{minute:02d}:00+00:00", "heart_rate": 60}
+                    for hour in range(24) for minute in (0, 30)]})
+                r = run("poll", d)
+                self.assertEqual(r["status"], "ok", r)
+                got = typed(r)["health.heart-rate.hour"]
+                self.assertEqual([p["id"] for p in got], [f"{day}T{hour:02d}:00:00Z" for hour in range(24)])
+                self.assertEqual({sum(v is not None for v in p["bpm"]) for p in got}, {2})
+
+    def test_an_hour_that_gains_a_sample_is_sent_again_with_it(self):
+        # Same-day fetching (anam card 128) means the watch's file is read again while the
+        # hour is still going: an hour that gains a sample is a new payload, and the one
+        # before it is what Anam holds until then.
+        path = self.dir / "a_WELLNESS.fit"
+        write_fit(path, {"monitoring": [{"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54}]})
+        first = typed(run("poll", self.dir))["health.heart-rate.hour"]
+        write_fit(path, {"monitoring": [{"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54},
+                                        {"timestamp": "2026-10-11T03:00:40+00:00", "heart_rate": 59}]})
+        again = typed(run("poll", self.dir))["health.heart-rate.hour"]
+        self.assertEqual(first[0]["bpm"][0], 54)
+        self.assertEqual(again[0]["bpm"][0], 59)
+        self.assertNotEqual(first, again)
+
+    def test_a_sample_that_cannot_be_placed_is_logged_and_the_run_is_no_snapshot(self):
+        write_fit(self.dir / "a_WELLNESS.fit", {"monitoring": [
+            {"timestamp_16": 3600, "heart_rate": 55},
+            {"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54},
+            {"heart_rate": 60},
+        ]})
+        r = run("poll", self.dir)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertEqual([p["id"] for p in typed(r)["health.heart-rate.hour"]], ["2026-10-11T03:00:00Z"])
+        self.assertTrue(any("a_WELLNESS.fit: no full timestamp" in m for m in logged(r)), logged(r))
+        self.assertNotIn("snapshot", r["events"][0]["payload"])
         self.assertEqual(run("health", self.dir)["status"], "error")
 
     def test_a_night_is_the_ieee_body_with_garmin_s_fields_beside_it(self):
@@ -507,10 +626,13 @@ class AlertTest(unittest.TestCase):
 
     @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
     def test_every_type_is_admitted_and_a_resend_is_no_op(self):
-        write_fit(self.dir / "a_WELLNESS.fit", [["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
-                                                ["2015-09-26T08:00:00+00:00", 66, (121 << 8) | 100]])
-        # The same date in sleep, steps, the day record and heart rate: five types under one
-        # source, none of them one facet (anam card 55, identity across types).
+        write_fit(self.dir / "a_WELLNESS.fit", {
+            "events": [["2015-09-25T11:31:00+00:00", 66, (117 << 8) | 100],
+                       ["2015-09-26T08:00:00+00:00", 66, (121 << 8) | 100]],
+            "monitoring": [{"timestamp": "2015-09-25T11:32:00+00:00", "heart_rate": 80},
+                           {"timestamp": "2015-09-25T11:33:00+00:00", "heart_rate": 82}]})
+        # The same date in sleep, steps, the day record, heart rate and an hour of it: six
+        # types under one source, none of them one facet (anam card 55, identity across types).
         same_day = ("2015-10-09",) + NIGHT[1:]
         write_fit(self.dir.parent / "Activities" / "1_ACTIVITY.fit", {"sessions": [WALK, CARDIO]})
         garmin_db(self.dir.parent / "garmin.db", [NIGHT, same_day, NO_SLEEP], resting=[("2015-10-09", 61.0)],
@@ -529,7 +651,35 @@ class AlertTest(unittest.TestCase):
                                             "secrets": {"anam_importer_token_test": daemon.token}})
                     self.assertEqual(r["status"], "ok", r)
                     got.append(r["events"][0]["payload"]["outcomes"])
-                self.assertEqual(got, [{want: 2}, {want: 2}, {want: 1}, {want: 1}, {want: 1}, {want: 2}])
+                self.assertEqual(got, [{want: 2}, {want: 1}, {want: 2}, {want: 1}, {want: 1}, {want: 1}, {want: 2}])
+        finally:
+            daemon.close()
+
+    @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
+    def test_an_hour_that_gains_a_sample_supersedes_and_a_resend_is_no_op(self):
+        # The hour is read again while it is still going, so the same facet comes back
+        # with a slot filled: a new version, not a second facet. Unchanged, it is what
+        # Anam holds already and the batch admits nothing.
+        path = self.dir / "a_WELLNESS.fit"
+
+        def poll_and_submit():
+            outcomes = []
+            for ev in run("poll", self.dir)["events"]:
+                r = run_plugin(SUBMIT, {"command": "handle", "event": ev,
+                                        "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
+                                        "secrets": {"anam_importer_token_test": daemon.token}})
+                self.assertEqual(r["status"], "ok", r)
+                outcomes.append(r["events"][0]["payload"]["outcomes"])
+            return outcomes
+
+        write_fit(path, {"monitoring": [{"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54}]})
+        daemon = Daemon("garmin", GARMIN_TYPES)
+        try:
+            self.assertEqual(poll_and_submit(), [{"admitted": 1}])
+            write_fit(path, {"monitoring": [{"timestamp": "2026-10-11T03:00:00+00:00", "heart_rate": 54},
+                                            {"timestamp": "2026-10-11T03:00:40+00:00", "heart_rate": 59}]})
+            self.assertEqual(poll_and_submit(), [{"superseded": 1}])
+            self.assertEqual(poll_and_submit(), [{"no-op": 1}])
         finally:
             daemon.close()
 
