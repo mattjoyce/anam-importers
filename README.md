@@ -374,6 +374,22 @@ Each file needs a sidecar `<file>.meta.yaml` with `date: YYYY-MM-DD`, its own da
 today's, and may add `title` and `note`. A file without one stops the run and names the sidecar
 to write. Dot-files and dot-directories are skipped.
 
+**To save a document** (a person, or an agent with the share mounted): put the file and its
+sidecar in `/mnt/Library/anam/documents` on the Library share (the gateway reads it at
+`/app/anam-library/documents`; a subfolder is fine). Name the file with its date first, as the
+folder does (`2026-01-30_pathology_glucose.pdf`), and write the sidecar with it:
+
+```yaml
+date: 2026-01-30
+title: "Pathology, glucose, 30 Jan 2026"
+note: "Optional, in the person's words"
+```
+
+The library watch fires `handle`, the whole folder goes as one snapshot (the files already held
+come back no-op) and the new file is admitted; the documents count on `GET /v1/coverage` goes up
+by one. A half-written file can wait as a dot-file. Nothing else can post bytes: the LifeOS writer
+and the conversation writer are `any_type`, which reaches every facet type and not the library.
+
 The bytes go to Anam, never into Anam's directory: each batch names its files (`documents`:
 `{path, file}`), and `anam_submit` posts each file's bytes to `POST /v1/documents?ext=` before
 the envelopes, reading them from the file so no bytes ride in a ductile event. Anam names the
