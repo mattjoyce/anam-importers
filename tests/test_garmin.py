@@ -159,10 +159,13 @@ def logged(r):
     return [line["message"] for line in r.get("logs", [])]
 
 
-# What a poll's snapshot speaks for: the seven types it sends, and health.heart-rate-day,
-# which it sends no more, so Anam reports that type's live facts absent (anam card 205).
+# What a poll's snapshot speaks for: the seven types it sends. RETIRED_TYPES is empty (anam
+# card 208), so it names nothing else. There is no test that a retired type's facts are reported
+# absent and tombstoned: with the list empty it cannot run without a test hook, and a hook is not
+# allowed. The reconciliation is covered by the snapshot tests in test_against_anam.py, and
+# anam card 205's live run proved it for health.heart-rate-day.
 POLLED_TYPES = ["activity.day.garmin", "activity.exercise-session.garmin", "activity.steps", "health.heart-rate-alert",
-                "health.heart-rate-day", "health.heart-rate.day", "health.heart-rate.hour", "health.sleep-episode"]
+                "health.heart-rate.day", "health.heart-rate.hour", "health.sleep-episode"]
 # GARMIN_TYPES are what the garmin principal lists in the daemon's importers file.
 GARMIN_TYPES = POLLED_TYPES
 
@@ -680,60 +683,6 @@ class AlertTest(unittest.TestCase):
                                             {"timestamp": "2026-10-11T03:00:40+00:00", "heart_rate": 59}]})
             self.assertEqual(poll_and_submit(), [{"superseded": 1}])
             self.assertEqual(poll_and_submit(), [{"no-op": 1}])
-        finally:
-            daemon.close()
-
-    @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")
-    def test_a_poll_leaves_the_old_figures_absent_and_retract_tombstones_them(self):
-        # Anam card 205, by the normal reconciliation: before it the importer sent three
-        # health.heart-rate-day facts a day. The new poll sends one health.heart-rate.day
-        # a day and its snapshot names the old type too, so every old fact is absent,
-        # and anam retract garmin tombstones those and nothing else.
-        garmin_db(self.dir.parent / "garmin.db", [], resting=[("2015-10-09", 61.0), ("2015-10-10", 60.0)],
-                  daily=[("2015-10-09", 59, 135), ("2015-10-10", 58, 140)])
-        frames = {}
-        for day, end in (("2015-10-09", "2015-10-10"), ("2015-10-10", "2015-10-11")):
-            summary(self.dir, day, f"{day}T00:00:00+11:00", f"{end}T00:00:00+11:00")
-            frames[day] = day_of(f"{day}T00:00:00+11:00", f"{end}T00:00:00+11:00")
-        figures = {"2015-10-09": (61, 59, 135), "2015-10-10": (60, 58, 140)}
-        old = []
-        for day, (resting, low, high) in figures.items():
-            common = {"id": day, "effective_time_frame": frames[day], "source_time": source(day, "+11:00")}
-            old += [{**common, "statistic": "resting", "heart_rate": bpm(resting),
-                     "temporal_relationship_to_physical_activity": "at rest"},
-                    {**common, "statistic": "minimum", "heart_rate": bpm(low), "descriptive_statistic": "minimum"},
-                    {**common, "statistic": "maximum", "heart_rate": bpm(high), "descriptive_statistic": "maximum"}]
-        daemon = Daemon("garmin", GARMIN_TYPES)
-        try:
-            client = Client(daemon.url, daemon.token)
-            sent = client.submit([{"type": "health.heart-rate-day", "definition_version": 2, "payload": p} for p in old])
-            self.assertEqual(sent["changed"], 6)
-
-            results = [run_plugin(SUBMIT, {"command": "handle", "event": ev,
-                                           "config": {"anam_url": daemon.url, "token_secret": "anam_importer_token_test"},
-                                           "secrets": {"anam_importer_token_test": daemon.token}})
-                       for ev in run("poll", self.dir)["events"]]
-            self.assertTrue(all(r["status"] == "ok" for r in results), results)
-            alerts = [e["payload"] for r in results for e in r["events"] if e["type"] == "anam.snapshot_absent"]
-            self.assertEqual([(a["absent"], a["live"], a["carried"], a["types"]) for a in alerts],
-                             [(6, 8, 2, POLLED_TYPES)])
-
-            daemon.stop()
-            dry = daemon.cli("retract", "garmin", "--max-fraction", "0.75")
-            self.assertEqual(dry.returncode, 0, dry.stderr)
-            self.assertIn("garmin: 8 live facets in the ledger, 2 rows in the source, 6 no longer held", dry.stdout)
-            self.assertEqual(dry.stdout.count("  health.heart-rate-day  v"), 6, dry.stdout)
-            done = daemon.cli("retract", "garmin", "--max-fraction", "0.75", "--yes")
-            self.assertEqual(done.returncode, 0, done.stderr)
-            self.assertIn("tombstoned 6 facets", done.stdout)
-            again = daemon.cli("retract", "garmin", "--max-fraction", "0.75")
-            self.assertIn("2 live facets in the ledger, 2 rows in the source, 0 no longer held", again.stdout, again.stderr)
-            daemon.start()
-
-            status, coverage = client._call("GET", "/v1/coverage")
-            self.assertEqual(status, 200, coverage)
-            live = {t["type"]: t["count"] for t in coverage["types"]}
-            self.assertEqual(live, {"health.heart-rate.day": 2})
         finally:
             daemon.close()
 

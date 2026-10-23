@@ -35,6 +35,12 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- Garmin's `poll` snapshot no longer names `health.heart-rate-day` (anam card 208): `RETIRED_TYPES`
+  in `garmin/run.py` is empty, because the live retraction of the old three-a-day facts has run.
+  The mechanism stays for the next retired type. The daemon refuses a snapshot type its principal
+  does not list, so the garmin principal's `types` keeps `health.heart-rate-day` until this
+  importer is deployed.
+
 - Garmin sends one `health.heart-rate.day` a day, its resting, minimum and maximum heart rate
   as fields, in place of three `health.heart-rate-day` facts a day (anam card 205). A figure Garmin
   left empty is a field the day does not carry; a day assumed because Garmin gave no interval

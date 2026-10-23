@@ -56,11 +56,13 @@ HEART_TYPE = "health.heart-rate.day"
 HOUR_TYPE = "health.heart-rate.hour"
 # RETIRED_TYPES are types this importer sent once and sends no more. A poll's snapshot
 # still names them, carrying none, so Anam reports their live facts absent and the
-# operator's anam retract garmin tombstones them by the normal reconciliation (anam
-# card 205: health.heart-rate-day's three figures a day became health.heart-rate.day's
-# one fact). The daemon's importers file must keep listing them for garmin while they
-# are here, or it refuses the snapshot.
-RETIRED_TYPES = ("health.heart-rate-day",)
+# operator's anam retract garmin tombstones them by the normal reconciliation. A retired
+# type is named here until its facts are tombstoned live, then removed; the daemon's
+# importers file must keep listing it for garmin while it is here, or it refuses the
+# snapshot. The list is empty now: anam card 205 retired health.heart-rate-day (three
+# facts a day, now health.heart-rate.day's one), and card 208 removed it once the live
+# retraction had run.
+RETIRED_TYPES: Tuple[str, ...] = ()
 STEPS_TYPE = "activity.steps"
 DAY_TYPE = "activity.day.garmin"
 SESSION_TYPE = "activity.exercise-session.garmin"

@@ -490,8 +490,7 @@ keeps a workout open until the next one starts; another cap writes other records
 
 Not deployed, and not to be switched on alone. Source `garmin`, types
 `[health.heart-rate-alert, health.heart-rate.hour, activity.exercise-session.garmin, health.sleep-episode,
-health.heart-rate.day, activity.steps, activity.day.garmin, health.heart-rate-day]`, the last kept while its
-poll's snapshot names it (below), secret `anam_importer_token_garmin`, principal
+health.heart-rate.day, activity.steps, activity.day.garmin]`, secret `anam_importer_token_garmin`, principal
 `anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
 `health-db`, and a facet's identity includes its source, so turning this on while that worker
 runs would hold every alert twice. It goes live when the
@@ -521,9 +520,11 @@ Daily heart rate comes from the same file: each day's resting figure (`resting_h
 minimum and maximum (`daily_summary`), as one `health.heart-rate.day` a day, each figure
 `{value, unit}` in beats per minute and a figure Garmin left empty not there.
 Open mHealth has no body for one day's several statistics, so the shape is Anam's. They used to be
-three `health.heart-rate-day` facets a day, one Open mHealth `heart-rate-2.0` body each;
-`poll`'s snapshot still names that type and carries none of it, so Anam reports the old facts
-absent and the operator's `anam retract garmin` tombstones them. Steps are a
+three `health.heart-rate-day` facets a day, one Open mHealth `heart-rate-2.0` body each. Those
+facts are tombstoned, and `poll`'s retired-types list (`RETIRED_TYPES` in `garmin/run.py`) is
+empty again. A type goes on that list when the importer stops sending it: the snapshot names it
+with none carried, Anam reports its live facts absent, and the operator's `anam retract garmin`
+tombstones them, after which the type comes off the list. Steps are a
 `activity.steps` per day (Open mHealth `step-count-3.0`), and the rest of `daily_summary` a
 `activity.day.garmin` as Garmin wrote it, so nothing the `health-db` summaries carried is lost.
 `activity.day.garmin` is the importer's own Definition (once `activity.day`, its bodies in

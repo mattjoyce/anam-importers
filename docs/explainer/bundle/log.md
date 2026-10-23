@@ -34,3 +34,8 @@ Anam-importers at a4d2155 (master, after the taxonomy merge). The purpose page's
 
 - Code: Garmin sends an hour's heart rate, `health.heart-rate.hour` (a new Definition, the importer's own), read from the monitoring FIT files beside the alert. Each UTC hour with a sample is one facet of 60 slots, slot *i* minute *i*, the watch's reading in that minute or `null` for a minute with none; an hour with no sample is no facet, a minute sampled twice keeps the last sample, and nothing is averaged or bucketed. A monitoring message's 16-bit short timestamp is resolved against the last full one in its file, and a sample that cannot be placed is logged and makes the run no snapshot. Reading the file rather than GarminDB's `monitoring_hr` keeps the samples that table drops and the UTC instants it rewrites as local wall clock.
 - Bundle: the Definition manifest page lists fourteen types in fourteen files; the Garmin page and the ids decision name the hour, whose id is the bare RFC 3339 instant because no other type of this source keys on one. Page counts are unchanged.
+
+## 2026-10-24, anam card 208
+
+- Code: Garmin's `poll` snapshot no longer names `health.heart-rate-day`. `RETIRED_TYPES` is empty, because the live retraction card 205 set up has run; the mechanism stays for the next retired type. The test that proved the retraction against a real daemon is gone, since an empty list leaves nothing for it to set without a test hook.
+- Bundle: the Garmin page says the retired list is empty and what it is for. Page counts are unchanged.
