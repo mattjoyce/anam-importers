@@ -135,9 +135,31 @@ def run(command, fit_dir, **config):
     activities.mkdir(exist_ok=True)
     sleep = Path(fit_dir).parent / "Sleep"
     sleep.mkdir(exist_ok=True)
-    request = {"command": command, "config": {"fit_dir": str(fit_dir), "activities_dir": str(activities),
-                                              "sleep_dir": str(sleep), "garmin_db": str(db), "person_id": "person-a",
-                                              **config}}
+    base_config = {"fit_dir": str(fit_dir), "activities_dir": str(activities),
+                   "sleep_dir": str(sleep), "garmin_db": str(db), "person_id": "person-a",
+                   **config}
+    if command == "poll":
+        request = {"command": "poll", "config": base_config}
+        out = subprocess.run([UV, "run", "-q", "--script", str(GARMIN)], input=json.dumps(request),
+                             capture_output=True, text=True, check=True, timeout=120)
+        r = json.loads(out.stdout)
+        # Simulate pipeline: route window events back to handle
+        all_events = []
+        all_logs = list(r.get("logs", []))
+        for ev in r.get("events", []):
+            if ev.get("type") == "anam_garmin.window":
+                req = {"command": "handle", "config": base_config, "event": ev}
+                out2 = subprocess.run([UV, "run", "-q", "--script", str(GARMIN)], input=json.dumps(req),
+                                      capture_output=True, text=True, check=True, timeout=120)
+                r2 = json.loads(out2.stdout)
+                all_events.extend(r2.get("events", []))
+                all_logs.extend(r2.get("logs", []))
+            else:
+                all_events.append(ev)
+        r["events"] = all_events
+        r["logs"] = all_logs
+        return r
+    request = {"command": command, "config": base_config}
     out = subprocess.run([UV, "run", "-q", "--script", str(GARMIN)], input=json.dumps(request),
                          capture_output=True, text=True, check=True, timeout=120)
     return json.loads(out.stdout)

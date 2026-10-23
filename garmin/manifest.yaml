@@ -9,7 +9,7 @@ description: "Shapes what a Garmin watch recorded into Anam envelopes and emits 
 commands:
   - name: handle
     type: read
-    description: "After a GarminDB sync: the alerts, heart rate hours and sessions in the FIT files modified in the last lookback_days (default 3), and garmin.db's days from then on. Idempotent in Anam: what is already held is a no-op."
+    description: "After a GarminDB sync: the alerts, heart rate hours and sessions in the FIT files modified in the last lookback_days (default 3), and garmin.db's days from then on. Or on an anam_garmin.window event from poll: shape only that window's files and days and emit anam_garmin.batch events labelled with the snapshot and part numbers. Idempotent in Anam: what is already held is a no-op."
     idempotent: true
     retry_safe: true
     input_schema: {}
@@ -26,7 +26,7 @@ commands:
             - payload.batch
   - name: poll
     type: read
-    description: "Every alert and every heart rate hour in every FIT file under fit_dir, every session under activities_dir and every day in garmin_db, in batches: the resend-everything mode, labelled one snapshot unless a FIT file would not decode. The snapshot also names health.heart-rate-day, which it no longer sends, so its facts are reported absent for the operator to retract."
+    description: "Every alert and every heart rate hour in every FIT file under fit_dir, every session under activities_dir and every day in garmin_db: plan windows by calendar month, return anam_garmin.window events so each window is sent under the gateway stdout cap; handle processes each window and emits anam_garmin.batch events."
     idempotent: true
     retry_safe: true
     input_schema: {}
@@ -36,11 +36,8 @@ commands:
     values:
       consume: []
       emit:
-        - event: anam_garmin.batch
-          values:
-            - payload.envelopes
-            - payload.definitions
-            - payload.batch
+        - event: anam_garmin.window
+          values: []
   - name: health
     type: read
     description: "fit_dir, activities_dir, sleep_dir and garmin_db are readable, every FIT file decodes, every day and night is timed by Garmin, and everything in them conforms to its Definition."
