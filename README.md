@@ -136,7 +136,7 @@ Needs an Anam with importer snapshots (a14ee51 or later). An older one refuses t
 
 ## Wiring an importer into a gateway (Withings)
 
-Not deployed. What it takes, in order:
+Live on the unraid gateway since 2026-10-10 (anam-importers 9cb733b). What it takes, in order:
 
 1. **Token.** `openssl rand -hex 32` makes the importer's token. Its hash goes into Anam's
    `importers_file` (`ANAM_IMPORTERS_FILE`), and the daemon restarts to read it:
@@ -220,16 +220,14 @@ Not deployed. What it takes, in order:
 4. `ductile plugin lock anam_withings`, `ductile plugin lock anam_submit`, `ductile config lock`,
    reload.
 
-While Anam's binary still carries its own `withings` worker, both paths write the same facets
-under the same source, and the importer's batches come back `no-op`, except where the two
-render a value differently (below). Once they agree, the worker and its `imports.yaml` entry
-go, and a later Anam release drops `health.measurement` from the binary so this folder's copy
-becomes the registered one. The type is `health.measurement.withings`, Withings'
+Anam's own `withings` worker and its `imports.yaml` entry are gone (anam card 54), and Anam's
+binary no longer carries `health.measurement` (card 86), so this folder's copy is the registered
+one. The type is `health.measurement.withings`, Withings'
 own leaf, v1 with the earlier type's v4 rules; the old body is in `definitions/history/`.
 
 ## Wiring an importer into a gateway (blood pressure)
 
-Not deployed. The same steps as Withings, with these differences:
+Live on the unraid gateway since 2026-10-10 (anam-importers 9cb733b). The same steps as Withings, with these differences:
 
 1. **Token.** Source `bp-csv` (the built-in worker's), types `[health.blood-pressure]`, secret
    `anam_importer_token_bp_csv`, principal `anam-submit-bp-csv`.
@@ -301,7 +299,7 @@ importer is 234 `no-op`: it is the built-in `bpcsv` worker's logic, moved, so th
 
 ## Wiring an importer into a gateway (DreamStation)
 
-Not deployed. Source `dreamstation`, types `[health.cpap-session.dreamstation]`, secret
+Live on the unraid gateway since 2026-10-10 (anam-importers ba8b2e3). Source `dreamstation`, types `[health.cpap-session.dreamstation]`, secret
 `anam_importer_token_dreamstation`, principal `anam-submit-dreamstation`. Unlike the other
 two, this importer registers its own Definition: Anam's binary does not bundle
 `health.cpap-session.dreamstation` (once `health.cpap-session`, its body now in
@@ -334,7 +332,7 @@ it is slow (about 90 s for 2,600 small files); on local disk, under 3 s.
 
 ## Wiring an importer into a gateway (records)
 
-Not deployed. Source `records`, the same name Anam's built-in worker used, so the cut-over is
+Live on the unraid gateway since 2026-10-14 (anam-importers 5e92e46). Source `records`, the same name Anam's built-in worker used, so the cut-over is
 no-op. Types are the ones the worker's scope named: `health.lab-result`, `health.lab-panel`, `health.condition`,
 `health.donation`, `health.weight`, the `health.medication.*` and `health.illness.*` types, the trip types `place.trip.departed`, `place.trip.arrived`, `place.trip.returned` and `place.trip.flight`, `health.encounter`,
 `activity.gym-visit`, `activity.exercise-session.technogym` and `activity.exercise-session.strong` (once one `activity.exercise-session`), `health.blood-pressure` and `record.edge` (was `record.note`). Secret
@@ -365,7 +363,7 @@ is not reported absent.
 
 ## Wiring an importer into a gateway (documents)
 
-Not deployed. Source `documents`, the name Anam's built-in worker used, so the
+Live on the unraid gateway since 2026-10-14 (anam-importers 5e92e46). Source `documents`, the name Anam's built-in worker used, so the
 cut-over is no-op: each file's identity is its folder-relative path, and the payload is the
 sidecar's fields plus the `path`, `sha256`, `bytes` and `media_type` measured from the file, as
 the worker wrote them. Type `record.document`. Secret `anam_importer_token_documents`, principal
@@ -398,7 +396,7 @@ snapshot of `record.document`. `anam_submit` needs read access to the same folde
 
 ## Wiring an importer into a gateway (links)
 
-Not deployed. A `record.link` is a file Anam remembers but does not hold: a note
+Live on the unraid gateway. A `record.link` is a file Anam remembers but does not hold: a note
 in a vault, a photo in a camera roll, a screenshot. The importer sends each file's name, hash,
 size, media type and date and never its bytes; it calls nothing but `anam_submit`'s batch, and
 `anam_submit` posts no document for it. Anam admits a `record.link` whose sha256 its library does
@@ -488,13 +486,12 @@ keeps a workout open until the next one starts; another cap writes other records
 
 ## Wiring an importer into a gateway (Garmin)
 
-Not deployed, and not to be switched on alone. Source `garmin`, types
+Live on the unraid gateway since 2026-10-11 (anam-importers 4b989a4). Source `garmin`, types
 `[health.heart-rate-alert, health.heart-rate.hour, activity.exercise-session.garmin, health.sleep-episode,
 health.heart-rate.day, activity.steps, activity.day.garmin]`, secret `anam_importer_token_garmin`, principal
-`anam-submit-garmin`. Anam's `health-db` worker sends the same alerts today under source
-`health-db`, and a facet's identity includes its source, so turning this on while that worker
-runs would hold every alert twice. It goes live when the
-`health-db` facets retire.
+`anam-submit-garmin`. Anam's `health-db` worker, which sent the same alerts under source
+`health-db`, is retired (anam card 55), so no alert is held twice; a facet's identity includes its
+source, which is why the two could not run together.
 
 It reads the monitoring FIT files GarminDB downloads (`FitFiles/Monitoring`) with Garmin's FIT
 SDK, which its uv script header pins, and decodes FIT event 66, the abnormal high heart rate
@@ -587,7 +584,7 @@ resend was all no-op. Read over a network share it took 9 minutes (160 s of CPU)
 
 ## Wiring an importer into a gateway (Concept2)
 
-Not deployed. Source `concept2`, type `[activity.exercise-session.concept2]`, secret `anam_importer_token_concept2`,
+Live on the unraid gateway since 2026-10-11 (anam-importers 36a7488). Source `concept2`, type `[activity.exercise-session.concept2]`, secret `anam_importer_token_concept2`,
 principal `anam-submit-concept2`, and a second secret, the Logbook's own token, below.
 
 ErgData syncs each workout the monitor records to the Concept2 Online Logbook, and its API
@@ -655,7 +652,7 @@ scratch daemon with a resend all no-op.
 
 ## Wiring an importer into a gateway (OwnTracks)
 
-Not deployed. Source `owntracks`, type `[place.track]`, secret `anam_importer_token_owntracks`,
+Live on the unraid gateway since 2026-10-12 (anam-importers 2640953). Source `owntracks`, type `[place.track]`, secret `anam_importer_token_owntracks`,
 principal `anam-submit-owntracks`.
 
 The phone runs OwnTracks in HTTP mode and posts each fix to a receiver at the edge, which keeps

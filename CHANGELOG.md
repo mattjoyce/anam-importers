@@ -147,6 +147,10 @@ All notable changes to this repo. The format follows
   11 hours late. The ids and the Definition are unchanged; a `poll` resends every night with the
   corrected instants and each facet supersedes.
 
+- The README's "Wiring an importer into a gateway" sections say which importers are live on the unraid
+  gateway, and since when, in place of "Not deployed". The Withings section no longer says the
+  built-in worker still runs, and Garmin's no longer says `health-db` does.
+
 ### Added
 
 - Config keys for values that were fixed (anam card 152), each defaulting to the old value:
