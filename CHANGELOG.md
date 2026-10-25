@@ -9,6 +9,8 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `agentmail/fetch.py` copies an AgentMail inbox's attachments into a spool folder, byte-exact, with a
+  `manifest.csv` (anam card 242). Slice one: it sends nothing to Anam.
 - `garmin/` sends an hour's heart rate (anam card 129): `health.heart-rate.hour`, one facet a UTC
   hour that has a sample, read from the watch's monitoring FIT files beside the alert. A payload
   is 60 slots, slot *i* minute *i*, each the watch's reading in that minute or `null` for one it
