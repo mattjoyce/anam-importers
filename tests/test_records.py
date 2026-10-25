@@ -28,6 +28,7 @@ records:
   - type: health.lab-result
     id: acl:10000001/sodium
     collected: 2001-02-02 09:10
+    source_time: {value: 2001-02-02 09:10, zone: Australia/Sydney, basis: source}
     analyte: Sodium
     value: "137"
     value_num: 137.0
@@ -37,6 +38,7 @@ records:
   - type: health.lab-result
     id: 20240916
     collected: 2024-09-16 07:15
+    source_time: {value: 2024-09-16 07:15, zone: Australia/Sydney, basis: source}
     analyte: "Ferritin: serum"
     value: '1,000'
     value_num: 1_000.50
@@ -46,13 +48,13 @@ records:
       kept
 """
 
-# WEIGHTS holds the note beside the weights. record.edge v2 requires source_time, and the
-# offset in it is what places the note: the note was written in Australia/Sydney, which
+# WEIGHTS holds the note beside the weights. health.weight v7 and record.edge v2 require
+# source_time, and the offset in it is what places the note: the note was written in Australia/Sydney, which
 # kept +10:00 on 2 October 2026.
 WEIGHTS = """\
 records:
-  - {type: health.weight, id: 0777, date: 2026-10-01 07:00, kg: 80.0, bmi: 24.10}
-  - {type: health.weight, id: w-2, date: 2026-10-02 07:00, kg: 82.5e0, logged_as: yes}
+  - {type: health.weight, id: 0777, date: 2026-10-01 07:00, source_time: {value: 2026-10-01 07:00, zone: Australia/Sydney, offset: "+10:00", basis: source}, kg: 80.0, bmi: 24.10}
+  - {type: health.weight, id: w-2, date: 2026-10-02 07:00, source_time: {value: 2026-10-02 07:00, zone: Australia/Sydney, offset: "+10:00", basis: source}, kg: 82.5e0, logged_as: yes}
   - type: record.edge
     id: n-1
     at: 2026-10-02 08:00

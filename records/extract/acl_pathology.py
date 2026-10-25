@@ -23,7 +23,7 @@ written at 00:00 with `time_unknown: true`.
 
 Each record's source_time keeps the collection time as the report printed it, or its date
 alone when it printed none, read in Australia/Sydney (anam card 198). The report prints no
-zone, so the basis is an assumption, and the script says so once per run on stderr; it is
+zone, and the records files state the zone they are read in, so the basis is source; it is
 the zone health.lab-result and health.lab-panel read collected in. A collection time that
 zone skips or repeats (daylight saving) stops the run: it names no one instant.
 
@@ -47,8 +47,8 @@ METHOD = "records/extract/acl_pathology.py"
 VERSION = 2
 
 # ZONE is where health.lab-result and health.lab-panel read collected. An Australian
-# Clinical Labs report prints no zone, so a record read in it says the zone is an
-# assumption. Not configurable: the Definitions place the draw, and another zone here
+# Clinical Labs report prints no zone; the records file states it, so a record says the
+# basis is source. Not configurable: the Definitions place the draw, and another zone here
 # would make source_time say an instant fact_time denies.
 ZONE = "Australia/Sydney"
 
@@ -61,7 +61,7 @@ def collection_time(day: str, time_of_day, where: str) -> dict:
         clock.local_instant(datetime.strptime(f"{day} {time_of_day or '00:00'}", "%Y-%m-%d %H:%M"), ZONE)
     except clock.ClockError as exc:
         raise SystemExit(f"{where}: {exc}") from exc
-    return clock.source_time(value, ZONE, "assumption")
+    return clock.source_time(value, ZONE, "source")
 
 TERMINATORS = re.compile(
     r"^\s*(This request has other tests|All tests on this request|Glucose Reference Ranges|"
@@ -297,7 +297,7 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"collection times are read as {ZONE} wall clock (basis assumption): the reports print no zone",
+    print(f"collection times are read as {ZONE} wall clock (basis source): the reports print no zone, the records file states it",
           file=sys.stderr)
     for pdf in args.pdfs:
         p = Path(pdf)

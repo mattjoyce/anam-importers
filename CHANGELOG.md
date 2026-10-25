@@ -9,6 +9,13 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `records/extract/add_source_time.py` (anam card 198): gives every record of `health.weight`,
+  `health.lab-result`, `health.lab-panel`, `health.blood-pressure`, `health.encounter` and
+  `health.donation` the `source_time` block their Definitions now require, in a staging folder and
+  never in the records folder. The block states `Australia/Sydney` with `basis: source` and, for
+  weight, the offset the date had; a wall clock Sydney skips or repeats stops the run and is listed.
+  The change is textual, so a diff against the original is the added lines alone, and `--verify`
+  checks a staged folder against its originals and their recorded hashes.
 - `garmin/` sends an hour's heart rate (anam card 129): `health.heart-rate.hour`, one facet a UTC
   hour that has a sample, read from the watch's monitoring FIT files beside the alert. A payload
   is 60 slots, slot *i* minute *i*, each the watch's reading in that minute or `null` for one it
@@ -35,6 +42,12 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `bp_csv/` carries `health.blood-pressure` v8 (anam card 198), which requires `source_time`; the
+  importer already sent it, so only the Definition's copy moves. `acl_pathology.py` writes
+  `basis: source` where it wrote `assumption`, and `fitbit_weight.py` writes `source_time` with the
+  offset for each log time, since the records files state the zone. These deploy with anam's
+  `health.weight` v7, `health.lab-result` v3, `health.lab-panel` v3 and `health.blood-pressure` v8,
+  and with the records folder swapped for the staged one, never before.
 - Garmin's `poll` snapshot no longer names `health.heart-rate-day` (anam card 208): `RETIRED_TYPES`
   in `garmin/run.py` is empty, because the live retraction of the old three-a-day facts has run.
   The mechanism stays for the next retired type. The daemon refuses a snapshot type its principal
