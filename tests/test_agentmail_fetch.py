@@ -141,6 +141,34 @@ class FetchTest(unittest.TestCase):
         self.assertTrue((self.spool / fetch.stem("<m1@mail.test>") / "evil.pdf").is_file())
         self.assertFalse((Path(self.tmp.name) / "evil.pdf").exists())
 
+    def test_a_hostile_filename_is_cleaned_and_a_long_one_shortened_but_kept_distinct(self):
+        self.assertEqual(fetch.safe_name("a\x00b\nc.pdf"), "abc.pdf")
+        long1, long2 = "x" * 400 + "1.pdf", "x" * 400 + "2.pdf"
+        a, b = fetch.safe_name(long1), fetch.safe_name(long2)
+        self.assertLessEqual(len(a.encode()), fetch.MAX_NAME_BYTES)
+        self.assertTrue(a.endswith(".pdf"))
+        self.assertNotEqual(a, b)
+
+    def test_a_failed_write_is_a_failed_row_not_a_crash(self):
+        self.fake.files = {"a1": (PDF, len(PDF)), "a2": (PDF2, len(PDF2))}
+        self.fake.messages = [message("<m1@mail.test>", [att("a1", "Invoice-1.pdf", len(PDF))]),
+                              message("<m2@mail.test>", [att("a2", "Invoice-2.pdf", len(PDF2))])]
+        self.spool.mkdir(parents=True)
+        (self.spool / fetch.stem("<m1@mail.test>")).write_bytes(b"a file where the folder should be")
+        rows = fetch.run(self.inbox, self.spool, 50)
+        self.assertEqual([r["status"] for r in rows], ["failed", "ok"])
+        self.assertIn("write", rows[0]["detail"])
+
+    def test_manifest_cells_that_would_run_as_formulas_are_quoted(self):
+        self.fake.files = {"a1": (PDF, len(PDF))}
+        m = message("<m1@mail.test>", [att("a1", "Invoice-1.pdf", len(PDF))])
+        m["subject"], m["from"] = "=HYPERLINK(\"http://x.test\")", "@evil <e@x.test>"
+        self.fake.messages = [m]
+        fetch.run(self.inbox, self.spool, 50)
+        row = self.manifest()[0]
+        self.assertTrue(row["subject"].startswith("'="))
+        self.assertTrue(row["from"].startswith("'@"))
+
     def test_the_api_key_is_not_sent_to_the_download_link(self):
         self.fake.files = {"a1": (PDF, len(PDF))}
         self.fake.messages = [message("<m1@mail.test>", [att("a1", "Invoice-X-0001.pdf", len(PDF))])]

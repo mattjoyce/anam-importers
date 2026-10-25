@@ -76,10 +76,31 @@ def stem(message_id: str) -> str:
     return hashlib.sha256(message_id.encode("utf-8")).hexdigest()[:16]
 
 
+# Not configurable: a filesystem's name limit is 255 bytes, and a name this long keeps room for ".part".
+MAX_NAME_BYTES = 200
+
+
 def safe_name(name: str) -> str:
-    """A filename with no directory in it, so a message cannot write outside its folder."""
-    base = Path(name.replace("\\", "/")).name.strip().lstrip(".")
+    """A filename with no directory, control character or excess length in it, so a message
+    cannot write outside its folder or make a write fail. A long name keeps its extension and
+    gains a hash of the whole name, so two long names stay two files."""
+    base = Path(name.replace("\\", "/")).name
+    base = "".join(c for c in base if c.isprintable()).strip().lstrip(".")
+    if len(base.encode("utf-8")) > MAX_NAME_BYTES:
+        ext = Path(base).suffix[:16]
+        digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:12]
+        head = base[: -len(ext)] if ext else base
+        head = head.encode("utf-8")[: MAX_NAME_BYTES - len(ext) - 13].decode("utf-8", "ignore")
+        base = f"{head}-{digest}{ext}"
     return base or "attachment"
+
+
+def cell(value: Any) -> Any:
+    """A manifest cell a spreadsheet will not run as a formula: sender and subject are the
+    mail's, not ours, so a leading = + - @ tab or CR gets a quote in front."""
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + value
+    return value
 
 
 def check(body: bytes, expected: Optional[int], content_type: str, filename: str) -> Optional[str]:
@@ -111,10 +132,14 @@ def fetch_one(inbox: Inbox, spool: Path, msg: Dict[str, Any], att: Dict[str, Any
         if why:
             row.update(status="failed", detail=why)
             return row
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".part")
-        tmp.write_bytes(body)
-        tmp.replace(path)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + ".part")
+            tmp.write_bytes(body)
+            tmp.replace(path)
+        except (OSError, ValueError) as exc:
+            row.update(status="failed", detail=f"write: {exc}")
+            return row
     row.update(bytes=str(len(body)), sha256=hashlib.sha256(body).hexdigest())
     return row
 
@@ -125,7 +150,7 @@ def run(inbox: Inbox, spool: Path, page_size: int) -> List[Dict[str, Any]]:
     with (spool / MANIFEST).open("w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=COLUMNS)
         w.writeheader()
-        w.writerows(rows)
+        w.writerows({k: cell(v) for k, v in r.items()} for r in rows)
     return rows
 
 
