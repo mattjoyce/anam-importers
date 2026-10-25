@@ -26,6 +26,7 @@ Commands:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -233,11 +234,12 @@ def omh(row: Dict[str, str], clock: Clock = ASSUMED) -> Dict[str, Any]:
     source_time says date_excel was read in clock's zone, and why (anam card 198).
     A wall clock the zone skips or repeats is a ClockError: no instant can be said
     for it without a guess."""
+    where = f"reading {row['date_excel']} #{row['reading']}"
     wall = datetime.strptime(row["date_excel"], "%Y-%m-%d %H:%M:%S")
     at = clk.local_instant(wall, clock.zone)
     body: Dict[str, Any] = {
-        "systolic_blood_pressure": {"value": number(row["systolic"]), "unit": "mmHg"},
-        "diastolic_blood_pressure": {"value": number(row["diastolic"]), "unit": "mmHg"},
+        "systolic_blood_pressure": {"value": number(row["systolic"], f"{where} systolic"), "unit": "mmHg"},
+        "diastolic_blood_pressure": {"value": number(row["diastolic"], f"{where} diastolic"), "unit": "mmHg"},
         "effective_time_frame": {"date_time": at.isoformat()},
         "source_time": clk.source_time(row["date_excel"], clock.zone, clock.basis),
     }
@@ -249,10 +251,19 @@ def omh(row: Dict[str, str], clock: Clock = ASSUMED) -> Dict[str, Any]:
     return {**body, **rest}
 
 
-def number(text: str) -> Any:
+def number(text: str, where: str) -> Any:
     """The export's numeral as a JSON number: an integer when it has no fraction,
-    so "137.0" is 137.0 and "137" is 137, nothing rounded."""
-    return int(text) if text.lstrip("-").isdigit() else float(text)
+    so "137.0" is 137.0 and "137" is 137, nothing rounded. The value is kept, not
+    the text: "137.50" becomes 137.5 and "1e2" becomes 100.0. Text that is not a
+    finite number ("abc", "nan", "inf") fails the run naming where, since JSON has
+    no NaN or infinity and a bad reading must not be written as one."""
+    try:
+        v = int(text) if text.lstrip("-").isdigit() else float(text)
+    except ValueError:
+        v = math.nan
+    if isinstance(v, float) and not math.isfinite(v):
+        raise ductile.Failure(f"{where} is not a number: {text!r}; nothing of it is sent", retry=False)
+    return v
 
 
 def exported_on(path: Path, zone: str = ZONE) -> date:

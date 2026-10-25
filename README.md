@@ -307,6 +307,14 @@ two, this importer registers its own Definition: Anam's binary does not bundle
 
 It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
 which its uv script header pins to a tag, fetched as a zip archive so the gateway needs no git.
+
+What the tag pin does. It fixes the code a run uses: `v0.1.0` is the same decoder on every run and
+every machine until someone edits the header. It does not promise that tag's content stays put,
+because a tag in a git repository can be deleted and re-pointed upstream; only a commit hash is
+fixed, so pin to one if that matters. It also says nothing about whether the decoder reads new
+firmware correctly. A card from a firmware the decoder has not seen can fail the run or, worse,
+decode wrongly, so a new device or firmware update is a reason to run `health` and compare the
+sessions before trusting it.
 The card copy is refreshed every few months by copying the SD card again, so a `folder_watch` on
 the copy's `LAST.TXT` runs `handle`, and every run sends the whole card: the old sessions come
 back `no-op` and the new ones are admitted.

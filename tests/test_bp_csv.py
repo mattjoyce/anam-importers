@@ -9,6 +9,12 @@ from pathlib import Path
 from tests.helpers import REPO, Daemon, run_plugin
 
 BP = REPO / "bp_csv" / "run.py"
+
+import importlib.util  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location("bp_csv_run", BP)
+bp_csv = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(bp_csv)
 SUBMIT = REPO / "anam_submit" / "run.py"
 
 # The fixture of the built-in worker's own tests (internal/capture/bpcsv): "\t "-padded
@@ -263,6 +269,36 @@ class ShapeTest(unittest.TestCase):
                             "event": {"type": "bp.export", "payload": {"path": str(old), "change_type": "created"}}})
         self.assertEqual(r["status"], "ok", r)
         self.assertEqual(r["events"], [])
+
+
+class NumberTest(unittest.TestCase):
+    def test_an_integer_stays_an_integer_and_a_fraction_a_float(self):
+        for text, want in {"137": 137, "-5": -5, "137.0": 137.0, "137.50": 137.5, "1e2": 100.0}.items():
+            with self.subTest(text):
+                got = bp_csv.number(text, "reading x #1 systolic")
+                self.assertEqual(got, want)
+                self.assertIs(type(got), type(want))
+
+    def test_the_value_is_kept_and_not_the_text(self):
+        self.assertEqual(json.dumps(bp_csv.number("137.50", "w")), "137.5")
+
+    def test_a_non_finite_or_unreadable_numeral_names_its_row(self):
+        for text in ["nan", "NaN", "inf", "-inf", "Infinity", "abc", "1,5", "²"]:
+            with self.subTest(text), self.assertRaises(bp_csv.ductile.Failure) as caught:
+                bp_csv.number(text, "reading 2001-1-24 06:36:00 #1 systolic")
+            self.assertIn("reading 2001-1-24 06:36:00 #1 systolic", str(caught.exception))
+            self.assertFalse(caught.exception.retry)
+
+
+class BadNumeralTest(unittest.TestCase):
+    def test_a_run_over_a_nan_reading_fails_naming_the_reading_and_sends_nothing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = export(Path(tmp), "BloodPressure_10-October-2026", [ROWS[0].replace("117.0", "nan"), ROWS[1]])
+            r = run_plugin(BP, {"command": "handle", "config": {"person_id": "person-a"},
+                                "event": {"type": "bp.export", "payload": {"path": str(path), "change_type": "created"}}})
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("reading 2001-1-24 06:36:00 #1 systolic", r["error"])
+        self.assertFalse(r["retry"])
 
 
 @unittest.skipUnless(os.environ.get("ANAM_BIN"), "ANAM_BIN names no anam binary")

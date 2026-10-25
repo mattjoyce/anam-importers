@@ -27,7 +27,7 @@ Commands:
 - poll   : every records file under records_dir, in batches, as one snapshot
 - handle : on a folder_watch event, the same as poll: a record may move between
            files, so one file alone cannot be checked for duplicates
-- health : records_dir is readable and every file in it reads
+- health : records_dir is readable and every file in it parses (a poll also shapes the records)
 """
 
 from __future__ import annotations
@@ -157,12 +157,16 @@ def go_text(v: Any) -> str:
     return str(v)
 
 
-def _loader() -> Any:
+def _loader(fast: bool = False) -> Any:
     """A YAML loader that composes nodes and resolves nothing, so each scalar keeps
-    its text and its style for resolve to read."""
+    its text and its style for resolve to read. fast asks for libyaml's parser when
+    PyYAML was built with it (about ten times quicker), for a caller that only
+    checks a file parses; the shaping reads nodes the same either way."""
     import yaml
 
-    class Loader(yaml.SafeLoader):
+    base = yaml.CSafeLoader if fast and getattr(yaml, "__with_libyaml__", False) else yaml.SafeLoader
+
+    class Loader(base):  # type: ignore[valid-type, misc]
         pass
 
     Loader.yaml_implicit_resolvers = {}
@@ -223,6 +227,28 @@ def records_file(path: Path) -> List[Dict[str, Any]]:
             raise BadRecords(f"{path} record {i}: not a mapping")
         out.append(rec)
     return out
+
+
+def check_file(path: Path) -> None:
+    """Raise if path would not read as a records file: it opens, it parses, and it is
+    a mapping of the known fields with a records list. This is the parse half of
+    records_file, without shaping every record, which is where a poll spends its time
+    on a large folder (the pure-Python parser, about nine tenths of it)."""
+    import yaml
+
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ductile.Failure(f"records file {path}: {exc}", retry=True) from exc
+    try:
+        root = yaml.compose(text, Loader=_loader(fast=True))
+    except yaml.YAMLError as exc:
+        raise BadRecords(f"{path}: {exc}") from exc
+    if not isinstance(root, yaml.MappingNode):
+        raise BadRecords(f"{path}: not a mapping of {', '.join(FIELDS)}")
+    recs = [v for k, v in root.value if k.value == "records"]
+    if len(recs) != 1 or not isinstance(recs[0], yaml.SequenceNode) or not recs[0].value:
+        raise BadRecords(f"{path} declares no records")
 
 
 def envelope(rec: Dict[str, Any], person: str, where: str) -> Dict[str, Any]:
@@ -298,9 +324,10 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
-    paths, envs = scan(config, "health-check")
-    types = sorted({e["type"] for e in envs})
-    return ductile.ok(f"{len(envs)} record(s) in {len(paths)} file(s), of {len(types)} type(s)")
+    paths = files(config)
+    for path in paths:
+        check_file(path)
+    return ductile.ok(f"{len(paths)} file(s) in records_dir read")
 
 
 if __name__ == "__main__":

@@ -185,6 +185,30 @@ class Files(unittest.TestCase):
         self.assertEqual(r["status"], "error")
         self.assertFalse(r["retry"])
 
+    def test_health_reads_the_files_and_names_a_file_that_does_not_parse(self):
+        with folder({"a.yaml": LABS, "b.json": '{"records": [{"type": "a.b", "id": "x"}]}'}) as d:
+            r = run("health", d)
+        self.assertEqual(r["status"], "ok", r)
+        self.assertIn("2 file(s)", r["result"])
+        for name, text in {"bad syntax": "records: [{type: a.b, id: x\n", "no records": "document: {name: x}\n",
+                           "not a mapping": "- a\n"}.items():
+            with self.subTest(name), folder({"ok.yaml": LABS, "bad.yaml": text}) as d:
+                r = run("health", d)
+                self.assertEqual(r["status"], "error", r)
+                self.assertIn("bad.yaml", r["error"])
+                self.assertFalse(r["retry"])
+
+    def test_health_leaves_shaping_and_identity_to_a_poll(self):
+        one = "records: [{type: health.lab-result, id: x}]\n"
+        with folder({"a.yaml": one, "b.yaml": one}) as d:
+            self.assertEqual(run("health", d)["status"], "ok")
+            self.assertEqual(run("poll", d)["status"], "error")
+
+    def test_health_of_a_missing_folder_is_not_retried(self):
+        r = run("health", "/nonexistent/records")
+        self.assertEqual(r["status"], "error")
+        self.assertFalse(r["retry"])
+
     def test_handle_resends_the_whole_folder(self):
         with folder({"a.yaml": LABS}) as d:
             r = run_plugin(PLUGIN, {"command": "handle", "config": {"records_dir": d, "person_id": "p"},
