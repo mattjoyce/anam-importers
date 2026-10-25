@@ -70,6 +70,18 @@ class FitbitWeight(unittest.TestCase):
         self.assertEqual(doc["records"][0]["bmi"], 22.1)
         self.assertNotIn("bmi", doc["records"][1])
         self.assertEqual(doc["records"][2]["date"], "2001-02-03 19:40")
+        # Each log time says how it was read, with the offset it had: Sydney is +11:00 in
+        # January and February (daylight time).
+        self.assertEqual(doc["records"][2]["source_time"],
+                         {"value": "2001-02-03 19:40", "zone": "Australia/Sydney", "basis": "source", "offset": "+11:00"})
+
+    def test_a_log_time_sydney_skips_stops_it(self):
+        fw = module("fitbit_weight")
+        with tempfile.TemporaryDirectory() as d:
+            p = workbook(Path(d) / "w.xlsx", [{"A": "October 4, 2026 at 02:30AM", "B": 80.0, "C": "kilograms"}])
+            with self.assertRaises(SystemExit) as ctx:
+                fw.extract(p)
+            self.assertIn("skip", str(ctx.exception))
 
     def test_another_unit_stops_it(self):
         fw = module("fitbit_weight")
@@ -260,10 +272,10 @@ class Pathology(unittest.TestCase):
         self.assertEqual([r["value"] for r in results if r["lab"] == "11111111"], ["140", "4.1"])
         self.assertEqual(comment, "Repeat in three months.")
 
-    def test_a_collection_time_keeps_what_the_report_printed_and_says_its_zone_is_assumed(self):
+    def test_a_collection_time_keeps_what_the_report_printed_and_says_the_records_file_states_its_zone(self):
         acl = module("acl_pathology")
         self.assertEqual(acl.collection_time("2001-02-02", "09:10", "x"),
-                         {"value": "2001-02-02 09:10", "zone": "Australia/Sydney", "basis": "assumption"})
+                         {"value": "2001-02-02 09:10", "zone": "Australia/Sydney", "basis": "source"})
         # No time printed: the date alone, never a midnight the report did not print.
         self.assertEqual(acl.collection_time("2001-02-02", None, "x")["value"], "2001-02-02")
         for day, at, word in (("2026-10-04", "02:30", "skip"), ("2026-04-05", "02:30", "twice")):

@@ -490,12 +490,13 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 | `technogym_json.py` | Technogym mywellness zip, indoor sessions | `activity.exercise-session.technogym` (IEEE 1752) |
 | `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `health.lab-result`, `health.lab-panel` |
 | `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
+| `add_source_time.py [--out DIR] DIR` | a records folder | adds the `source_time` block that `health.weight`, `health.lab-result`, `health.lab-panel`, `health.blood-pressure`, `health.encounter` and `health.donation` require (anam card 198); `--verify DIR` checks the result |
 
 `--zone` is the IANA zone the export's wall clock reads in, and each record's `source_time` says
 so (`basis: configuration`); a wall clock the zone skips or repeats stops the script, naming the
 row. `technogym_json.py` keeps Technogym's `on` with its own offset (`basis: source`), and
-`acl_pathology.py` reads collection times in Australia/Sydney, the lab types' zone, as an
-assumption, since the reports print none. `strong_csv.py --max-session-sec`
+`acl_pathology.py` and `fitbit_weight.py` read their times in Australia/Sydney, the zone the lab
+and weight types read them in, and the records file states it (`basis: source`). `strong_csv.py --max-session-sec`
 (default 10800, 3 hours, the person's rule of 2026-10-08) caps a workout's duration, since Strong
 keeps a workout open until the next one starts; another cap writes other records. The scripts moved from Anam's
 `scripts/` and write the same records; only `extracted.method` changed.
