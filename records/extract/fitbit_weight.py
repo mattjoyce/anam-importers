@@ -21,9 +21,27 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from anam_importer import clock  # noqa: E402
 from xlsx import rows  # noqa: E402
 
 METHOD = "records/extract/fitbit_weight.py"
+
+# ZONE is where health.weight reads a log time that carries no offset of its own. Fitbit
+# prints none; the records file states the zone, with the offset the log time had, so the
+# record says the basis is source (anam card 198). A log time Sydney skips or repeats
+# stops the run, naming the row. Not configurable: another zone would make source_time say
+# an instant fact_time denies.
+ZONE = "Australia/Sydney"
+
+
+def source_time(when: datetime, where: str) -> dict:
+    """source_time for a log time read in ZONE, with the offset it had then."""
+    try:
+        offset = clock.offset_text(clock.local_instant(when, ZONE).utcoffset())
+    except clock.ClockError as exc:
+        raise SystemExit(f"{where}: {exc}") from exc
+    return {**clock.source_time(f"{when:%Y-%m-%d %H:%M}", ZONE, "source"), "offset": offset}
 
 
 def extract(p: Path) -> dict:
@@ -41,7 +59,7 @@ def extract(p: Path) -> dict:
             seen[key] = seen.get(key, 0) + 1
             rid = key if seen[key] == 1 else f"{key}:{seen[key]}"
             rec = {"type": "health.weight", "id": f"fitbit:{rid}", "date": f"{when:%Y-%m-%d %H:%M}",
-                   "kg": float(c["B"]), "logged_as": c["A"], "source_note": "Fitbit weight log (Google Takeout export)"}
+                   "source_time": source_time(when, c["A"]), "kg": float(c["B"]), "logged_as": c["A"], "source_note": "Fitbit weight log (Google Takeout export)"}
             if c.get("D"):
                 rec["bmi"] = float(c["D"])
             records.append(rec)

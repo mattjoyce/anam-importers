@@ -307,6 +307,14 @@ two, this importer registers its own Definition: Anam's binary does not bundle
 
 It needs Python 3.11 and the [dreamstation](https://github.com/mattjoyce/dreamstation) decoder,
 which its uv script header pins to a tag, fetched as a zip archive so the gateway needs no git.
+
+What the tag pin does. It fixes the code a run uses: `v0.1.0` is the same decoder on every run and
+every machine until someone edits the header. It does not promise that tag's content stays put,
+because a tag in a git repository can be deleted and re-pointed upstream; only a commit hash is
+fixed, so pin to one if that matters. It also says nothing about whether the decoder reads new
+firmware correctly. A card from a firmware the decoder has not seen can fail the run or, worse,
+decode wrongly, so a new device or firmware update is a reason to run `health` and compare the
+sessions before trusting it.
 The card copy is refreshed every few months by copying the SD card again, so a `folder_watch` on
 the copy's `LAST.TXT` runs `handle`, and every run sends the whole card: the old sessions come
 back `no-op` and the new ones are admitted.
@@ -490,12 +498,13 @@ Reshaping to a new Definition version is a rerun with the same ids, which supers
 | `technogym_json.py` | Technogym mywellness zip, indoor sessions | `activity.exercise-session.technogym` (IEEE 1752) |
 | `acl_pathology.py` | Australian Clinical Labs report PDFs (needs `pdftotext`) | `health.lab-result`, `health.lab-panel` |
 | `bp_diary_omh.py Z in out` | a records file's blood pressure rows | `health.blood-pressure` v4 (Open mHealth) |
+| `add_source_time.py [--out DIR] DIR` | a records folder | adds the `source_time` block that `health.weight`, `health.lab-result`, `health.lab-panel`, `health.blood-pressure`, `health.encounter` and `health.donation` require (anam card 198); `--verify DIR` checks the result |
 
 `--zone` is the IANA zone the export's wall clock reads in, and each record's `source_time` says
 so (`basis: configuration`); a wall clock the zone skips or repeats stops the script, naming the
 row. `technogym_json.py` keeps Technogym's `on` with its own offset (`basis: source`), and
-`acl_pathology.py` reads collection times in Australia/Sydney, the lab types' zone, as an
-assumption, since the reports print none. `strong_csv.py --max-session-sec`
+`acl_pathology.py` and `fitbit_weight.py` read their times in Australia/Sydney, the zone the lab
+and weight types read them in, and the records file states it (`basis: source`). `strong_csv.py --max-session-sec`
 (default 10800, 3 hours, the person's rule of 2026-10-08) caps a workout's duration, since Strong
 keeps a workout open until the next one starts; another cap writes other records. The scripts moved from Anam's
 `scripts/` and write the same records; only `extracted.method` changed.

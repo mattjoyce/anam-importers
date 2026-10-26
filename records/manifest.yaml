@@ -45,7 +45,7 @@ commands:
             - payload.batch
   - name: health
     type: read
-    description: "records_dir is readable and every file in it reads, with no identity claimed twice."
+    description: "records_dir is readable and every file in it parses as a records file. It does not shape the records or look for a repeated identity; poll does, and fails on either. Kept cheap so it fits the gateway's default timeout."
     idempotent: true
     retry_safe: true
     input_schema: {}
