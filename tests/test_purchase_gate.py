@@ -499,6 +499,15 @@ class HandleTest(unittest.TestCase):
         resp = self.run_gate({"input_file": paths["input_file"]}, KEYS)
         self.assertTrue(resp["result"].startswith("filed"), resp)
 
+    def test_a_pdf_or_payload_dir_that_disagrees_with_input_file_is_refused(self):
+        paths = spool_with(self.spool, KEYS_PAGE)
+        other = spool_with(self.spool, KEYS_PAGE, key="fedcba9876543210")
+        for bad in ({"pdf": other["pdf"]}, {"payload_dir": other["payload_dir"]}):
+            resp = self.run_gate({**paths, **bad}, KEYS)
+            self.assertEqual(resp["status"], "error", bad)
+            self.assertIn("does not agree", resp["error"])
+        self.assertEqual(snapshot(self.library), {})
+
     def test_a_missing_message_id_is_a_hold(self):
         paths = spool_with(self.spool, KEYS_PAGE)
         (self.spool / "0123456789abcdef" / "message.json").unlink()

@@ -524,8 +524,8 @@ plugins:
 
 Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, symbols: {"$": "USD"}}`, default
 anthropic, openai and yubico), `max_text_bytes` (1,000,000) and `max_pdf_bytes` (20 MiB). Fabric forwards
-`input_file`; the gate finds the PDF and the payload folder from it when the event carries no `pdf` or
-`payload_dir`. The pattern asks for no line items: gemma-3-4b could not copy an item's row, and the gate
+`input_file`; the gate derives the PDF and the payload folder from it, and refuses an event whose `pdf` or
+`payload_dir` disagrees. The pattern asks for no line items: gemma-3-4b could not copy an item's row, and the gate
 checks items if a stronger model gives them.
 
 ## One-off exports: `records/extract`

@@ -692,12 +692,14 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     p = ductile.payload_of(request)
 
     txt = inside(spool, p.get("input_file"), "input_file")
-    pdf_path = inside(spool, p.get("pdf") or p.get("file_path") or (str(txt)[:-4] if str(txt).endswith(".txt") else None), "pdf")
-    payload_dir = inside(spool, p.get("payload_dir") or p.get("folder") or str(pdf_path.parent.parent), "payload_dir")
-    if payload_dir.parent != spool or not payload_dir.is_dir():
-        raise Refusal(f"payload_dir {payload_dir} is not a folder directly under mail_spool")
-    if pdf_path.parent != payload_dir / "attachments" or txt != pdf_path.with_name(pdf_path.name + ".txt"):
-        raise Refusal("pdf and input_file are not an attachment and its .txt in the payload folder")
+    if txt.suffix != ".txt" or txt.parent.name != "attachments" or txt.parent.parent.parent != spool:
+        raise Refusal("input_file is not <mail_spool>/<key>/attachments/<name>.txt")
+    # fabric forwards input_file and nothing else of the payload, so the PDF and the
+    # payload folder come from it; when the event carries them too they must agree.
+    pdf_path, payload_dir = txt.with_suffix(""), txt.parent.parent
+    for key, derived in (("pdf", pdf_path), ("payload_dir", payload_dir)):
+        if p.get(key) and inside(spool, p[key], key) != derived:
+            raise Refusal(f"{key} {p[key]!r} does not agree with input_file")
     if not (library / "documents").is_dir() or not (library / "records").is_dir():
         raise cfg.bad("library", f"{library} has no documents/ and records/")
 
