@@ -598,11 +598,12 @@ def put(path: Path, body: bytes) -> str:
     return "new"
 
 
-def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str) -> Tuple[List[str], List[str]]:
+def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str, sub: str = "") -> Tuple[List[str], List[str]]:
     """Plan the three files, refuse if any would overwrite, then write. Returns the
-    files' paths and the reasons it did not."""
+    files' paths and the reasons it did not. sub is filing_subdir: the files go under
+    documents/<sub> and records/<sub>, and an id is looked for in records/ and there."""
     base = file_name(c)
-    docs, recs = library / "documents", library / "records"
+    docs, recs = library / "documents" / sub, library / "records" / sub
     sha = hashlib.sha256(pdf).hexdigest()
     plan = [
         (docs / f"{base}.pdf", pdf),
@@ -611,8 +612,9 @@ def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str) 
     ]
     id_line = f"    id: {q(purchase_id(c))}\n"
     problems = []
-    for other in sorted(recs.glob("*.y*ml")):
-        if other.name == plan[2][0].name:
+    seen = sorted(set((library / "records").glob("*.y*ml")) | set(recs.glob("*.y*ml")))
+    for other in seen:
+        if other == plan[2][0]:
             continue
         text = other.read_text(encoding="utf-8", errors="replace")
         if id_line not in text:
@@ -681,6 +683,15 @@ def folders(config: Dict[str, Any]) -> Tuple[Path, Path]:
     return library, spool
 
 
+def filing_subdir(config: Dict[str, Any]) -> str:
+    """The one folder name under documents/ and records/ the gate files into, or "" for
+    the folders themselves. A name, never a path, so a filing cannot leave the Library."""
+    sub = config.get("filing_subdir") or ""
+    if not isinstance(sub, str) or (sub and (sub in (".", "..") or sub.startswith(".") or "/" in sub or "\\" in sub)):
+        raise cfg.bad("filing_subdir", "must be one folder name, not a path")
+    return sub
+
+
 def write_json(path: Path, body: Dict[str, Any]) -> None:
     """Add path beside the payload; an earlier result or hold from a rerun is replaced."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".gate-")
@@ -694,6 +705,7 @@ def write_json(path: Path, body: Dict[str, Any]) -> None:
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     library, spool = folders(config)
+    sub = filing_subdir(config)
     merchants = merchants_of(config)
     max_text = cfg.integer(config, "max_text_bytes", DEFAULT_MAX_TEXT_BYTES, 1, 64 * 1024 * 1024)
     max_pdf = cfg.integer(config, "max_pdf_bytes", DEFAULT_MAX_PDF_BYTES, 1, 1024 * 1024 * 1024)
@@ -708,8 +720,8 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     for key, derived in (("pdf", pdf_path), ("payload_dir", payload_dir)):
         if p.get(key) and inside(spool, p[key], key) != derived:
             raise Refusal(f"{key} {p[key]!r} does not agree with input_file")
-    if not (library / "documents").is_dir() or not (library / "records").is_dir():
-        raise cfg.bad("library", f"{library} has no documents/ and records/")
+    if not (library / "documents" / sub).is_dir() or not (library / "records" / sub).is_dir():
+        raise cfg.bad("library", f"{library} has no {Path('documents', sub)}/ and {Path('records', sub)}/")
 
     reasons: List[str] = []
     message_id = ""
@@ -733,7 +745,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 
     files: List[str] = []
     if not reasons:
-        files, problems = file_it(library, checked, pdf, message_id, model)
+        files, problems = file_it(library, checked, pdf, message_id, model, sub)
         reasons += problems
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     if reasons:
@@ -748,10 +760,11 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     library, spool = folders(config)
+    sub = filing_subdir(config)
     merchants_of(config)
-    for sub in ("documents", "records"):
-        if not (library / sub).is_dir():
-            raise cfg.bad("library", f"{library / sub} is not a folder")
+    for top in ("documents", "records"):
+        if not (library / top / sub).is_dir():
+            raise cfg.bad("library", f"{library / top / sub} is not a folder")
     if not spool.is_dir():
         raise cfg.bad("mail_spool", f"{spool} is not a folder")
     return ductile.ok("library and mail_spool are folders and the merchants read")

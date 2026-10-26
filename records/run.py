@@ -275,13 +275,23 @@ def identity(env: Dict[str, Any]) -> Tuple[str, ...]:
 
 
 def files(config: Dict[str, Any]) -> List[Path]:
-    """The .yaml, .yml and .json files directly under records_dir, by name. A folder
-    with none is a state, nothing extracted yet, not a fault. The suffixes are not
-    configurable: they are what the worker read, and a snapshot is that set."""
+    """The .yaml, .yml and .json files directly under records_dir, and directly under
+    each folder named in subdirs (anam card 242: purchase_gate files into records/mail),
+    by path. One snapshot covers them all, so a record that moves between them is still
+    one record. A folder with none is a state, nothing extracted yet, not a fault. The
+    suffixes are not configurable: they are what the worker read, and a snapshot is that set."""
     root = Path(str(config.get("records_dir", ""))).expanduser()
     if not root.is_dir():
         raise ductile.Failure(f"no records_dir at {root}", retry=False)
-    return sorted((p for p in root.iterdir() if p.is_file() and p.suffix.lower() in (".yaml", ".yml", ".json")),
+    subdirs = config.get("subdirs") or []
+    if not isinstance(subdirs, list) or not all(isinstance(d, str) and d and "/" not in d and not d.startswith(".") for d in subdirs):
+        raise ductile.Failure("subdirs must be a list of folder names under records_dir", retry=False)
+    folders = [root] + [root / d for d in subdirs]
+    for folder in folders[1:]:
+        if not folder.is_dir():
+            raise ductile.Failure(f"no subdir {folder.name} under records_dir {root}", retry=False)
+    return sorted((p for folder in folders for p in folder.iterdir()
+                   if p.is_file() and p.suffix.lower() in (".yaml", ".yml", ".json")),
                   key=lambda p: str(p))
 
 

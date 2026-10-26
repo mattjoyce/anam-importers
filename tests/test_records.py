@@ -254,3 +254,36 @@ class CutOver(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Subdirs(unittest.TestCase):
+    """records/mail, where purchase_gate files (anam card 242), is read into the same
+    snapshot as records/ itself, and only when subdirs names it."""
+
+    def poll(self, root, **config):
+        return run_plugin(PLUGIN, {"command": "poll", "config": {"records_dir": root, "person_id": "person-a", **config}})
+
+    def test_a_named_subdir_is_read_and_an_unnamed_one_is_not(self):
+        with folder({"top.yaml": LABS}) as d:
+            (Path(d) / "mail").mkdir()
+            (Path(d) / "mail" / "m.yaml").write_text("records: [{type: health.weight, id: w1}]\n")
+            (Path(d) / "other").mkdir()
+            (Path(d) / "other" / "o.yaml").write_text("records: [{type: health.weight, id: o1}]\n")
+            names = [p.relative_to(d).as_posix() for p in records.files({"records_dir": d, "subdirs": ["mail"]})]
+            self.assertEqual(names, ["mail/m.yaml", "top.yaml"])
+            self.assertEqual([p.name for p in records.files({"records_dir": d})], ["top.yaml"])
+
+    def test_one_identity_in_records_and_in_a_subdir_is_refused(self):
+        with folder({"a.yaml": "records: [{type: health.weight, id: x}]\n"}) as d:
+            (Path(d) / "mail").mkdir()
+            (Path(d) / "mail" / "b.yaml").write_text("records: [{type: health.weight, id: x}]\n")
+            r = self.poll(d, subdirs=["mail"])
+        self.assertEqual(r["status"], "error", r)
+        self.assertIn("both declare the row x", r["error"])
+
+    def test_a_subdir_that_is_a_path_or_missing_is_refused(self):
+        for bad in (["../x"], ["a/b"], [".hidden"], "mail", ["missing"]):
+            with self.subTest(bad), folder({"a.yaml": LABS}) as d:
+                r = self.poll(d, subdirs=bad)
+                self.assertEqual(r["status"], "error", r)
+                self.assertFalse(r["retry"])
