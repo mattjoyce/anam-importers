@@ -5,7 +5,7 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: false
-description: "Spools the mail in an AgentMail inbox, one folder per message under mail_spool: message.json, each attachment byte-exact, and a pdftotext -layout .txt beside each PDF. Emits one agentmail.pdf event per PDF newly spooled. Reads the inbox, writes only under mail_spool, sends nothing back and reads no instruction text. Holds no Anam token."
+description: "Spools the mail in an AgentMail inbox, one folder per message under mail_spool: message.json, and each attachment byte-exact. Emits one agentmail.pdf event per PDF newly spooled, with payload_dir and pdf; the pdf_text plugin turns each into text. Reads the inbox, writes only under mail_spool, sends nothing back and reads no instruction text. Holds no Anam token."
 commands:
   - name: poll
     type: write
@@ -23,10 +23,9 @@ commands:
           values:
             - payload.payload_dir
             - payload.pdf
-            - payload.input_file
   - name: health
     type: read
-    description: "The key reads the inbox, mail_spool is writable, and pdftotext is on the path."
+    description: "The key reads the inbox, and mail_spool is writable."
     idempotent: true
     retry_safe: true
     input_schema: {}

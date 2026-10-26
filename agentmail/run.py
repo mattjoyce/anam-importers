@@ -6,13 +6,14 @@ the message id:
 
     <mail_spool>/<key>/message.json
     <mail_spool>/<key>/attachments/<n>-<safe name>          byte-exact
-    <mail_spool>/<key>/attachments/<n>-<safe name>.txt      pdftotext -layout of each PDF
 
 A folder is built under a temporary name beside the others and renamed into place, so a
 reader never sees half of one, and it is never edited after. A message with an attachment
-that fails fetch.py's checks (the size the inbox reports, %PDF on a PDF) or whose text
-cannot be extracted is not spooled at all: it is named in the logs and tried again next
-poll. A folder already there is skipped, so a second poll writes nothing.
+that fails fetch.py's checks (the size the inbox reports, %PDF on a PDF) is not spooled
+at all: it is named in the logs and tried again next poll. A folder already there is skipped, so a second poll writes nothing.
+
+Turning a PDF into text is not this plugin's job: the pdf_text plugin, the next step in the
+pipeline, writes <pdf>.txt beside each PDF this one emits (anam card 250).
 
 The plugin reads the inbox and writes under mail_spool. It sends nothing back, reads no
 instruction text in a mail, holds no Anam token, and logs ids, counts and file names only,
@@ -20,7 +21,7 @@ never the API key (the gateway hands it over as the vault secret key_secret name
 
 Commands:
 - poll   : spool the messages not yet spooled; one agentmail.pdf event per new PDF
-- health : the key reads the inbox, mail_spool is writable, pdftotext is present
+- health : the key reads the inbox, mail_spool is writable
 """
 
 from __future__ import annotations
@@ -29,12 +30,11 @@ import hashlib
 import json
 import os
 import shutil
-import subprocess
 import sys
 import tempfile
 import urllib.error
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, Dict, List, NamedTuple
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
@@ -53,9 +53,6 @@ DEFAULT_KEY_SECRET = "agentmail_api_key"
 DEFAULT_BASE_URL = fetch.DEFAULT_BASE_URL
 DEFAULT_TIMEOUT = fetch.DEFAULT_TIMEOUT
 DEFAULT_PAGE_SIZE = fetch.DEFAULT_PAGE_SIZE
-# Not configurable: a bound on pdftotext, so one malformed PDF cannot hold the poll; a PDF
-# that needs longer is a failed attachment, which the next poll retries.
-PDFTOTEXT_TIMEOUT = 60
 # Not configurable: the layout of a payload folder is the contract with the purchase gate.
 TMP_PREFIX = ".tmp-"
 
@@ -92,23 +89,11 @@ def is_pdf(att: Dict[str, Any], name: str) -> bool:
     return att.get("content_type") == "application/pdf" or name.lower().endswith(".pdf")
 
 
-def pdf_text(pdf: Path, out: Path) -> Optional[str]:
-    """Write pdftotext -layout of pdf to out; the reason it could not, or None."""
-    try:
-        done = subprocess.run(["pdftotext", "-layout", "-enc", "UTF-8", str(pdf), str(out)],
-                              capture_output=True, timeout=PDFTOTEXT_TIMEOUT, check=False)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return f"pdftotext: {type(exc).__name__}"
-    if done.returncode != 0:
-        return f"pdftotext exited {done.returncode}"
-    return None
-
-
 class Spooled(NamedTuple):
-    """A folder written: its path and the PDFs in it, as (pdf, text) paths."""
+    """A folder written: its path and the PDFs in it."""
 
     folder: Path
-    pdfs: List[tuple]
+    pdfs: List[Path]
 
 
 def spool_message(inbox: fetch.Inbox, spool: Path, msg: Dict[str, Any], inbox_name: str) -> Spooled:
@@ -122,7 +107,7 @@ def spool_message(inbox: fetch.Inbox, spool: Path, msg: Dict[str, Any], inbox_na
         attdir = tmp / "attachments"
         attdir.mkdir()
         entries: List[Dict[str, Any]] = []
-        pdfs: List[tuple] = []
+        pdfs: List[Path] = []
         for n, att in enumerate(msg.get("attachments") or [], start=1):
             name = fetch.safe_name(att.get("filename") or "attachment")
             saved = f"{n}-{name}"
@@ -135,16 +120,11 @@ def spool_message(inbox: fetch.Inbox, spool: Path, msg: Dict[str, Any], inbox_na
             if why:
                 raise ValueError(f"{label}: {why}")
             (attdir / saved).write_bytes(body)
-            text = None
             if is_pdf(att, name):
-                text = saved + ".txt"
-                why = pdf_text(attdir / saved, attdir / text)
-                if why:
-                    raise ValueError(f"{label}: {why}")
-                pdfs.append((final / "attachments" / saved, final / "attachments" / text))
+                pdfs.append(final / "attachments" / saved)
             entries.append({"n": n, "attachment_id": att.get("attachment_id"), "filename": att.get("filename"),
                             "saved_as": saved, "content_type": att.get("content_type"), "size": len(body),
-                            "sha256": hashlib.sha256(body).hexdigest(), "text": text})
+                            "sha256": hashlib.sha256(body).hexdigest()})
         # AgentMail's own verdicts, as given (SPF, DKIM, DMARC and the domains each was
         # judged on); null when the message carries none. Nothing here is our judgment.
         record = {"message_id": msg["message_id"], "inbox": inbox_name, "from": msg.get("from"),
@@ -193,9 +173,9 @@ def poll(request: Dict[str, Any]) -> Dict[str, Any]:
                 logs.append(f"failed {key}: {exc}")
                 continue
             new += 1
-            for i, (pdf, text) in enumerate(done.pdfs):
-                events.append(ductile.event(PDF_EVENT, {"payload_dir": str(done.folder), "pdf": str(pdf),
-                                                        "input_file": str(text)}, dedupe_key=f"{key}-{i}"))
+            for i, pdf in enumerate(done.pdfs):
+                events.append(ductile.event(PDF_EVENT, {"payload_dir": str(done.folder), "pdf": str(pdf)},
+                                            dedupe_key=f"{key}-{i}"))
     except (urllib.error.URLError, OSError, ValueError, KeyError) as exc:
         # URLError and HTTPError name the status and host, never a header.
         raise ductile.Failure(f"inbox: {type(exc).__name__}: {exc}", retry=True) from exc
@@ -217,11 +197,9 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
             pass
     except OSError as exc:
         problems.append(f"mail_spool is not writable: {exc.strerror or type(exc).__name__}")
-    if shutil.which("pdftotext") is None:
-        problems.append("pdftotext is not on the path")
     if problems:
         raise ductile.Failure("; ".join(problems), retry=False)
-    return ductile.ok("the key reads the inbox, mail_spool is writable, pdftotext is present")
+    return ductile.ok("the key reads the inbox, mail_spool is writable")
 
 
 if __name__ == "__main__":

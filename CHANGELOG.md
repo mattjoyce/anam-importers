@@ -7,6 +7,13 @@ All notable changes to this repo. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- `agentmail` no longer runs `pdftotext` (anam card 250). The poll spools the PDF and emits `agentmail.pdf`
+  with `{payload_dir, pdf}`; `message.json` no longer names a `text` file; health no longer asks for
+  `pdftotext`. The `pdf_text` plugin in ductile-plugins writes `<pdf>.txt` as the next pipeline step, so
+  the gate's `input_file` check is unchanged. The image needs no poppler for the poll.
+
 ### Added
 
 - `purchase_gate` takes `filing_subdir`, and `anam_records` takes `subdirs` (anam card 242): on a gateway

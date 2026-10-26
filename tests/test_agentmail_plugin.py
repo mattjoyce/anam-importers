@@ -25,7 +25,7 @@ AUTH = {"spf": "pass", "dkim": "pass", "dmarc": "pass", "spf_domain": "example.t
 
 
 def make_pdf(text: str) -> bytes:
-    """A one-page PDF whose text pdftotext can read."""
+    """A one-page PDF."""
     stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
     objs = [b"<< /Type /Catalog /Pages 2 0 R >>",
             b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -140,19 +140,19 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(r["status"], "ok", r)
         folder = self.spool / key_of(MID)
         self.assertEqual((folder / "attachments" / "1-Invoice 0042.pdf").read_bytes(), PDF)
-        self.assertIn("Synthetic invoice 0042", (folder / "attachments" / "1-Invoice 0042.pdf.txt").read_text())
+        self.assertFalse((folder / "attachments" / "1-Invoice 0042.pdf.txt").exists())  # pdf_text's job
         meta = json.loads((folder / "message.json").read_text())
         self.assertEqual(meta["message_id"], MID)
         self.assertEqual(meta["inbox"], "inbox@agentmail.test")
         self.assertEqual(meta["auth"], AUTH)
         self.assertEqual(meta["received_at"], "2026-10-25T07:12:36.000Z")
         self.assertEqual(meta["attachments"][0]["sha256"], hashlib.sha256(PDF).hexdigest())
-        self.assertEqual(meta["attachments"][0]["text"], "1-Invoice 0042.pdf.txt")
+        self.assertNotIn("text", meta["attachments"][0])
         self.assertEqual([e["type"] for e in r["events"]], ["agentmail.pdf"])
         self.assertEqual(r["events"][0]["payload"], {
             "payload_dir": str(folder.resolve()),
-            "pdf": str(folder.resolve() / "attachments" / "1-Invoice 0042.pdf"),
-            "input_file": str(folder.resolve() / "attachments" / "1-Invoice 0042.pdf.txt")})
+            "pdf": str(folder.resolve() / "attachments" / "1-Invoice 0042.pdf")})
+        self.assertEqual(r["events"][0]["dedupe_key"], f"{key_of(MID)}-0")
 
     def test_second_poll_writes_nothing(self):
         self.add(MID, [("a1", "i.pdf", PDF)])
@@ -168,7 +168,7 @@ class PluginTest(unittest.TestCase):
         self.add(MID, [("a1", "logo.png", b"\x89PNG synthetic", "image/png"), ("a2", "i.pdf", PDF)])
         r = self.run_cmd("poll")
         att_dir = self.spool / key_of(MID) / "attachments"
-        self.assertEqual(sorted(p.name for p in att_dir.iterdir()), ["1-logo.png", "2-i.pdf", "2-i.pdf.txt"])
+        self.assertEqual(sorted(p.name for p in att_dir.iterdir()), ["1-logo.png", "2-i.pdf"])
         self.assertEqual(len(r["events"]), 1)
         self.assertTrue(r["events"][0]["payload"]["pdf"].endswith("2-i.pdf"))
 
@@ -204,12 +204,6 @@ class PluginTest(unittest.TestCase):
         self.assertEqual(list(self.spool.iterdir()), [])
         self.assertTrue(any("no %PDF header" in l["message"] for l in r["logs"]))
 
-    def test_a_pdf_pdftotext_cannot_read_is_a_failure(self):
-        self.add(MID, [("a1", "i.pdf", b"%PDF-1.4 garbage with no structure")])
-        r = self.run_cmd("poll")
-        self.assertEqual(r["events"], [])
-        self.assertEqual(list(self.spool.iterdir()), [])
-
     def test_a_stale_temporary_folder_is_cleared(self):
         stale = self.spool / ".tmp-dead-1"
         stale.mkdir(parents=True)
@@ -222,7 +216,7 @@ class PluginTest(unittest.TestCase):
         r = self.run_cmd("poll")
         root = self.spool.resolve()
         for ev in r["events"]:
-            for k in ("payload_dir", "pdf", "input_file"):
+            for k in ("payload_dir", "pdf"):
                 p = Path(ev["payload"][k])
                 self.assertTrue(p.is_absolute())
                 root_ok = p == root or root in p.parents

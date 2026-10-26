@@ -490,8 +490,8 @@ folder. The importer reads the folder and writes only `state_file`.
 
 ## Wiring an importer into a gateway (purchases)
 
-`purchase_gate` (anam card 242) is the last step of the invoice chain: `agentmail` leaves a PDF and its
-`pdftotext -layout` text in a payload folder, `fabric` runs the pattern `patterns/extract_purchase` over
+`purchase_gate` (anam card 242) is the last step of the invoice chain: `agentmail` leaves a PDF in a payload
+folder, `pdf_text` (a Ductile plugin in ductile-plugins) writes its `pdftotext -layout` text beside it, `fabric` runs the pattern `patterns/extract_purchase` over
 the text and emits `fabric.completed` with the model's JSON in `data`, and `purchase_gate` `handle`
 decides. The model proposes; the gate believes only what the page proves.
 
@@ -786,13 +786,13 @@ and `poll` shaped 2 points in one hour. The 16 locations were two fixes, one of 
 
 Anam card 242. A Ductile poller that spools an AgentMail inbox for the invoice chain. Each message
 becomes `<mail_spool>/<key>/` (`key` is the first 16 hex of the SHA-256 of the message id) holding
-`message.json`, `attachments/<n>-<name>` byte-exact, and `attachments/<n>-<name>.txt`, the
-`pdftotext -layout` of each PDF. A folder is built under a temporary name and renamed, so a reader never
+`message.json` and `attachments/<n>-<name>` byte-exact. The text of each PDF is the `pdf_text`
+plugin's job, the next step in the pipeline (anam card 250), and lands as `attachments/<n>-<name>.txt`. A folder is built under a temporary name and renamed, so a reader never
 sees half of one; an existing folder is skipped. `message.json` carries `auth`, AgentMail's own
 `authentication_results` as given (SPF, DKIM, DMARC and the domain each was judged on), or `null`.
-A message whose attachment fails the size or `%PDF` check, or whose text cannot be extracted, is not
+A message whose attachment fails the size or `%PDF` check is not
 spooled, is named in the logs and is tried again. Each PDF newly spooled emits `agentmail.pdf` with
-`{payload_dir, pdf, input_file}`, absolute paths under `mail_spool`. The key is the vault secret that `key_secret`
+`{payload_dir, pdf}`, absolute paths under `mail_spool`. The key is the vault secret that `key_secret`
 names, `agentmail_api_key` unless set: Ductile's vault names are lowercase and global.
 
 | Key | Default | Why |
