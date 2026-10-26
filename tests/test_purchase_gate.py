@@ -476,6 +476,16 @@ class HandleTest(unittest.TestCase):
         self.assertEqual(snapshot(self.library / "records"), records_before)
         self.assertIn("2026-10-24_yubico_receipt_RCT-TEST-0007.pdf", [p.name for p in (self.library / "documents").iterdir()])
 
+    def test_a_second_document_files_when_other_records_sort_after_its_purchase(self):
+        # live 2026-10-27: an IndexError once the matching record was not the last file
+        self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
+        (self.library / "records" / "zz-another-purchase.yaml").write_text("records: []\n", encoding="utf-8")
+        page = KEYS_PAGE.replace("Invoice: INV-TEST-0001", "Receipt: RCT-TEST-0007\nInvoice: INV-TEST-0001")
+        again = edited(KEYS, receipt_ref="RCT-TEST-0007",
+                       evidence=dict(KEYS["evidence"], receipt_ref="Receipt: RCT-TEST-0007"))
+        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
+        self.assertTrue(resp["result"].startswith("filed"), resp)
+
     def test_a_second_document_with_other_figures_is_held(self):
         self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
         before = snapshot(self.library)

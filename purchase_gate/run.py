@@ -610,11 +610,12 @@ def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str, 
         (docs / f"{base}.pdf.meta.yaml", sidecar_yaml(c, message_id).encode()),
         (recs / f"{base}.yaml", purchase_yaml(c, f"{base}.pdf", sha, message_id, model).encode()),
     ]
+    own_record = plan[2][0]
     id_line = f"    id: {q(purchase_id(c))}\n"
     problems = []
     seen = sorted(set((library / "records").glob("*.y*ml")) | set(recs.glob("*.y*ml")))
     for other in seen:
-        if other == plan[2][0]:
+        if other == own_record:
             continue
         text = other.read_text(encoding="utf-8", errors="replace")
         if id_line not in text:
