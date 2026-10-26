@@ -9,6 +9,9 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `purchase_gate`: a PDF whose exact bytes are already in `documents/` is `already_filed`, whatever its
+  sidecar or record says. A replay over 0.1.0's filings had filed a second copy under a mail name,
+  because 0.1.0's sidecar note differs from 0.2.0's.
 - `purchase_gate` files every forwarded mail (anam card 242, Matt 2026-10-27) and no longer holds. The PDF
   and its sidecar always go into `documents/`. A failed optional value (order or receipt ref, subtotal,
   shipping, tax, items) is dropped and named; the sums run only when every part survived, and when they

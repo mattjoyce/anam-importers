@@ -633,7 +633,7 @@ class HandleTest(unittest.TestCase):
         page = KEYS_PAGE.replace("Invoice: INV-TEST-0001", "Receipt: RCT-TEST-0007\nInvoice: INV-TEST-0001")
         again = edited(KEYS, receipt_ref="RCT-TEST-0007",
                        evidence=dict(KEYS["evidence"], receipt_ref="Receipt: RCT-TEST-0007"))
-        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
+        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210", body=b"%PDF-1.4 a synthetic receipt"), again)
         self.assertTrue(resp["result"].startswith("filed"), resp)
         self.assertEqual(snapshot(self.library / "records"), records_before)
         self.assertIn("2026-10-24_yubico_receipt_RCT-TEST-0007.pdf", [p.name for p in (self.library / "documents").iterdir()])
@@ -645,7 +645,7 @@ class HandleTest(unittest.TestCase):
         page = KEYS_PAGE.replace("Invoice: INV-TEST-0001", "Receipt: RCT-TEST-0007\nInvoice: INV-TEST-0001")
         again = edited(KEYS, receipt_ref="RCT-TEST-0007",
                        evidence=dict(KEYS["evidence"], receipt_ref="Receipt: RCT-TEST-0007"))
-        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
+        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210", body=b"%PDF-1.4 a synthetic receipt"), again)
         self.assertTrue(resp["result"].startswith("filed"), resp)
 
     def test_a_second_document_with_other_figures_is_filed_as_a_document_only(self):
@@ -656,7 +656,7 @@ class HandleTest(unittest.TestCase):
                        evidence=dict(KEYS["evidence"], invoice_ref="Invoice: INV-TEST-0007",
                                      shipping="Shipping and Handling:                  $20.00",
                                      total="Grand Total:                $95.80", currency="Grand Total:                $95.80"))
-        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
+        resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210", body=b"%PDF-1.4 a synthetic receipt"), again)
         self.assertTrue(resp["result"].startswith("document_only"), resp)
         self.assertIn("with other figures", resp["result"])
         # the records are untouched; the PDF is filed as a document under the mail's name
@@ -753,12 +753,27 @@ class HandleTest(unittest.TestCase):
         for i, junk in enumerate((None, "", {}, {"evidence": {}}, "not json at all")):
             with self.subTest(junk):
                 key = f"{i:016x}"
-                resp = self.run_gate(spool_with(self.spool, "", key=key, received_at="2026-08-09T10:00:00Z"), junk)
+                resp = self.run_gate(spool_with(self.spool, "", key=key, received_at="2026-08-09T10:00:00Z", body=b"%PDF-1.4 junk " + str(i).encode()), junk)
                 self.assertTrue(resp["result"].startswith("document_only"), resp)
                 pdf = self.library / "documents" / f"2026-08-09_mail_{key}_1-invoice.pdf"
                 side = load(REPO / "documents" / "run.py", f"anam_documents_run_for_gate_{i}").sidecar(pdf)
                 self.assertEqual(side["date"], "2026-08-09")
         self.assertEqual(snapshot(self.library / "records"), {})
+
+    def test_a_pdf_already_filed_by_an_earlier_gate_is_already_filed(self):
+        # live 2026-10-27: 0.1.0's sidecar note differs from 0.2.0's, and a replay filed a
+        # second copy under a mail name. The same bytes in the Library are the same document.
+        self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
+        for side in (self.library / "documents").glob("*.meta.yaml"):
+            side.write_text(side.read_text(encoding="utf-8").replace("purchase_gate", "an earlier purchase_gate"), encoding="utf-8")
+        before = snapshot(self.library)
+        resp = self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
+        self.assertTrue(resp["result"].startswith("already_filed"), resp)
+        self.assertEqual(snapshot(self.library), before)
+        # and when this run's checks would only file it as a document
+        resp = self.run_gate(spool_with(self.spool, ""), None)
+        self.assertTrue(resp["result"].startswith("already_filed"), resp)
+        self.assertEqual(snapshot(self.library), before)
 
     def test_two_pdfs_in_one_message_each_get_a_result_file(self):
         a = spool_with(self.spool, KEYS_PAGE, name="1-first.pdf", body=b"%PDF-1.4 first")

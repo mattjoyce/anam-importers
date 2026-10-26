@@ -736,6 +736,17 @@ def file_purchase(library: Path, c: Checked, pdf: bytes, message_id: str, model:
     return ("filed" if new else "already_filed"), files, []
 
 
+def filed_copy(library: Path, sub: str, pdf: bytes) -> Optional[Path]:
+    """A PDF already in the Library with exactly these bytes, or None. That document is
+    filed, whatever its sidecar and record say: an earlier gate wrote other text, and a
+    person may have edited either since."""
+    for docs in dict.fromkeys((library / "documents" / sub, library / "documents")):
+        for other in sorted(docs.glob("*.pdf")):
+            if other.stat().st_size == len(pdf) and other.read_bytes() == pdf:
+                return other
+    return None
+
+
 def file_document(library: Path, name: str, pdf: bytes, sidecar: str, sub: str = "") -> Tuple[str, List[str]]:
     """File a PDF with its sidecar and no record. A name taken by other bytes gets the
     first eight characters of the PDF's sha256 added, so it is filed all the same."""
@@ -872,7 +883,10 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
         missing.append("the attachment does not start with %PDF")
 
     status, files = "", []
-    if not missing:
+    copy = filed_copy(library, sub, pdf)
+    if copy:
+        status, files = "already_filed", [str(copy)]
+    elif not missing:
         status, files, problems = file_purchase(library, checked, pdf, message_id, model, sub)
         missing += problems
     if not status:
