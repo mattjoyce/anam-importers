@@ -25,4 +25,4 @@ commands:
       status: string
 config_keys:
   required: [library, mail_spool]
-  optional: [merchants, max_text_bytes, max_pdf_bytes]
+  optional: [merchants, max_text_bytes, max_pdf_bytes, filing_subdir]

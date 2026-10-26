@@ -354,6 +354,32 @@ class HandleTest(unittest.TestCase):
         self.assertEqual(result["status"], "filed")
         self.assertEqual(len(result["files"]), 3)
 
+    def test_filing_subdir_files_under_documents_and_records_of_that_name(self):
+        (self.library / "documents" / "mail").mkdir()
+        (self.library / "records" / "mail").mkdir()
+        resp = self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS, filing_subdir="mail")
+        self.assertEqual(resp["status"], "ok", resp)
+        base = "2026-10-24_yubico_invoice_INV-TEST-0001"
+        self.assertEqual(sorted(p.name for p in (self.library / "documents" / "mail").iterdir()),
+                         [f"{base}.pdf", f"{base}.pdf.meta.yaml"])
+        self.assertEqual([p.name for p in (self.library / "records" / "mail").iterdir()], [f"{base}.yaml"])
+        self.assertEqual(sorted(p.name for p in (self.library / "records").iterdir()), ["mail"])
+
+    def test_a_purchase_already_in_records_is_not_filed_again_under_the_subdir(self):
+        self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)  # files into records/ itself
+        (self.library / "documents" / "mail").mkdir()
+        (self.library / "records" / "mail").mkdir()
+        resp = self.run_gate(spool_with(self.spool, KEYS_PAGE, key="fedcba9876543210"), KEYS, filing_subdir="mail")
+        self.assertEqual(resp["status"], "ok", resp)
+        self.assertEqual(list((self.library / "records" / "mail").iterdir()), [])
+
+    def test_a_filing_subdir_that_is_a_path_is_refused(self):
+        for i, bad in enumerate(("../x", "a/b", ".hidden", "..")):
+            with self.subTest(bad):
+                resp = self.run_gate(spool_with(self.spool, KEYS_PAGE, key=f"{i:016x}"), KEYS, filing_subdir=bad)
+                self.assertEqual(resp["status"], "error", resp)
+                self.assertEqual(snapshot(self.library), {})
+
     def test_the_records_importer_reads_what_was_filed(self):
         self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
         records = load(RECORDS, "anam_records_run_for_gate")

@@ -367,6 +367,10 @@ plugins:
       person_id: <Anam's person_id>
 ```
 
+Optional `subdirs` names folders under `records_dir` whose files are read too, one level and
+by name only (`[mail]`, where `purchase_gate` files). They are part of the same snapshot, so a
+record is one record wherever it sits, and one identity in two places is refused.
+
 A `folder_watch` on the folder runs `handle`, and every run sends the whole folder as one
 snapshot of the types it carries. A type whose every record is removed is not in the run, so it
 is not reported absent.
@@ -523,7 +527,9 @@ plugins:
 ```
 
 Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, legal_entity: <name>, symbols: {"$": "USD"}}`, default
-anthropic, openai and yubico), `max_text_bytes` (1,000,000) and `max_pdf_bytes` (20 MiB). Fabric forwards
+anthropic, openai and yubico), `max_text_bytes` (1,000,000) `max_pdf_bytes` (20 MiB) and `filing_subdir` (a folder name such as `mail`: files go under
+`documents/<name>` and `records/<name>`, so a gateway that mounts the Library read-only needs only those
+two writable; an id already in `records/` itself is not filed again). Fabric forwards
 `input_file`; the gate derives the PDF and the payload folder from it, and refuses an event whose `pdf` or
 `payload_dir` disagrees. The pattern asks for no line items: gemma-3-4b could not copy an item's row, and the gate
 checks items if a stronger model gives them.

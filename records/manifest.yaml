@@ -53,4 +53,4 @@ commands:
       status: string
 config_keys:
   required: [records_dir, person_id]
-  optional: []
+  optional: [subdirs]
