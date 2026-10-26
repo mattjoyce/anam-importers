@@ -27,6 +27,9 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | 30 s | `concept2/run.py:58` | `timeout` (concept2) | as for anam_submit |
 | 3 days | `concept2/run.py:60` | `lookback_days` (concept2) | depends on the fetch schedule |
 | 8 MiB | `concept2/run.py:63` | `max_response_bytes` (concept2) | a guard; a page of 250 results is under 1 MiB |
+| `https://api.agentmail.to` | `agentmail/fetch.py` `DEFAULT_BASE_URL` | `base_url` (agentmail) | a test server or a proxy is a reasonable choice |
+| 30 s | `agentmail/fetch.py` `DEFAULT_TIMEOUT` | `timeout` (agentmail) | outlasts a slow PDF over a slow link; as for anam_submit |
+| 50 | `agentmail/fetch.py` `DEFAULT_PAGE_SIZE` | `page_size` (agentmail) | 50 is the most a page returns, so the fewest round trips |
 | 2 days | `owntracks/run.py:53` | `lookback_days` (owntracks) | depends on how long a phone may be offline |
 | 290 KiB | `owntracks/run.py:59` | `max_payload_bytes` | follows Anam's payload limit, the daemon's `max_payload_bytes` (300 KiB by default since anam card 151); a daemon set to another limit needs another value here |
 | 3 runs | `links/run.py` `DEFAULT_UNSEEN_AFTER` | `unseen_after` (links) | how long a person tolerates a file being missing before its facet says so is theirs: a synced folder wants more, a tidy one less |
