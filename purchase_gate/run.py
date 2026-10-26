@@ -12,14 +12,18 @@ as the page text proves it:
 - a ref sits after a word for its own kind (an invoice number after "invoice")
 - line totals are quantity times unit price, and subtotal + shipping + tax is the total
 - the merchant is on the allow-list, matched from the page's issuer line, not from the mail
-- a required value that is missing is a hold; the gate never fills one in
+- a required value (date, total, currency, merchant, one checked ref) that fails is never
+  filled in; an optional one (order and receipt refs, subtotal, shipping, tax, items) that
+  fails is dropped and named
 
-A proposal that passes is filed in the Library: the PDF and its .meta.yaml under
-documents/ and one money.purchase under records/, for the anam_documents and anam_records
-importers to send. One that fails is held: hold.json in the payload folder says every
-reason, and nothing reaches the Library. The payload folder is never edited apart from
-adding result.json or hold.json. A file is never overwritten: identical bytes are a
-no-op, different bytes are a hold.
+Every forwarded mail is filed (Matt, 2026-10-27). The PDF always goes into documents/ with
+its .meta.yaml. When every required value passed, one money.purchase goes into records/
+too, carrying only the values that passed; otherwise the PDF is filed as a document only,
+dated by the mail's received date and named from the mail. A file is never overwritten:
+the same purchase forwarded again is already filed, and a document whose name is taken by
+other bytes gets a short suffix from its sha256. Beside each PDF, attachments/<pdf>.result.json
+says what was filed, what was dropped and what was missing. The payload folder is never
+edited apart from adding that file.
 
 Commands:
 - handle : judge one fabric.completed event
@@ -45,9 +49,9 @@ sys.path.insert(0, str(HERE.parent))
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
-# GATE_VERSION is written into every filed record's basis. Not configurable: it is this
-# file's version, and it is the manifest's.
-GATE_VERSION = "0.1.0"
+# GATE_VERSION is written into every filed record's basis and every result file. Not
+# configurable: it is this file's own version (the manifest carries the repo's).
+GATE_VERSION = "0.2.0"
 
 # DEFAULT_MERCHANTS is the allow-list: merchant slug (the Definition's spelling) to the
 # pattern that finds its legal entity on the issuer line, the entity's name as filed
@@ -55,7 +59,7 @@ GATE_VERSION = "0.1.0"
 # that merchant's invoices. The issuer pattern is deliberately not the bare name: a
 # Yubico invoice lists "YubiKey - OpenAI Offer" and is not an OpenAI invoice.
 DEFAULT_MERCHANTS: Dict[str, Dict[str, Any]] = {
-    "anthropic": {"issuer": r"Anthropic,? (PBC|Ireland|Inc|Limited|Ltd)", "legal_entity": "Anthropic, PBC", "symbols": {"$": "USD"}},
+    "anthropic": {"issuer": r"Anthropic,? (PBC|Ireland|Inc|Limited|Ltd)|^Anthropic Bill to\b", "legal_entity": "Anthropic, PBC", "symbols": {"$": "USD"}},
     "openai": {"issuer": r"OpenAI,? (LLC|OpCo|Ireland|Inc|Limited|Ltd|Pte)", "legal_entity": "OpenAI, LLC", "symbols": {"$": "USD"}},
     "yubico": {"issuer": r"Yubico( [A-Za-z]+)? Pte|Yubico (AB|Inc|Limited|Ltd)", "legal_entity": "Yubico Singapore Pte. Ltd.", "symbols": {"$": "USD"}},
 }
@@ -214,14 +218,21 @@ class Checked:
     reason it will not."""
 
     def __init__(self) -> None:
-        self.reasons: List[str] = []
+        self.reasons: List[str] = []          # why there is no purchase record (required values)
+        self.dropped: List[str] = []          # optional values left out, and why
+        self.soft = False                     # failures now count as drops, not as missing
+        self.proposed: set = set()            # subtotal/shipping/tax the model gave
+        self.items_proposed = 0
         self.merchant = ""
         self.fields: Dict[str, Any] = {}      # text fields, as filed
         self.amounts: Dict[str, Tuple[str, Decimal]] = {}   # printed text and value
         self.items: List[Dict[str, Any]] = []
 
     def hold(self, reason: str) -> None:
-        self.reasons.append(reason)
+        (self.dropped if self.soft else self.reasons).append(reason)
+
+    def drop(self, reason: str) -> None:
+        self.dropped.append(reason)
 
 
 def evidence_line(lines: List[str], ev: Dict[str, Any], field: str, out: Checked, where: str = "") -> Optional[str]:
@@ -343,7 +354,8 @@ def currency_beside(line: str, symbols: Dict[str, str]) -> Optional[str]:
 
 
 def judge(proposal: Any, page: str, merchants: Dict[str, Dict[str, Any]]) -> Checked:
-    """Every check, collecting every reason. The result files only if it holds none."""
+    """Every check, collecting every reason. A failed required value goes to reasons and
+    leaves no purchase record; a failed optional value goes to dropped and is left out."""
     out = Checked()
     if not isinstance(proposal, dict):
         out.hold("the model's proposal is not a JSON object")
@@ -373,10 +385,20 @@ def judge(proposal: Any, page: str, merchants: Dict[str, Dict[str, Any]]) -> Che
     if entity and norm(entity) in "\n".join(lines):
         out.fields["merchant_legal_entity"] = norm(entity)
 
-    for field in ("invoice_ref", "receipt_ref", "order_ref"):
+    # A ref is optional while another one passed. When none did, their failures are the
+    # reasons there is no record.
+    mark = len(out.dropped)
+    out.soft = True
+    for field in ("invoice_ref", "receipt_ref"):
         check_ref(lines, ev, proposal, field, out)
+    out.soft = False
     if "invoice_ref" not in out.fields and "receipt_ref" not in out.fields:
+        out.reasons += out.dropped[mark:]
+        del out.dropped[mark:]
         out.hold("required: an invoice_ref or receipt_ref that passed its checks")
+    out.soft = True
+    check_ref(lines, ev, proposal, "order_ref", out)
+    out.soft = False
 
     # date
     if not present(proposal, "date"):
@@ -394,16 +416,25 @@ def judge(proposal: Any, page: str, merchants: Dict[str, Dict[str, Any]]) -> Che
 
     # amounts
     for field, kind in (("subtotal", "subtotal"), ("shipping", "shipping"), ("tax", "tax"), ("total", "total")):
+        out.soft = field != "total"
+        if field != "total" and present(proposal, field):
+            out.proposed.add(field)
         got = check_amount(lines, ev, proposal, field, out, kind)
         if got:
             out.amounts[field] = got
+    out.soft = False
     if "total" not in out.amounts and not present(proposal, "total"):
         out.hold("required: total is missing")
     tax_line = find_line(lines, ev.get("tax")) if "tax" in out.amounts else None
-    verbatim(lines, ev, proposal, "tax_label", out, line_of=tax_line or "")
-    if "tax_label" in out.fields and tax_line is not None and out.fields["tax_label"] not in tax_line:
-        out.hold(f"tax_label: {out.fields['tax_label']!r} is not on the tax line {tax_line[:80]!r}")
-        del out.fields["tax_label"]
+    out.soft = True
+    if present(proposal, "tax_label") and "tax" not in out.amounts:
+        out.hold("tax_label: left out with the tax, which did not pass")
+    else:
+        verbatim(lines, ev, proposal, "tax_label", out, line_of=tax_line or "")
+        if "tax_label" in out.fields and tax_line is not None and out.fields["tax_label"] not in tax_line:
+            out.hold(f"tax_label: {out.fields['tax_label']!r} is not on the tax line {tax_line[:80]!r}")
+            del out.fields["tax_label"]
+    out.soft = False
 
     # currency: the gate reads it from the total's own line (an ISO code, else the symbol
     # as the merchant's invoices use it). The model may name it, and then must agree;
@@ -427,7 +458,9 @@ def judge(proposal: Any, page: str, merchants: Dict[str, Dict[str, Any]]) -> Che
     else:
         out.hold("required: currency is missing")
 
+    out.soft = True
     check_items(lines, proposal, out)
+    out.soft = False
     check_arithmetic(out)
     return out
 
@@ -439,6 +472,16 @@ def check_items(lines, proposal, out: Checked) -> None:
     if not isinstance(raw, list):
         out.hold("items: not a list")
         return
+    out.items_proposed = len(raw)
+    failed_before = len(out.dropped)
+    check_item_rows(lines, raw, out)
+    if len(out.dropped) > failed_before:
+        # a list with a row missing would read as the whole order, so none is kept
+        out.items = []
+        out.drop("items: left out, since not every line item passed")
+
+
+def check_item_rows(lines, raw, out: Checked) -> None:
     for i, item in enumerate(raw):
         where = f"items[{i}]."
         if not isinstance(item, dict) or not present(item, "name") or not isinstance(item["name"], str):
@@ -465,28 +508,43 @@ def check_items(lines, proposal, out: Checked) -> None:
         out.items.append(entry)
 
 
+def drop_parts(out: Checked, why: str) -> None:
+    """The sums do not agree, so no part of them can be believed; the total stands, since
+    it was proved against its own line."""
+    for k in ("subtotal", "shipping", "tax"):
+        out.amounts.pop(k, None)
+    out.fields.pop("tax_label", None)
+    out.items = []
+    out.drop(f"{why}; subtotal, shipping, tax and items are left out and the total stands")
+
+
 def check_arithmetic(out: Checked) -> None:
-    """Exact decimal sums, where the page printed the parts. A page that prints a
-    discount or a tax-inclusive total fails here and is held for a person."""
+    """Exact decimal sums, run only when every part they add survived its own checks. A
+    page that prints a discount or a tax-inclusive total fails here, and the parts are
+    dropped."""
     for i, it in enumerate(out.items):
         if all(k in it for k in ("quantity", "unit_price", "line_total")):
             q, u, t = it["quantity"][1], it["unit_price"][1], it["line_total"][1]
             # A unit price may print more places than the money does ($10.064091 for a
             # line of $10.06), so the product is rounded to the line total's own places.
             if q * u != t and (q * u).quantize(t, rounding=ROUND_HALF_UP) != t:
-                out.hold(f"items[{i}]: {q} x {u} is {q * u}, but the line total is {t}")
+                out.items = []
+                out.drop(f"items: left out, since item {i}: {q} x {u} is {q * u}, but the line total is {t}")
+                break
     line_totals = [it["line_total"][1] for it in out.items if "line_total" in it]
-    have_all = bool(out.items) and len(line_totals) == len(out.items)
+    have_all = out.items_proposed > 0 and len(out.items) == out.items_proposed and len(line_totals) == len(out.items)
     sub = out.amounts.get("subtotal")
     if sub and have_all and sum(line_totals) != sub[1]:
-        out.hold(f"subtotal: the lines add to {sum(line_totals)}, but the subtotal is {sub[1]}")
+        drop_parts(out, f"subtotal: the lines add to {sum(line_totals)}, but the subtotal is {sub[1]}")
+        return
     total = out.amounts.get("total")
     base = sub[1] if sub else (sum(line_totals) if have_all else None)
-    if total and base is not None:
-        got = base + (out.amounts["shipping"][1] if "shipping" in out.amounts else 0) \
-            + (out.amounts["tax"][1] if "tax" in out.amounts else 0)
-        if got != total[1]:
-            out.hold(f"total: subtotal, shipping and tax add to {got}, but the total is {total[1]}")
+    if not total or base is None or not all(k in out.amounts for k in out.proposed):
+        return
+    got = base + (out.amounts["shipping"][1] if "shipping" in out.amounts else 0) \
+        + (out.amounts["tax"][1] if "tax" in out.amounts else 0)
+    if got != total[1]:
+        drop_parts(out, f"total: subtotal, shipping and tax add to {got}, but the total is {total[1]}")
 
 
 # ---------------------------------------------------------------- what is filed
@@ -598,9 +656,43 @@ def put(path: Path, body: bytes) -> str:
     return "new"
 
 
-def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str, sub: str = "") -> Tuple[List[str], List[str]]:
-    """Plan the three files, refuse if any would overwrite, then write. Returns the
-    files' paths and the reasons it did not. sub is filing_subdir: the files go under
+def short_reasons(reasons: List[str], limit: int = 3) -> str:
+    """A few reasons, each cut to a short line, for a note a person reads in a list."""
+    shown = [r if len(r) <= 100 else r[:97] + "..." for r in reasons[:limit]]
+    more = len(reasons) - len(shown)
+    return "; ".join(shown) + (f"; and {more} more" if more > 0 else "")
+
+
+def mail_name(received: str, key: str, stem: str) -> str:
+    """The name of a PDF that is a document only: the mail's received date, the mail's
+    folder in the spool and the attachment's own name."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", stem).strip("-.") or "attachment"
+    return f"{received}_mail_{key}_{safe}"
+
+
+def document_sidecar(received: str, subject: str, message_id: str, missing: List[str]) -> str:
+    title = norm(subject)[:120] or "Forwarded mail"
+    note = (f"Emailed as message {message_id}; filed by purchase_gate {GATE_VERSION}, which could not check a "
+            f"purchase from it: {short_reasons(missing) or 'no reason recorded'}.")
+    return f"date: {q(received)}\ntitle: {q(title)}\nnote: {q(note)}\n"
+
+
+def write_plan(plan: List[Tuple[Path, bytes]]) -> Tuple[List[str], bool, List[str]]:
+    """Write each file that is not there. Returns the paths, whether any was new, and the
+    paths that appeared with other bytes since the plan was made."""
+    new, clash = False, []
+    for path, body in plan:
+        got = put(path, body)
+        new = new or got == "new"
+        if got == "differs":
+            clash.append(path.name)
+    return [str(p) for p, _ in plan], new, clash
+
+
+def file_purchase(library: Path, c: Checked, pdf: bytes, message_id: str, model: str, sub: str = "") -> Tuple[str, List[str], List[str]]:
+    """Plan the three files and write them. Returns (status, files, problems): status is
+    filed or already_filed, and problems (with no files written) says why the purchase
+    cannot be filed under its own name. sub is filing_subdir: the files go under
     documents/<sub> and records/<sub>, and an id is looked for in records/ and there."""
     base = file_name(c)
     docs, recs = library / "documents" / sub, library / "records" / sub
@@ -612,32 +704,50 @@ def file_it(library: Path, c: Checked, pdf: bytes, message_id: str, model: str, 
     ]
     own_record = plan[2][0]
     id_line = f"    id: {q(purchase_id(c))}\n"
-    problems = []
+    facts = [f"    date: {q(c.fields['date'])}\n", f"    total: {c.amounts['total'][0]}\n",
+             f"    currency: {c.fields['currency']}\n", f"    merchant: {c.merchant}\n"]
+    problems, agreeing = [], []
     seen = sorted(set((library / "records").glob("*.y*ml")) | set(recs.glob("*.y*ml")))
     for other in seen:
-        if other == own_record:
-            continue
         text = other.read_text(encoding="utf-8", errors="replace")
         if id_line not in text:
             continue
-        # The purchase is filed already, from another document (an invoice and its
-        # receipt describe one purchase). The records file stays as it is when it agrees
-        # on the figures, and only this document is added; otherwise it is a hold.
-        facts = [f"    date: {q(c.fields['date'])}\n", f"    total: {c.amounts['total'][0]}\n",
-                 f"    currency: {c.fields['currency']}\n", f"    merchant: {c.merchant}\n"]
+        # The purchase is filed already, from this or another document (an invoice and its
+        # receipt describe one purchase). It stands when it agrees on the figures.
         if all(line in text for line in facts):
-            plan = plan[:2]
+            agreeing.append(other)
         else:
             problems.append(f"the purchase is already in {other.name} with other figures, and two records files may not claim one id")
+    if problems:
+        return "", [], problems
+    pdf_path = plan[0][0]
+    if agreeing and pdf_path.exists() and pdf_path.read_bytes() != pdf:
+        return "already_filed", [str(pdf_path)] + [str(p) for p in agreeing], []
+    if agreeing:
+        plan = plan[:2]
     for path, body in plan:
-        if path.exists() and path.read_bytes() != body:
+        if path.exists() and path.read_bytes() != body and not (path == own_record and agreeing):
             problems.append(f"{path.name} already exists with different bytes; the gate does not overwrite")
     if problems:
-        return [], problems
-    for path, body in plan:
-        if put(path, body) == "differs":  # lost a race since the check
-            return [], [f"{path.name} appeared with different bytes; the gate does not overwrite"]
-    return [str(p) for p, _ in plan], []
+        return "", [], problems
+    files, new, clash = write_plan(plan)
+    if clash:  # lost a race since the check
+        return "", [], [f"{name} appeared with different bytes; the gate does not overwrite" for name in clash]
+    return ("filed" if new else "already_filed"), files, []
+
+
+def file_document(library: Path, name: str, pdf: bytes, sidecar: str, sub: str = "") -> Tuple[str, List[str]]:
+    """File a PDF with its sidecar and no record. A name taken by other bytes gets the
+    first eight characters of the PDF's sha256 added, so it is filed all the same."""
+    docs = library / "documents" / sub
+    sha = hashlib.sha256(pdf).hexdigest()
+    target = docs / f"{name}.pdf"
+    if target.exists() and target.read_bytes() != pdf:
+        name = f"{name}-{sha[:8]}"
+    plan = [(docs / f"{name}.pdf", pdf), (docs / f"{name}.pdf.meta.yaml", sidecar.encode())]
+    # put never replaces a file, so a sidecar a person has edited stays as it is
+    _, new, _ = write_plan(plan)
+    return ("document_only" if new else "already_filed"), [str(p) for p, _ in plan]
 
 
 # ---------------------------------------------------------------- the command
@@ -694,13 +804,27 @@ def filing_subdir(config: Dict[str, Any]) -> str:
 
 
 def write_json(path: Path, body: Dict[str, Any]) -> None:
-    """Add path beside the payload; an earlier result or hold from a rerun is replaced."""
+    """Add path beside the PDF; an earlier result from a rerun is replaced."""
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".gate-")
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         json.dump(body, fh, indent=2, sort_keys=True, ensure_ascii=False)
         fh.write("\n")
     os.chmod(tmp, 0o644)
     os.replace(tmp, path)
+
+
+def received_date(meta: Dict[str, Any]) -> str:
+    """The day the mail arrived, from message.json's received_at (an ISO timestamp), or
+    today in UTC when it is missing or not a date."""
+    raw = meta.get("received_at")
+    if isinstance(raw, str):
+        m = re.match(r"\s*(\d{4})-(\d{2})-(\d{2})", raw)
+        if m:
+            try:
+                return Date(int(m.group(1)), int(m.group(2)), int(m.group(3))).isoformat()
+            except ValueError:
+                pass
+    return datetime.now(timezone.utc).date().isoformat()
 
 
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -723,39 +847,47 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
             raise Refusal(f"{key} {p[key]!r} does not agree with input_file")
     if not (library / "documents" / sub).is_dir() or not (library / "records" / sub).is_dir():
         raise cfg.bad("library", f"{library} has no {Path('documents', sub)}/ and {Path('records', sub)}/")
-
-    reasons: List[str] = []
-    message_id = ""
-    try:
-        meta = json.loads((payload_dir / "message.json").read_text(encoding="utf-8"))
-        message_id = str(meta["message_id"])
-    except (OSError, ValueError, KeyError, TypeError):
-        reasons.append("message.json is missing or has no message_id, so the filing cannot name its mail")
     if not txt.is_file() or txt.stat().st_size > max_text:
         raise Refusal(f"{txt.name} is not a text file of at most {max_text} bytes")
     if not pdf_path.is_file() or pdf_path.stat().st_size > max_pdf:
         raise Refusal(f"{pdf_path.name} is not a file of at most {max_pdf} bytes")
+
+    dropped: List[str] = []
+    meta: Dict[str, Any] = {}
+    message_id = "unknown"
+    try:
+        loaded = json.loads((payload_dir / "message.json").read_text(encoding="utf-8"))
+        meta = loaded if isinstance(loaded, dict) else {}
+        message_id = str(meta["message_id"])
+    except (OSError, ValueError, KeyError, TypeError):
+        dropped.append("message.json is missing or has no message_id, so the filing cannot name its mail")
     pdf = pdf_path.read_bytes()
-    if not pdf.startswith(b"%PDF"):
-        reasons.append("the attachment does not start with %PDF")
 
     model = str(p.get("model") or "")
     proposal = p.get("data")
     checked = judge(proposal, txt.read_text(encoding="utf-8", errors="replace"), merchants)
-    reasons += checked.reasons
+    missing = list(checked.reasons)
+    dropped = checked.dropped + dropped
+    if not pdf.startswith(b"%PDF"):
+        missing.append("the attachment does not start with %PDF")
 
-    files: List[str] = []
-    if not reasons:
-        files, problems = file_it(library, checked, pdf, message_id, model, sub)
-        reasons += problems
+    status, files = "", []
+    if not missing:
+        status, files, problems = file_purchase(library, checked, pdf, message_id, model, sub)
+        missing += problems
+    if not status:
+        received = received_date(meta)
+        subject = meta.get("subject") if isinstance(meta.get("subject"), str) else ""
+        name = mail_name(received, payload_dir.name, pdf_path.stem)
+        status, files = file_document(library, name, pdf, document_sidecar(received, subject, message_id, missing), sub)
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    if reasons:
-        write_json(payload_dir / "hold.json", {"status": "held", "reasons": reasons, "message_id": message_id,
-                                               "gate": GATE_VERSION, "model": model, "at": now, "proposal": proposal})
-        return ductile.ok(f"held, {len(reasons)} reason(s): {'; '.join(reasons)[:600]}")
-    write_json(payload_dir / "result.json", {"status": "filed", "files": files, "message_id": message_id,
-                                             "gate": GATE_VERSION, "model": model, "at": now})
-    return ductile.ok(f"filed {Path(files[0]).stem}")
+    write_json(pdf_path.parent / f"{pdf_path.name}.result.json",
+               {"status": status, "files": files, "dropped": dropped, "missing": missing,
+                "message_id": message_id, "gate": GATE_VERSION, "model": model, "at": now})
+    note = f"; {len(dropped)} value(s) dropped" if dropped else ""
+    if status == "document_only" or (status == "already_filed" and missing):
+        note = f"; no purchase record, {len(missing)} reason(s): {'; '.join(missing)[:500]}"
+    return ductile.ok(f"{status} {Path(files[0]).stem}{note}")
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:

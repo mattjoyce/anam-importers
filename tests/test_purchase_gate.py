@@ -11,6 +11,7 @@ import json
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict
 
@@ -149,7 +150,21 @@ def judge(proposal, page=KEYS_PAGE, merchants=MERCHANTS):
 class JudgeTest(unittest.TestCase):
     def assertHeld(self, proposal, needle, page=KEYS_PAGE, merchants=MERCHANTS):
         out = judge(proposal, page, merchants)
-        self.assertTrue(any(needle in r for r in out.reasons), f"want a reason with {needle!r}, got {out.reasons}")
+        both = out.reasons + out.dropped
+        self.assertTrue(any(needle in r for r in both), f"want a reason with {needle!r}, got {both}")
+        return out
+
+    def assertMissing(self, proposal, needle, page=KEYS_PAGE, merchants=MERCHANTS):
+        """A required value failed: there is no purchase record."""
+        out = judge(proposal, page, merchants)
+        self.assertTrue(any(needle in r for r in out.reasons), f"want a required reason with {needle!r}, got {out.reasons}")
+        return out
+
+    def assertDropped(self, proposal, needle, page=KEYS_PAGE, merchants=MERCHANTS):
+        """An optional value failed: it is left out and the rest stands."""
+        out = judge(proposal, page, merchants)
+        self.assertEqual(out.reasons, [])
+        self.assertTrue(any(needle in r for r in out.dropped), f"want a dropped reason with {needle!r}, got {out.dropped}")
         return out
 
     def test_good_proposals_pass(self):
@@ -305,13 +320,120 @@ class JudgeTest(unittest.TestCase):
         self.assertGreaterEqual(len(out.reasons), 3)
 
 
-def spool_with(spool: Path, page: str, key="0123456789abcdef", message_id="<m1@example.invalid>") -> Dict[str, str]:
+# The 2024 Anthropic receipt: the issuer is a bare name above the "Bill to" column, and
+# the only currency mark is a "$".
+OLD_PAGE = """\
+Anthropic                                  Bill to
+                                           Person A
+Receipt
+Invoice number   TESTINV-0001
+Date paid        March 3, 2024
+
+Description                 Qty   Unit price     Amount
+Test plan                   1     $22.00         $22.00
+
+Total   $22.00
+"""
+
+OLD = {
+    "merchant": "anthropic",
+    "invoice_ref": "TESTINV-0001",
+    "date": "2024-03-03",
+    "total": 22.0,
+    "evidence": {
+        "invoice_ref": "Invoice number   TESTINV-0001",
+        "date": "Date paid        March 3, 2024",
+        "total": "Total   $22.00",
+    },
+}
+
+# A receipt number that the page's table wraps over two lines, with the invoice number whole.
+WRAPPED_PAGE = SAAS_PAGE.replace("Receipt number   1111-2222-3333\n", "").replace(
+    "Subtotal  ", "Payment history\nPayment method   Date   Receipt number\nCard   Oct 1, 2026   1234-5678-\n9012\n\nSubtotal  ")
+WRAPPED = edited(SAAS, receipt_ref="1234-5678-9012")
+WRAPPED["evidence"]["receipt_ref"] = "Card   Oct 1, 2026   1234-5678-"
+
+
+class FileEveryMailJudgeTest(unittest.TestCase):
+    def test_the_2024_issuer_line_and_a_bare_dollar_file_as_usd(self):
+        out = judge(OLD, OLD_PAGE)
+        self.assertEqual((out.reasons, out.dropped), ([], []))
+        self.assertEqual((out.merchant, out.fields["currency"], out.amounts["total"][0]), ("anthropic", "USD", "22.00"))
+
+    def test_the_bare_issuer_name_is_not_accepted_inside_prose_or_other_words(self):
+        for page in (OLD_PAGE.replace("Anthropic   ", "Not Anthropic   "), OLD_PAGE.replace("Anthropic   ", "Anthropically   "),
+                     OLD_PAGE.replace("Anthropic                                  Bill to", "Anthropic thanks you for paying"),
+                     OLD_PAGE.replace("Anthropic   ", "Anthropic Pty")):
+            out = judge(OLD, page)
+            self.assertTrue(any("no allow-listed issuer" in r for r in out.reasons), page[:40])
+
+    def test_a_wrapped_receipt_number_is_dropped_and_the_invoice_number_stands(self):
+        out = judge(WRAPPED, WRAPPED_PAGE)
+        self.assertEqual(out.reasons, [])
+        self.assertNotIn("receipt_ref", out.fields)
+        self.assertEqual(out.fields["invoice_ref"], "TEST-0001")
+        self.assertTrue(any(r.startswith("receipt_ref") for r in out.dropped), out.dropped)
+        # a dropped receipt number names neither the file nor the id
+        self.assertEqual(gate.file_name(out), "2026-10-01_anthropic_invoice_TEST-0001")
+        self.assertEqual(gate.purchase_id(out), "records:purchase/anthropic/TEST-0001")
+        self.assertNotIn("1234-5678", gate.purchase_yaml(out, "x.pdf", "0" * 64, "<m>", "m"))
+
+    def test_a_tax_without_evidence_is_dropped_and_the_arithmetic_is_skipped(self):
+        p = with_evidence(SAAS, tax=...)
+        out = judge(p, SAAS_PAGE)
+        self.assertEqual(out.reasons, [])
+        self.assertNotIn("tax", out.amounts)
+        self.assertNotIn("tax_label", out.fields)
+        self.assertTrue(any(r.startswith("tax: no evidence") for r in out.dropped), out.dropped)
+        # subtotal 100 and no tax is not 110, but nothing is said or dropped for it
+        self.assertEqual(out.amounts["subtotal"][0], "100.00")
+        self.assertEqual(len(out.items), 1)
+        self.assertFalse(any("add to" in r for r in out.dropped))
+
+    def test_sums_that_do_not_agree_drop_the_parts_and_keep_the_total(self):
+        page = SAAS_PAGE.replace("$110.00", "$115.00")
+        p = edited(SAAS, total=115.0)
+        p["evidence"].update(total="Amount paid                                      $115.00 USD",
+                             currency="Amount paid                                      $115.00 USD")
+        out = judge(p, page)
+        self.assertEqual(out.reasons, [])
+        self.assertEqual(sorted(out.amounts), ["total"])
+        self.assertEqual((out.items, out.fields.get("tax_label")), ([], None))
+        self.assertTrue(any("the total stands" in r for r in out.dropped), out.dropped)
+
+    def test_one_bad_item_drops_all_the_items(self):
+        p = copy.deepcopy(SAAS)
+        p["items"][0]["evidence"] = dict.fromkeys(("name", "quantity", "unit_price", "line_total"), "Nothing like it")
+        out = judge(p, SAAS_PAGE)
+        self.assertEqual((out.reasons, out.items), ([], []))
+        self.assertEqual(out.amounts["total"][0], "110.00")
+
+    def test_a_failed_required_value_is_not_a_drop(self):
+        out = judge(edited(SAAS, date="2026-10-02"), SAAS_PAGE)
+        self.assertTrue(any(r.startswith("date") for r in out.reasons))
+        out = judge(edited(OLD, invoice_ref="NOPE-1"), OLD_PAGE)
+        self.assertTrue(any("required: an invoice_ref or receipt_ref" in r for r in out.reasons))
+        self.assertTrue(any(r.startswith("invoice_ref") for r in out.reasons))
+
+    def test_garbage_proposals_leave_reasons_not_exceptions(self):
+        for junk in (None, "text", [], {}, {"evidence": 3}, {"merchant": "anthropic", "evidence": {}, "total": "lots"}):
+            self.assertTrue(judge(junk, OLD_PAGE).reasons, junk)
+
+
+TODAY = datetime.now(timezone.utc).date().isoformat()
+
+
+def spool_with(spool: Path, page: str, key="0123456789abcdef", message_id="<m1@example.invalid>", received_at=None,
+               subject="Test mail", name="1-invoice.pdf", body=b"%PDF-1.4 a synthetic invoice") -> Dict[str, str]:
     d = spool / key
-    (d / "attachments").mkdir(parents=True)
-    (d / "message.json").write_text(json.dumps({"message_id": message_id, "from": "x@example.invalid"}))
-    pdf = d / "attachments" / "1-invoice.pdf"
-    pdf.write_bytes(b"%PDF-1.4 a synthetic invoice")
-    txt = d / "attachments" / "1-invoice.pdf.txt"
+    (d / "attachments").mkdir(parents=True, exist_ok=True)
+    meta = {"message_id": message_id, "from": "x@example.invalid", "subject": subject}
+    if received_at:
+        meta["received_at"] = received_at
+    (d / "message.json").write_text(json.dumps(meta))
+    pdf = d / "attachments" / name
+    pdf.write_bytes(body)
+    txt = d / "attachments" / (name + ".txt")
     txt.write_text(page, encoding="utf-8")
     return {"payload_dir": str(d), "pdf": str(pdf), "input_file": str(txt)}
 
@@ -346,13 +468,14 @@ class HandleTest(unittest.TestCase):
         self.assertEqual(docs, [f"{base}.pdf", f"{base}.pdf.meta.yaml"])
         self.assertEqual((self.library / "documents" / f"{base}.pdf").read_bytes(), b"%PDF-1.4 a synthetic invoice")
         self.assertEqual([p.name for p in (self.library / "records").iterdir()], [f"{base}.yaml"])
-        # the payload folder gained result.json and nothing else changed
+        # the payload folder gained the PDF's result file and nothing else changed
         after = snapshot(self.spool)
-        self.assertEqual(set(after) - set(before), {"0123456789abcdef/result.json"})
+        self.assertEqual(set(after) - set(before), {"0123456789abcdef/attachments/1-invoice.pdf.result.json"})
         self.assertEqual({k: v for k, v in after.items() if k in before}, before)
-        result = json.loads(after["0123456789abcdef/result.json"])
+        result = json.loads(after["0123456789abcdef/attachments/1-invoice.pdf.result.json"])
         self.assertEqual(result["status"], "filed")
         self.assertEqual(len(result["files"]), 3)
+        self.assertEqual((result["dropped"], result["missing"], result["gate"]), ([], [], gate.GATE_VERSION))
 
     def test_filing_subdir_files_under_documents_and_records_of_that_name(self):
         (self.library / "documents" / "mail").mkdir()
@@ -425,20 +548,38 @@ class HandleTest(unittest.TestCase):
         self.assertIn("1111-2222-3333", p["source_note"])
         self.validate_against_definition(p)
 
-    def test_a_hold_writes_hold_json_with_every_reason_and_nothing_in_the_library(self):
+    def test_a_failed_required_value_files_the_pdf_as_a_document_only(self):
         paths = spool_with(self.spool, KEYS_PAGE)
         before = snapshot(self.spool)
         wrong = edited(KEYS, currency="AUD", total=1.0)
         resp = self.run_gate(paths, wrong)
         self.assertEqual(resp["status"], "ok")
-        self.assertTrue(resp["result"].startswith("held"), resp)
-        self.assertEqual(snapshot(self.library), {})
+        self.assertTrue(resp["result"].startswith("document_only"), resp)
+        # no purchase record, and the PDF is named from the mail
+        self.assertEqual(snapshot(self.library / "records"), {})
+        name = f"{TODAY}_mail_0123456789abcdef_1-invoice"
+        self.assertEqual(sorted(snapshot(self.library)),
+                         [f"documents/{name}.pdf", f"documents/{name}.pdf.meta.yaml"])
         after = snapshot(self.spool)
-        self.assertEqual(set(after) - set(before), {"0123456789abcdef/hold.json"})
+        self.assertEqual(set(after) - set(before), {"0123456789abcdef/attachments/1-invoice.pdf.result.json"})
         self.assertEqual({k: v for k, v in after.items() if k in before}, before)
-        hold = json.loads(after["0123456789abcdef/hold.json"])
-        self.assertEqual(hold["status"], "held")
-        self.assertGreaterEqual(len(hold["reasons"]), 2)
+        result = json.loads(after["0123456789abcdef/attachments/1-invoice.pdf.result.json"])
+        self.assertEqual(result["status"], "document_only")
+        self.assertGreaterEqual(len(result["missing"]), 2)
+        self.assertEqual(result["message_id"], "<m1@example.invalid>")
+        self.assertNotIn("hold.json", " ".join(after))
+
+    def test_a_document_only_pdf_is_dated_and_titled_from_the_mail(self):
+        paths = spool_with(self.spool, KEYS_PAGE, received_at="2026-09-03T01:02:03.000Z", subject="  Fwd:  Your   receipt  ")
+        resp = self.run_gate(paths, {})
+        self.assertTrue(resp["result"].startswith("document_only"), resp)
+        pdf = self.library / "documents" / "2026-09-03_mail_0123456789abcdef_1-invoice.pdf"
+        self.assertTrue(pdf.is_file())
+        side = load(REPO / "documents" / "run.py", "anam_documents_run_for_gate_doc").sidecar(pdf)
+        self.assertEqual(side["date"], "2026-09-03")
+        self.assertEqual(side["title"], "Fwd: Your receipt")
+        self.assertIn("could not check a purchase", side["note"])
+        self.assertIn("proposal", side["note"])
 
     def test_it_never_overwrites(self):
         paths = spool_with(self.spool, KEYS_PAGE)
@@ -446,23 +587,44 @@ class HandleTest(unittest.TestCase):
         first = snapshot(self.library)
         # the same mail again is a no-op
         again = self.run_gate(paths, KEYS)
-        self.assertTrue(again["result"].startswith("filed"), again)
+        self.assertTrue(again["result"].startswith("already_filed"), again)
         self.assertEqual(snapshot(self.library), first)
-        # different bytes under a filed name are a hold, and nothing is touched
+        # a record a person edited stays as it is; the purchase is still filed
         rec = self.library / "records" / "2026-10-24_yubico_invoice_INV-TEST-0001.yaml"
         rec.write_text(rec.read_text() + "# edited by a person\n")
         edited_state = snapshot(self.library)
-        held = self.run_gate(paths, KEYS)
-        self.assertTrue(held["result"].startswith("held"), held)
-        self.assertIn("does not overwrite", held["result"])
+        again = self.run_gate(paths, KEYS)
+        self.assertTrue(again["result"].startswith("already_filed"), again)
         self.assertEqual(snapshot(self.library), edited_state)
-        # a different PDF under the same name is a hold too
+        # a different PDF under the same name is the same purchase, already filed
         rec.write_bytes(first[str(rec.relative_to(self.library))])
         pdf = self.spool / "0123456789abcdef" / "attachments" / "1-invoice.pdf"
         pdf.write_bytes(b"%PDF-1.4 another")
-        held = self.run_gate(paths, KEYS)
-        self.assertTrue(held["result"].startswith("held"), held)
+        again = self.run_gate(paths, KEYS)
+        self.assertTrue(again["result"].startswith("already_filed"), again)
         self.assertEqual(snapshot(self.library), first)
+
+    def test_the_same_invoice_in_two_mails_with_other_bytes_is_already_filed(self):
+        self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
+        first = snapshot(self.library)
+        second = spool_with(self.spool, KEYS_PAGE, key="fedcba9876543210", body=b"%PDF-1.4 the same invoice, printed again")
+        resp = self.run_gate(second, KEYS)
+        self.assertTrue(resp["result"].startswith("already_filed"), resp)
+        self.assertEqual(snapshot(self.library), first)
+        result = json.loads((self.spool / "fedcba9876543210" / "attachments" / "1-invoice.pdf.result.json").read_text())
+        self.assertEqual(result["status"], "already_filed")
+
+    def test_a_document_only_name_taken_by_other_bytes_gets_a_suffix(self):
+        a = spool_with(self.spool, "", received_at="2026-09-03T00:00:00Z")
+        self.run_gate(a, {})
+        self.run_gate(a, {})  # the same bytes again: nothing new
+        Path(a["pdf"]).write_bytes(b"%PDF-1.4 other")
+        resp = self.run_gate(a, {})
+        self.assertTrue(resp["result"].startswith("document_only"), resp)
+        pdfs = sorted(p.name for p in (self.library / "documents").glob("*.pdf"))
+        self.assertEqual(len(pdfs), 2)
+        sha = __import__("hashlib").sha256(b"%PDF-1.4 other").hexdigest()[:8]
+        self.assertIn(f"2026-09-03_mail_0123456789abcdef_1-invoice-{sha}.pdf", pdfs)
 
     def test_a_second_document_for_one_purchase_adds_the_document_only(self):
         self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
@@ -486,7 +648,7 @@ class HandleTest(unittest.TestCase):
         resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
         self.assertTrue(resp["result"].startswith("filed"), resp)
 
-    def test_a_second_document_with_other_figures_is_held(self):
+    def test_a_second_document_with_other_figures_is_filed_as_a_document_only(self):
         self.run_gate(spool_with(self.spool, KEYS_PAGE), KEYS)
         before = snapshot(self.library)
         page = KEYS_PAGE.replace("INV-TEST-0001", "INV-TEST-0007").replace("$85.80", "$95.80").replace("$10.00", "$20.00")
@@ -495,9 +657,11 @@ class HandleTest(unittest.TestCase):
                                      shipping="Shipping and Handling:                  $20.00",
                                      total="Grand Total:                $95.80", currency="Grand Total:                $95.80"))
         resp = self.run_gate(spool_with(self.spool, page, key="fedcba9876543210"), again)
-        self.assertTrue(resp["result"].startswith("held"), resp)
+        self.assertTrue(resp["result"].startswith("document_only"), resp)
         self.assertIn("with other figures", resp["result"])
-        self.assertEqual(snapshot(self.library), before)
+        # the records are untouched; the PDF is filed as a document under the mail's name
+        self.assertEqual(snapshot(self.library / "records"), {k[len("records/"):]: v for k, v in before.items() if k.startswith("records/")})
+        self.assertEqual(len(list((self.library / "documents").glob("*_mail_fedcba9876543210_*.pdf"))), 1)
 
     def test_a_unit_price_with_more_places_than_the_line_total_passes(self):
         # the Anthropic shape: $10.064091 for a line of $10.06
@@ -555,12 +719,62 @@ class HandleTest(unittest.TestCase):
             self.assertIn("does not agree", resp["error"])
         self.assertEqual(snapshot(self.library), {})
 
-    def test_a_missing_message_id_is_a_hold(self):
+    def test_a_missing_message_id_is_noted_and_the_mail_is_still_filed(self):
         paths = spool_with(self.spool, KEYS_PAGE)
         (self.spool / "0123456789abcdef" / "message.json").unlink()
         resp = self.run_gate(paths, KEYS)
-        self.assertTrue(resp["result"].startswith("held"), resp)
-        self.assertEqual(snapshot(self.library), {})
+        self.assertTrue(resp["result"].startswith("filed"), resp)
+        result = json.loads((self.spool / "0123456789abcdef" / "attachments" / "1-invoice.pdf.result.json").read_text())
+        self.assertTrue(any("message.json" in d for d in result["dropped"]), result)
+
+    def test_the_2024_receipt_files_as_usd_through_handle(self):
+        resp = self.run_gate(spool_with(self.spool, OLD_PAGE), OLD)
+        self.assertTrue(resp["result"].startswith("filed"), resp)
+        rec = self.library / "records" / "2024-03-03_anthropic_invoice_TESTINV-0001.yaml"
+        self.assertIn("currency: USD", rec.read_text())
+
+    def test_a_wrapped_receipt_number_files_with_the_invoice_number_through_handle(self):
+        resp = self.run_gate(spool_with(self.spool, WRAPPED_PAGE), WRAPPED)
+        self.assertTrue(resp["result"].startswith("filed"), resp)
+        self.assertEqual([p.name for p in (self.library / "records").iterdir()], ["2026-10-01_anthropic_invoice_TEST-0001.yaml"])
+        result = json.loads((self.spool / "0123456789abcdef" / "attachments" / "1-invoice.pdf.result.json").read_text())
+        self.assertTrue(any(d.startswith("receipt_ref") for d in result["dropped"]), result)
+
+    def test_a_filed_purchase_without_its_tax_still_passes_the_definition(self):
+        resp = self.run_gate(spool_with(self.spool, SAAS_PAGE), with_evidence(SAAS, tax=...))
+        self.assertTrue(resp["result"].startswith("filed"), resp)
+        records = load(RECORDS, "anam_records_run_for_gate3")
+        path = self.library / "records" / "2026-10-01_anthropic_receipt_1111-2222-3333.yaml"
+        p = records.envelope(records.records_file(path)[0], "person-a", "t")["payload"]
+        self.assertNotIn("tax", p)
+        self.validate_against_definition(p)
+
+    def test_an_empty_proposal_is_a_document_only_the_documents_importer_accepts(self):
+        for i, junk in enumerate((None, "", {}, {"evidence": {}}, "not json at all")):
+            with self.subTest(junk):
+                key = f"{i:016x}"
+                resp = self.run_gate(spool_with(self.spool, "", key=key, received_at="2026-08-09T10:00:00Z"), junk)
+                self.assertTrue(resp["result"].startswith("document_only"), resp)
+                pdf = self.library / "documents" / f"2026-08-09_mail_{key}_1-invoice.pdf"
+                side = load(REPO / "documents" / "run.py", f"anam_documents_run_for_gate_{i}").sidecar(pdf)
+                self.assertEqual(side["date"], "2026-08-09")
+        self.assertEqual(snapshot(self.library / "records"), {})
+
+    def test_two_pdfs_in_one_message_each_get_a_result_file(self):
+        a = spool_with(self.spool, KEYS_PAGE, name="1-first.pdf", body=b"%PDF-1.4 first")
+        b = spool_with(self.spool, "", name="2-second.pdf", body=b"%PDF-1.4 second")
+        self.run_gate(a, KEYS)
+        self.run_gate(b, {})
+        att = self.spool / "0123456789abcdef" / "attachments"
+        first = json.loads((att / "1-first.pdf.result.json").read_text())
+        second = json.loads((att / "2-second.pdf.result.json").read_text())
+        self.assertEqual((first["status"], second["status"]), ("filed", "document_only"))
+        self.assertFalse((self.spool / "0123456789abcdef" / "result.json").exists())
+
+    def test_a_non_pdf_attachment_is_filed_as_a_document_only_with_the_reason(self):
+        resp = self.run_gate(spool_with(self.spool, KEYS_PAGE, body=b"not a pdf"), KEYS)
+        self.assertTrue(resp["result"].startswith("document_only"), resp)
+        self.assertIn("%PDF", resp["result"])
 
     def test_health(self):
         config = {"library": str(self.library), "mail_spool": str(self.spool)}

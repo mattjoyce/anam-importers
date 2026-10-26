@@ -9,6 +9,15 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `purchase_gate` files every forwarded mail (anam card 242, Matt 2026-10-27) and no longer holds. The PDF
+  and its sidecar always go into `documents/`. A failed optional value (order or receipt ref, subtotal,
+  shipping, tax, items) is dropped and named; the sums run only when every part survived, and when they
+  disagree the parts go and the total stands. A failed required value (date, total, currency, merchant, one
+  checked ref) files the PDF as a document only, named `<received date>_mail_<key>_<stem>` with the mail's
+  subject as its title. The same purchase forwarded again is `already_filed`; a taken document name gets
+  a sha256 suffix. Each PDF gets `attachments/<pdf>.result.json` (status, files, dropped, missing) in place of
+  the per-message `result.json` and `hold.json`. Anthropic's allow-list entry also accepts the 2024 issuer
+  line `Anthropic` above the `Bill to` column. Gate version 0.2.0.
 - `agentmail` no longer runs `pdftotext` (anam card 250). The poll spools the PDF and emits `agentmail.pdf`
   with `{payload_dir, pdf}`; `message.json` no longer names a `text` file; health no longer asks for
   `pdftotext`. The `pdf_text` plugin in ductile-plugins writes `<pdf>.txt` as the next pipeline step, so

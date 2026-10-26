@@ -5,11 +5,11 @@ version: 0.1.0
 protocol: 2
 entrypoint: run.py
 concurrency_safe: true
-description: "Judges a model's proposal of an emailed invoice or receipt against the page text and either files it or holds it. A pass writes the PDF and its .meta.yaml under the Library's documents/ and one money.purchase under records/, for anam_documents and anam_records to send, and result.json beside the payload. A hold writes hold.json beside the payload, with every reason, and nothing in the Library. Never overwrites a file, never edits the payload folder, never reads a path outside mail_spool. Holds no token."
+description: "Judges a model's proposal of an emailed invoice or receipt against the page text and files every forwarded PDF. The PDF and its .meta.yaml always go under the Library's documents/. When the date, total, currency, merchant and one ref pass their checks, one money.purchase goes under records/ too, carrying only the values that passed; a failed optional value (order or receipt ref, subtotal, shipping, tax, items) is left out and named. Otherwise the PDF is a document only, dated by the mail's received date and named from the mail. Beside each PDF in attachments/ it writes <pdf>.result.json (status filed, document_only or already_filed, files, dropped, missing). Never overwrites a file, never edits the payload folder apart from the result file, never reads a path outside mail_spool. Holds no token."
 commands:
   - name: handle
     type: write
-    description: "On a fabric.completed event for one attachment (the model's JSON in data, the page text named by input_file): check the proposal and file or hold it."
+    description: "On a fabric.completed event for one attachment (the model's JSON in data, the page text named by input_file): check the proposal and file the PDF, with a purchase record when the required values pass."
     idempotent: true
     retry_safe: true
     input_schema: {}
