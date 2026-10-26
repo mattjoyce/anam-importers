@@ -792,8 +792,8 @@ sees half of one; an existing folder is skipped. `message.json` carries `auth`, 
 `authentication_results` as given (SPF, DKIM, DMARC and the domain each was judged on), or `null`.
 A message whose attachment fails the size or `%PDF` check, or whose text cannot be extracted, is not
 spooled, is named in the logs and is tried again. Each PDF newly spooled emits `agentmail.pdf` with
-`{payload_dir, pdf, input_file}`, absolute paths under `mail_spool`. The key is the vault secret
-`AGENTMAIL_API_KEY`.
+`{payload_dir, pdf, input_file}`, absolute paths under `mail_spool`. The key is the vault secret that `key_secret`
+names, `agentmail_api_key` unless set: Ductile's vault names are lowercase and global.
 
 | Key | Default | Why |
 |---|---|---|

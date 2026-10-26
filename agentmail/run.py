@@ -16,7 +16,7 @@ poll. A folder already there is skipped, so a second poll writes nothing.
 
 The plugin reads the inbox and writes under mail_spool. It sends nothing back, reads no
 instruction text in a mail, holds no Anam token, and logs ids, counts and file names only,
-never the API key (the gateway hands it over as the secret AGENTMAIL_API_KEY).
+never the API key (the gateway hands it over as the vault secret key_secret names, agentmail_api_key unless set).
 
 Commands:
 - poll   : spool the messages not yet spooled; one agentmail.pdf event per new PDF
@@ -44,7 +44,10 @@ from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 
 PDF_EVENT = "agentmail.pdf"
-SECRET = "AGENTMAIL_API_KEY"
+# The vault secret holding the key, unless key_secret names another. Ductile's vault
+# names are lowercase and global, so an instance names its own, as anam_submit's
+# token_secret does.
+DEFAULT_KEY_SECRET = "agentmail_api_key"
 
 # DEFAULT_* are choices someone could make differently (anam card 151): each is a key.
 DEFAULT_BASE_URL = fetch.DEFAULT_BASE_URL
@@ -78,9 +81,10 @@ def settings(config: Dict[str, Any]) -> Settings:
 
 
 def inbox_of(request: Dict[str, Any], s: Settings) -> fetch.Inbox:
-    key = (request.get("secrets") or {}).get(SECRET, "")
+    name = str((request.get("config") or {}).get("key_secret") or DEFAULT_KEY_SECRET)
+    key = (request.get("secrets") or {}).get(name, "")
     if not key:
-        raise ductile.Failure(f"no {SECRET} in the plugin's secrets", retry=False)
+        raise ductile.Failure(f"no {name} secret granted to this instance", retry=False)
     return fetch.Inbox(s.base_url, s.inbox, key, s.timeout)
 
 

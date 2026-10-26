@@ -34,6 +34,4 @@ commands:
       status: string
 config_keys:
   required: [agentmail_inbox, mail_spool]
-  optional: [base_url, timeout, page_size]
-secrets:
-  required: [AGENTMAIL_API_KEY]
+  optional: [base_url, timeout, page_size, key_secret]

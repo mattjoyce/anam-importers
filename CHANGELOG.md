@@ -22,7 +22,8 @@ All notable changes to this repo. The format follows
   given, the attachments byte-exact, a `pdftotext -layout` `.txt` beside each PDF), built under a
   temporary name and renamed into place, and emits one `agentmail.pdf` event per PDF newly spooled.
   A message with a failing attachment is not spooled and is retried next poll. `health` checks the key,
-  the folder and `pdftotext`. The key is the secret `AGENTMAIL_API_KEY`.
+  the folder and `pdftotext`. The key is the vault secret `key_secret` names
+  (`agentmail_api_key` by default; Ductile's vault names are lowercase).
 - `agentmail/fetch.py` copies an AgentMail inbox's attachments into a spool folder, byte-exact, with a
   `manifest.csv` (anam card 242). Slice one: it sends nothing to Anam.
 - `records/extract/add_source_time.py` (anam card 198): gives every record of `health.weight`,

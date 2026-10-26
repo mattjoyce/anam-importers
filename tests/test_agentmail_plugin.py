@@ -127,7 +127,7 @@ class PluginTest(unittest.TestCase):
     def run_cmd(self, command, key=KEY, **config):
         cfg = {"agentmail_inbox": "inbox@agentmail.test", "mail_spool": str(self.spool),
                "base_url": f"http://127.0.0.1:{self.srv.server_port}", **config}
-        req = {"command": command, "config": cfg, "secrets": {"AGENTMAIL_API_KEY": key} if key else {}}
+        req = {"command": command, "config": cfg, "secrets": {config.get("key_secret", "agentmail_api_key"): key} if key else {}}
         out = subprocess.run([sys.executable, str(ENTRY)], input=json.dumps(req), capture_output=True, text=True,
                              timeout=120)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -239,6 +239,17 @@ class PluginTest(unittest.TestCase):
         r = self.run_cmd("poll")
         self.assertEqual(self.fake.keys_at_download, [None])
         self.assertNotIn(KEY, json.dumps(r))
+
+    def test_key_secret_names_the_secret_and_a_missing_one_is_named(self):
+        self.assertEqual(self.run_cmd("health", key_secret="mail_key")["status"], "ok")
+        cfg = {"agentmail_inbox": "inbox@agentmail.test", "mail_spool": str(self.spool),
+               "base_url": f"http://127.0.0.1:{self.srv.server_port}", "key_secret": "mail_key"}
+        req = {"command": "health", "config": cfg, "secrets": {"agentmail_api_key": KEY}}
+        out = subprocess.run([sys.executable, str(ENTRY)], input=json.dumps(req), capture_output=True, text=True, timeout=120)
+        resp = json.loads(out.stdout)
+        self.assertEqual(resp["status"], "error", resp)
+        self.assertIn("mail_key", resp["error"])
+        self.assertNotIn(KEY, out.stdout + out.stderr)
 
     def test_a_wrong_key_is_an_error_without_the_key(self):
         r = self.run_cmd("poll", key="wrong-key-value")
