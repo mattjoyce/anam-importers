@@ -36,6 +36,8 @@ bp_csv/               anam_bp_csv: a blood pressure app export as health.blood-p
 dreamstation_card/    anam_dreamstation: a DreamStation CPAP card copy as health.cpap-session.dreamstation
 records/              anam_records: records files, facts written down as YAML, as Anam's bundled types
 documents/            anam_documents: a folder of documents with sidecars as record.document; anam_submit hands the bytes to Anam's library
+purchase_gate/        purchase_gate: judges a model's reading of an emailed invoice against the page text, then files it in the Library or holds it
+patterns/             fabric patterns (extract_purchase), the scribe prompt purchase_gate checks
 links/                anam_links: a folder of files as record.link, remembered by name, hash and date; the bytes stay where they are
   extract/            one-off extractors that turn an export into a records file
 garmin/               anam_garmin: a Garmin watch's alerts, hourly and daily heart rate, sessions, sleep, steps and days from GarminDB
@@ -481,6 +483,50 @@ plugins:
 
 A `folder_watch` on the folder runs `handle`, or a schedule runs `poll`; both send the whole
 folder. The importer reads the folder and writes only `state_file`.
+
+## Wiring an importer into a gateway (purchases)
+
+`purchase_gate` (anam card 242) is the last step of the invoice chain: `agentmail` leaves a PDF and its
+`pdftotext -layout` text in a payload folder, `fabric` runs the pattern `patterns/extract_purchase` over
+the text and emits `fabric.completed` with the model's JSON in `data`, and `purchase_gate` `handle`
+decides. The model proposes; the gate believes only what the page proves.
+
+- Every value carries `evidence`, a snippet that must sit on one line of the page, and the value must be
+  what the snippet says (decimals, never floats; dates in `2026-10-24`, `Oct 24, 2026`, `24 October 2026`
+  or `24/10/2026` read day first). `tax_label` needs no snippet but must be printed on the tax line. The legal entity is the
+  allow-list's `legal_entity`, filed when the page prints it, never the model's copy.
+- The currency is read from the line of the grand total: its one ISO code, else its one symbol read the way
+  that merchant's invoices use it (`merchants[...].symbols`). A model that names another currency, such as
+  one from a tax-conversion line, is held. A model may leave `currency` out when only `$` is printed.
+- A ref must follow a word for its own kind on its line: `invoice`, `receipt` or `order`.
+- Line totals equal quantity times unit price (rounded to the line total's places), and subtotal plus
+  shipping plus tax equals the total, where the page prints them.
+- The merchant is the one allow-listed merchant whose `issuer` pattern matches a line of the page.
+- A missing date, total, currency or invoice or receipt ref is a hold.
+
+A pass writes `<library>/documents/<date>_<merchant>_<invoice|receipt>_<ref>.pdf` with its `.meta.yaml`,
+and `<library>/records/<same name>.yaml` holding one `money.purchase` (id
+`records:purchase/<merchant>/<order_ref, else invoice or receipt number>`), then `result.json` in the
+payload folder. A purchase already filed from another document (an invoice, then its receipt) with the same
+date, total, currency and merchant adds the document only. A hold writes `hold.json` with every reason and
+nothing to the Library. No file is overwritten: identical bytes are a no-op, different bytes a hold. The
+payload folder gains `result.json` or `hold.json` and nothing else changes. Any path outside `mail_spool`
+is refused. The `anam_documents` and `anam_records` importers send what was filed.
+
+```yaml
+plugins:
+  purchase_gate:
+    enabled: true
+    config:
+      library: /path/to/anam/library        # has documents/ and records/
+      mail_spool: /path/to/mail-spool       # fabric's FABRIC_FILE_ROOT too
+```
+
+Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, legal_entity: <name>, symbols: {"$": "USD"}}`, default
+anthropic, openai and yubico), `max_text_bytes` (1,000,000) and `max_pdf_bytes` (20 MiB). Fabric forwards
+`input_file`; the gate derives the PDF and the payload folder from it, and refuses an event whose `pdf` or
+`payload_dir` disagrees. The pattern asks for no line items: gemma-3-4b could not copy an item's row, and the gate
+checks items if a stronger model gives them.
 
 ## One-off exports: `records/extract`
 

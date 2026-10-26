@@ -35,6 +35,9 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | 3 runs | `links/run.py` `DEFAULT_UNSEEN_AFTER` | `unseen_after` (links) | how long a person tolerates a file being missing before its facet says so is theirs: a synced folder wants more, a tidy one less |
 | unset (assumption) | `bp_csv/run.py` `clock_of` | `zone` (bp_csv) | the zone a person says the cuff's clock is set to; set, `source_time` says configuration, unset, assumption (anam card 198). Only the Definition's zone is accepted until a fact can name its own zone |
 | 3 hours | `records/extract/strong_csv.py:40` | `--max-session-sec` | the person's rule of 2026-10-08 for capping Strong's open-ended workouts; someone else's rule may differ |
+| anthropic, openai, yubico | `purchase_gate/run.py` `DEFAULT_MERCHANTS` | `merchants` (purchase_gate) | which sellers may be filed unattended, with the pattern that finds each on the page and what a bare `$` means in its invoices, is the person's allow-list |
+| 1,000,000 bytes | `purchase_gate/run.py` `DEFAULT_MAX_TEXT_BYTES` | `max_text_bytes` (purchase_gate) | the largest page text read; follows fabric's own default |
+| 20 MiB | `purchase_gate/run.py` `DEFAULT_MAX_PDF_BYTES` | `max_pdf_bytes` (purchase_gate) | the largest PDF copied into the Library |
 
 `timeout`, `busy_timeout_ms` (withings), `pattern`, `logbook_url`, `logbook_user` and every
 `lookback_days` were keys before card 152; they are now range-checked at start and passed down as
@@ -210,3 +213,14 @@ by setting a module global now passes `max_response` to `Client`, and a second t
   records file follows them, and a change would alter what a snapshot holds.
 - **`IDENTITY`** in records restates a Definition. Reading it from Anam's `/v1/definitions` would
   need a call the importer does not make today.
+
+### `purchase_gate`
+
+| Value | Where | Why not configurable |
+|---|---|---|
+| `GATE_VERSION` | `purchase_gate/run.py` | this file's version, written into every filed record's `basis`; it is the manifest's |
+| slug, ref, date and currency patterns | `purchase_gate/run.py` | restate the `money.purchase` Definition and the file names the importers read |
+| `CURRENCIES`, `SYMBOLS` | `purchase_gate/run.py` | ISO 4217 codes the gate can vouch for, and symbols that mean one currency whatever the merchant; a bare `$` is the merchant's (`merchants`) |
+| `KIND_WORDS`, `REF_WORDS` | `purchase_gate/run.py` | the words that make a line a subtotal, shipping, tax or total line, and a ref an invoice, receipt or order number: the check itself |
+| `MAX_SNIPPET = 400` | `purchase_gate/run.py` | a snippet is a line of a page, not the page |
+

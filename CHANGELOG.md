@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `purchase_gate/` and `patterns/extract_purchase` (anam card 242): the last step of the invoice chain. A
+  fabric pattern asks a model to transcribe an invoice with the text each value was read from; the gate
+  files a PDF, its sidecar and a `money.purchase` in the Library only when the page text proves the
+  proposal (evidence on one line, currency beside the total, refs after their own label, the sums, an
+  allow-listed issuer), and otherwise writes `hold.json` with every reason. It never overwrites a file.
 - `agentmail/` is a Ductile plugin (anam card 242, slice two): `poll` spools each message of an AgentMail
   inbox as a folder under `mail_spool` (`message.json` with AgentMail's SPF, DKIM and DMARC results as
   given, the attachments byte-exact, a `pdftotext -layout` `.txt` beside each PDF), built under a

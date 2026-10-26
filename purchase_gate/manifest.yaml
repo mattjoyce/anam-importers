@@ -1,0 +1,28 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: purchase_gate
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: true
+description: "Judges a model's proposal of an emailed invoice or receipt against the page text and either files it or holds it. A pass writes the PDF and its .meta.yaml under the Library's documents/ and one money.purchase under records/, for anam_documents and anam_records to send, and result.json beside the payload. A hold writes hold.json beside the payload, with every reason, and nothing in the Library. Never overwrites a file, never edits the payload folder, never reads a path outside mail_spool. Holds no token."
+commands:
+  - name: handle
+    type: write
+    description: "On a fabric.completed event for one attachment (the model's JSON in data, the page text named by input_file): check the proposal and file or hold it."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+  - name: health
+    type: read
+    description: "library has documents/ and records/, mail_spool is a folder and the merchants read."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [library, mail_spool]
+  optional: [merchants, max_text_bytes, max_pdf_bytes]
