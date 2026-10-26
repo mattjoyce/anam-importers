@@ -9,6 +9,12 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `agentmail/` is a Ductile plugin (anam card 242, slice two): `poll` spools each message of an AgentMail
+  inbox as a folder under `mail_spool` (`message.json` with AgentMail's SPF, DKIM and DMARC results as
+  given, the attachments byte-exact, a `pdftotext -layout` `.txt` beside each PDF), built under a
+  temporary name and renamed into place, and emits one `agentmail.pdf` event per PDF newly spooled.
+  A message with a failing attachment is not spooled and is retried next poll. `health` checks the key,
+  the folder and `pdftotext`. The key is the secret `AGENTMAIL_API_KEY`.
 - `agentmail/fetch.py` copies an AgentMail inbox's attachments into a spool folder, byte-exact, with a
   `manifest.csv` (anam card 242). Slice one: it sends nothing to Anam.
 - `garmin/` sends an hour's heart rate (anam card 129): `health.heart-rate.hour`, one facet a UTC

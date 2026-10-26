@@ -1,0 +1,39 @@
+manifest_spec: ductile.plugin
+manifest_version: 1
+name: agentmail
+version: 0.1.0
+protocol: 2
+entrypoint: run.py
+concurrency_safe: false
+description: "Spools the mail in an AgentMail inbox, one folder per message under mail_spool: message.json, each attachment byte-exact, and a pdftotext -layout .txt beside each PDF. Emits one agentmail.pdf event per PDF newly spooled. Reads the inbox, writes only under mail_spool, sends nothing back and reads no instruction text. Holds no Anam token."
+commands:
+  - name: poll
+    type: write
+    description: "Every message not yet spooled is written whole (built under a temporary name, then renamed), so a reader never sees half a folder. A message with an attachment that fails its size or %PDF check is not spooled, is named in the logs, and is tried again next poll. A folder already there is skipped, so a second poll writes nothing."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+      events: array
+    values:
+      consume: []
+      emit:
+        - event: agentmail.pdf
+          values:
+            - payload.payload_dir
+            - payload.pdf
+            - payload.input_file
+  - name: health
+    type: read
+    description: "The key reads the inbox, mail_spool is writable, and pdftotext is on the path."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
+config_keys:
+  required: [agentmail_inbox, mail_spool]
+  optional: [base_url, timeout, page_size]
+secrets:
+  required: [AGENTMAIL_API_KEY]

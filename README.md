@@ -721,6 +721,27 @@ Against the live spool on its first day (18 lines: 16 locations, 1 status), `hea
 and `poll` shaped 2 points in one hour. The 16 locations were two fixes, one of them repeated by
 15 pings over three hours while the phone sat still.
 
+## The agentmail plugin (`agentmail/run.py`)
+
+Anam card 242. A Ductile poller that spools an AgentMail inbox for the invoice chain. Each message
+becomes `<mail_spool>/<key>/` (`key` is the first 16 hex of the SHA-256 of the message id) holding
+`message.json`, `attachments/<n>-<name>` byte-exact, and `attachments/<n>-<name>.txt`, the
+`pdftotext -layout` of each PDF. A folder is built under a temporary name and renamed, so a reader never
+sees half of one; an existing folder is skipped. `message.json` carries `auth`, AgentMail's own
+`authentication_results` as given (SPF, DKIM, DMARC and the domain each was judged on), or `null`.
+A message whose attachment fails the size or `%PDF` check, or whose text cannot be extracted, is not
+spooled, is named in the logs and is tried again. Each PDF newly spooled emits `agentmail.pdf` with
+`{payload_dir, pdf, input_file}`, absolute paths under `mail_spool`. The key is the vault secret
+`AGENTMAIL_API_KEY`.
+
+| Key | Default | Why |
+|---|---|---|
+| `agentmail_inbox` | required | the inbox address |
+| `mail_spool` | required | the folder the payloads are written under |
+| `base_url` | `https://api.agentmail.to` | the service; a key so a test server can stand in |
+| `timeout` | 30 s | each call's deadline |
+| `page_size` | 50 | messages a page asks for, 1..100 |
+
 ## Fetching attachments from an AgentMail inbox (`agentmail/fetch.py`)
 
 Anam card 242. Mail forwarded to an AgentMail inbox keeps its attachments, and the API returns
