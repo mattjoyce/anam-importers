@@ -730,6 +730,52 @@ Against the live spool on its first day (18 lines: 16 locations, 1 status), `hea
 and `poll` shaped 2 points in one hour. The 16 locations were two fixes, one of them repeated by
 15 pings over three hours while the phone sat still.
 
+## The agentmail plugin (`agentmail/run.py`)
+
+Anam card 242. A Ductile poller that spools an AgentMail inbox for the invoice chain. Each message
+becomes `<mail_spool>/<key>/` (`key` is the first 16 hex of the SHA-256 of the message id) holding
+`message.json`, `attachments/<n>-<name>` byte-exact, and `attachments/<n>-<name>.txt`, the
+`pdftotext -layout` of each PDF. A folder is built under a temporary name and renamed, so a reader never
+sees half of one; an existing folder is skipped. `message.json` carries `auth`, AgentMail's own
+`authentication_results` as given (SPF, DKIM, DMARC and the domain each was judged on), or `null`.
+A message whose attachment fails the size or `%PDF` check, or whose text cannot be extracted, is not
+spooled, is named in the logs and is tried again. Each PDF newly spooled emits `agentmail.pdf` with
+`{payload_dir, pdf, input_file}`, absolute paths under `mail_spool`. The key is the vault secret
+`AGENTMAIL_API_KEY`.
+
+| Key | Default | Why |
+|---|---|---|
+| `agentmail_inbox` | required | the inbox address |
+| `mail_spool` | required | the folder the payloads are written under |
+| `base_url` | `https://api.agentmail.to` | the service; a key so a test server can stand in |
+| `timeout` | 30 s | each call's deadline |
+| `page_size` | 50 | messages a page asks for, 1..100 |
+
+## Fetching attachments from an AgentMail inbox (`agentmail/fetch.py`)
+
+Anam card 242. Mail forwarded to an AgentMail inbox keeps its attachments, and the API returns
+them byte-exact. `agentmail/fetch.py` copies them into a spool folder and writes `manifest.csv`
+(message id, time, sender, subject, filename, path, bytes, SHA-256, `ok` or `failed`). It reads
+the inbox and writes only under the spool. It holds no Anam token and sends nothing to Anam: turning
+the spool into `record.document` and `money.purchase` records is the next slice.
+
+```sh
+AGENTMAIL_API_KEY=... python3 agentmail/fetch.py --inbox you@agentmail.to --spool ./spool
+```
+
+A file is `<spool>/<first 16 hex of SHA-256(message id)>/<attachment filename>`. A file already there
+with the size the inbox reports is kept, so a re-run downloads nothing. A download whose size differs
+from the inbox's, or a `.pdf` without a `%PDF` header, is `failed` and not kept. The exit status is 1
+when any attachment failed. The API key is sent to the AgentMail API only, never to the signed
+download link.
+
+| Flag | Default | Why |
+|---|---|---|
+| `--base-url` | `https://api.agentmail.to` | The service; a flag so a test or a self-hosted copy can stand in. |
+| `--key-env` | `AGENTMAIL_API_KEY` | Names the variable holding the key, so one machine can hold several. |
+| `--timeout` | 30 s | Each call fails fast; 30 s outlasts a large PDF on a slow link. |
+| `--page-size` | 50 | Fewest round trips; the API returns at most 100. |
+
 ## Values: why `29.371`, not `29.371000000000002`
 
 The withings plugin stores a measurement's value as a SQLite REAL, and a REAL has no text of
