@@ -9,6 +9,11 @@ All notable changes to this repo. The format follows
 
 ### Added
 
+- `purchase_gate/` and `patterns/extract_purchase` (anam card 242): the last step of the invoice chain. A
+  fabric pattern asks a model to transcribe an invoice with the text each value was read from; the gate
+  files a PDF, its sidecar and a `money.purchase` in the Library only when the page text proves the
+  proposal (evidence on one line, currency beside the total, refs after their own label, the sums, an
+  allow-listed issuer), and otherwise writes `hold.json` with every reason. It never overwrites a file.
 - `records/extract/add_source_time.py` (anam card 198): gives every record of `health.weight`,
   `health.lab-result`, `health.lab-panel`, `health.blood-pressure`, `health.encounter` and
   `health.donation` the `source_time` block their Definitions now require, in a staging folder and
