@@ -206,16 +206,27 @@ class JudgeTest(unittest.TestCase):
         self.assertHeld(edited(KEYS, total=85.81), "85.81 is not a number printed")
         self.assertHeld(edited(KEYS, date="2026-10-23"), "not a date printed")
         self.assertHeld(edited(KEYS, invoice_ref="INV-TEST-0009"), "is not printed in the evidence")
-        self.assertHeld(edited(KEYS, merchant_legal_entity="Yubico Pte"), "legal_entity")
         self.assertHeld(edited(KEYS, tax_label="GST"), "tax_label")
         # a percentage in a line is not the amount
         self.assertHeld(edited(KEYS, tax=10), "tax: 10 is not a number printed")
 
+    def test_the_legal_entity_comes_from_the_allow_list(self):
+        page = SAAS_PAGE.replace("Receipt from Anthropic, PBC", "Receipt from Anthropic, PBC @anthropic")
+        # the model copies the clutter; the filed value is the allow-list's spelling
+        out = judge(edited(SAAS, merchant_legal_entity="Anthropic, PBC @anthropic"), page)
+        self.assertEqual(out.reasons, [])
+        self.assertEqual(out.fields["merchant_legal_entity"], "Anthropic, PBC")
+        # the model giving none, or a wrong one, changes nothing
+        self.assertEqual(judge(SAAS, SAAS_PAGE).fields["merchant_legal_entity"], "Anthropic, PBC")
+        self.assertEqual(judge(edited(KEYS, merchant_legal_entity="Nonsense Inc")).fields["merchant_legal_entity"],
+                         "Yubico Singapore Pte. Ltd.")
+        # the entity is left out when the page does not print that spelling
+        other = SAAS_PAGE.replace("Anthropic, PBC", "Anthropic Ireland")
+        self.assertNotIn("merchant_legal_entity", judge(SAAS, other).fields)
+
     def test_a_text_value_needs_no_evidence_but_must_be_on_the_page(self):
         no_evidence = with_evidence(KEYS, merchant_legal_entity=..., tax_label=...)
         self.assertEqual(judge(no_evidence).reasons, [])
-        self.assertHeld(with_evidence(edited(KEYS, merchant_legal_entity="Yubico Pte Ltd"), merchant_legal_entity=...),
-                        "not printed on the page")
         self.assertHeld(with_evidence(edited(KEYS, tax_label="Shipping"), tax_label=...), "tax_label")
 
     def test_the_wrong_line_for_the_kind_is_held(self):

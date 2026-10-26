@@ -50,13 +50,14 @@ from anam_importer import ductile  # noqa: E402
 GATE_VERSION = "0.1.0"
 
 # DEFAULT_MERCHANTS is the allow-list: merchant slug (the Definition's spelling) to the
-# pattern that finds its legal entity on the issuer line, and what a bare "$" means in
+# pattern that finds its legal entity on the issuer line, the entity's name as filed
+# (used only when the page prints it), and what a bare "$" means in
 # that merchant's invoices. The issuer pattern is deliberately not the bare name: a
 # Yubico invoice lists "YubiKey - OpenAI Offer" and is not an OpenAI invoice.
 DEFAULT_MERCHANTS: Dict[str, Dict[str, Any]] = {
-    "anthropic": {"issuer": r"Anthropic,? (PBC|Ireland|Inc|Limited|Ltd)", "symbols": {"$": "USD"}},
-    "openai": {"issuer": r"OpenAI,? (LLC|OpCo|Ireland|Inc|Limited|Ltd|Pte)", "symbols": {"$": "USD"}},
-    "yubico": {"issuer": r"Yubico( [A-Za-z]+)? Pte|Yubico (AB|Inc|Limited|Ltd)", "symbols": {"$": "USD"}},
+    "anthropic": {"issuer": r"Anthropic,? (PBC|Ireland|Inc|Limited|Ltd)", "legal_entity": "Anthropic, PBC", "symbols": {"$": "USD"}},
+    "openai": {"issuer": r"OpenAI,? (LLC|OpCo|Ireland|Inc|Limited|Ltd|Pte)", "legal_entity": "OpenAI, LLC", "symbols": {"$": "USD"}},
+    "yubico": {"issuer": r"Yubico( [A-Za-z]+)? Pte|Yubico (AB|Inc|Limited|Ltd)", "legal_entity": "Yubico Singapore Pte. Ltd.", "symbols": {"$": "USD"}},
 }
 
 # Not configurable: the Definition's vocabulary and the file layout the importers read.
@@ -366,7 +367,11 @@ def judge(proposal: Any, page: str, merchants: Dict[str, Dict[str, Any]]) -> Che
         out.hold(f"merchant: {claimed!r} is not text")
     if slug:
         out.merchant = slug
-    verbatim(lines, ev, proposal, "merchant_legal_entity", out)
+    # The legal entity is the allow-list's spelling, not the model's, and only when the
+    # page prints it: page clutter such as a handle beside the name is not copied.
+    entity = merchants[slug].get("legal_entity") if slug else None
+    if entity and norm(entity) in "\n".join(lines):
+        out.fields["merchant_legal_entity"] = norm(entity)
 
     for field in ("invoice_ref", "receipt_ref", "order_ref"):
         check_ref(lines, ev, proposal, field, out)
@@ -661,7 +666,10 @@ def merchants_of(config: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
         symbols = m.get("symbols", {})
         if not isinstance(symbols, dict) or not all(isinstance(k, str) and isinstance(v, str) and ISO_CURRENCY.match(v) for k, v in symbols.items()):
             raise cfg.bad("merchants", f"{slug}: symbols want a map of symbol to ISO code")
-        out[slug] = {"issuer": m["issuer"], "symbols": symbols}
+        entity = m.get("legal_entity")
+        if entity is not None and (not isinstance(entity, str) or not entity.strip()):
+            raise cfg.bad("merchants", f"{slug}: legal_entity wants text")
+        out[slug] = {"issuer": m["issuer"], "legal_entity": entity, "symbols": symbols}
     return out
 
 

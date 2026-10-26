@@ -493,8 +493,8 @@ decides. The model proposes; the gate believes only what the page proves.
 
 - Every value carries `evidence`, a snippet that must sit on one line of the page, and the value must be
   what the snippet says (decimals, never floats; dates in `2026-10-24`, `Oct 24, 2026`, `24 October 2026`
-  or `24/10/2026` read day first). Text values (`merchant_legal_entity`, `tax_label`) need no snippet but
-  must be printed.
+  or `24/10/2026` read day first). `tax_label` needs no snippet but must be printed on the tax line. The legal entity is the
+  allow-list's `legal_entity`, filed when the page prints it, never the model's copy.
 - The currency is read from the line of the grand total: its one ISO code, else its one symbol read the way
   that merchant's invoices use it (`merchants[...].symbols`). A model that names another currency, such as
   one from a tax-conversion line, is held. A model may leave `currency` out when only `$` is printed.
@@ -522,7 +522,7 @@ plugins:
       mail_spool: /path/to/mail-spool       # fabric's FABRIC_FILE_ROOT too
 ```
 
-Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, symbols: {"$": "USD"}}`, default
+Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, legal_entity: <name>, symbols: {"$": "USD"}}`, default
 anthropic, openai and yubico), `max_text_bytes` (1,000,000) and `max_pdf_bytes` (20 MiB). Fabric forwards
 `input_file`; the gate derives the PDF and the payload folder from it, and refuses an event whose `pdf` or
 `payload_dir` disagrees. The pattern asks for no line items: gemma-3-4b could not copy an item's row, and the gate
