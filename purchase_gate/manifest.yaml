@@ -15,6 +15,14 @@ commands:
     input_schema: {}
     output_schema:
       status: string
+  - name: poll
+    type: write
+    description: "Files as a document only every spooled PDF with no result file that is at least sweep_after_minutes old (default 60): one whose model output never reached handle. Skips folders whose name starts with a dot. Writes <pdf>.result.json like handle; never overwrites a file."
+    idempotent: true
+    retry_safe: true
+    input_schema: {}
+    output_schema:
+      status: string
   - name: health
     type: read
     description: "library has documents/ and records/, mail_spool is a folder and the merchants read."
@@ -25,4 +33,4 @@ commands:
       status: string
 config_keys:
   required: [library, mail_spool]
-  optional: [merchants, max_text_bytes, max_pdf_bytes, filing_subdir]
+  optional: [merchants, max_text_bytes, max_pdf_bytes, filing_subdir, sweep_after_minutes]
