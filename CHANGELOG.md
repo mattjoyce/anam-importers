@@ -9,6 +9,9 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- `purchase_gate` gains a scheduled `poll` that files, as a document only, every spooled PDF with no
+  result file once it is `sweep_after_minutes` old (default 60), so a PDF whose model output was not
+  JSON is filed all the same. `handle` is unchanged.
 - `purchase_gate`: a PDF whose exact bytes are already in `documents/` is `already_filed`, whatever its
   sidecar or record says. A replay over 0.1.0's filings had filed a second copy under a mail name,
   because 0.1.0's sidecar note differs from 0.2.0's.

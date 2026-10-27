@@ -10,6 +10,7 @@ import importlib.util
 import json
 import os
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -796,6 +797,146 @@ class HandleTest(unittest.TestCase):
         self.assertEqual(run_plugin(PLUGIN, {"command": "health", "config": config})["status"], "ok")
         bad = run_plugin(PLUGIN, {"command": "health", "config": {**config, "merchants": {"x": {"issuer": "("}}}})
         self.assertEqual(bad["status"], "error")
+
+
+class PollTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.spool, self.library = self.root / "spool", self.root / "library"
+        self.spool.mkdir()
+        (self.library / "documents").mkdir(parents=True)
+        (self.library / "records").mkdir()
+
+    def run_poll(self, **extra):
+        config = {"library": str(self.library), "mail_spool": str(self.spool), **extra}
+        return run_plugin(PLUGIN, {"command": "poll", "config": config})
+
+    def old(self, pdf):
+        t = time.time() - 2 * 3600
+        os.utime(pdf, (t, t))
+
+    def result_of(self, pdf):
+        return json.loads((pdf.parent / f"{pdf.name}.result.json").read_text())
+
+    def test_an_old_pdf_with_no_result_file_is_filed_as_a_document_only(self):
+        pdf = Path(spool_with(self.spool, "", received_at="2026-09-03T01:02:03Z")["pdf"])
+        self.old(pdf)
+        resp = self.run_poll()
+        self.assertEqual(resp["status"], "ok", resp)
+        self.assertEqual(resp["result"], "1 swept")
+        name = "2026-09-03_mail_0123456789abcdef_1-invoice"
+        self.assertEqual(sorted(snapshot(self.library)),
+                         [f"documents/{name}.pdf", f"documents/{name}.pdf.meta.yaml"])
+        self.assertEqual(snapshot(self.library / "records"), {})
+        result = self.result_of(pdf)
+        self.assertEqual(result["status"], "document_only")
+        self.assertEqual(result["missing"], ["no proposal from the model reached the gate"])
+        self.assertEqual((result["model"], result["message_id"]), ("", "<m1@example.invalid>"))
+
+    def test_a_pdf_with_a_result_file_is_left_alone(self):
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        self.old(pdf)
+        (pdf.parent / f"{pdf.name}.result.json").write_text('{"status": "filed"}\n')
+        before_spool, before_library = snapshot(self.spool), snapshot(self.library)
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "0 swept")
+        self.assertEqual(snapshot(self.spool), before_spool)
+        self.assertEqual(snapshot(self.library), before_library)
+
+    def test_a_pdf_newer_than_sweep_after_minutes_is_left_alone(self):
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "0 swept")
+        self.assertFalse((pdf.parent / f"{pdf.name}.result.json").exists())
+        self.assertEqual(snapshot(self.library), {})
+
+    def test_a_second_poll_writes_nothing_new(self):
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        self.old(pdf)
+        self.assertEqual(self.run_poll()["result"], "1 swept")
+        after_spool, after_library = snapshot(self.spool), snapshot(self.library)
+        second = self.run_poll()
+        self.assertEqual(second["result"], "0 swept")
+        self.assertEqual(snapshot(self.spool), after_spool)
+        self.assertEqual(snapshot(self.library), after_library)
+
+    def test_a_pdf_under_a_dot_folder_is_left_alone(self):
+        pdf = Path(spool_with(self.spool, "", key=".tmp-0123456789abcdef")["pdf"])
+        self.old(pdf)
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "0 swept")
+        self.assertFalse((pdf.parent / f"{pdf.name}.result.json").exists())
+        self.assertEqual(snapshot(self.library), {})
+
+    def test_an_old_pdf_already_in_documents_is_already_filed(self):
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        self.old(pdf)
+        (self.library / "documents" / "old-copy.pdf").write_bytes(pdf.read_bytes())
+        before = snapshot(self.library)
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "1 swept")
+        self.assertTrue(resp["logs"][0]["message"].startswith("already_filed"), resp)
+        self.assertEqual(snapshot(self.library), before)
+        self.assertEqual(self.result_of(pdf)["status"], "already_filed")
+
+    def test_an_old_pdf_without_its_text_is_still_filed_as_a_document_only(self):
+        paths = spool_with(self.spool, KEYS_PAGE)
+        pdf = Path(paths["pdf"])
+        Path(paths["input_file"]).unlink()
+        self.old(pdf)
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "1 swept")
+        self.assertEqual(self.result_of(pdf)["status"], "document_only")
+        self.assertEqual(len(list((self.library / "documents").glob("*.pdf"))), 1)
+
+    def test_a_pdf_outside_the_spool_or_too_large_is_named_and_skipped(self):
+        outside = self.root / "outside.pdf"
+        outside.write_bytes(b"%PDF-1.4 a synthetic invoice")
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        pdf.unlink()
+        pdf.symlink_to(outside)
+        self.old(outside)
+        resp = self.run_poll()
+        self.assertEqual(resp["result"], "0 swept")
+        logs = " ".join(entry["message"] for entry in resp["logs"])
+        self.assertIn("1-invoice.pdf", logs)
+        self.assertIn("outside mail_spool", logs)
+        self.assertEqual(snapshot(self.library), {})
+        # the same PDF, inside the spool but larger than max_pdf_bytes, is named and skipped too
+        pdf.unlink()
+        pdf.write_bytes(b"%PDF-1.4 a synthetic invoice")
+        self.old(pdf)
+        resp = self.run_poll(max_pdf_bytes=1)
+        self.assertEqual(resp["result"], "0 swept")
+        logs = " ".join(entry["message"] for entry in resp["logs"])
+        self.assertIn("1-invoice.pdf", logs)
+        self.assertIn("max_pdf_bytes", logs)
+        self.assertFalse((pdf.parent / f"{pdf.name}.result.json").exists())
+
+    def test_poll_files_under_filing_subdir_and_refuses_a_missing_one(self):
+        for top in ("documents", "records"):
+            (self.library / top / "mail").mkdir()
+        pdf = Path(spool_with(self.spool, "")["pdf"])
+        self.old(pdf)
+        resp = self.run_poll(filing_subdir="mail")
+        self.assertEqual(resp["result"], "1 swept")
+        self.assertEqual(len(list((self.library / "documents" / "mail").glob("*.pdf"))), 1)
+        self.assertEqual(snapshot(self.library / "records" / "mail"), {})
+        # a subdir with no records/ folder is refused as handle refuses it
+        (self.library / "documents" / "other").mkdir()
+        resp = self.run_poll(filing_subdir="other")
+        self.assertEqual(resp["status"], "error")
+        self.assertIn("config library:", resp["error"])
+
+    def test_sweep_after_minutes_zero_fails_the_way_cfg_integer_does(self):
+        spool_with(self.spool, "")
+        resp = self.run_poll(sweep_after_minutes=0)
+        self.assertEqual(resp["status"], "error")
+        self.assertFalse(resp["retry"])
+        self.assertEqual(resp["error"], "config sweep_after_minutes: 0 is outside 1..10080")
+        self.assertEqual(snapshot(self.library), {})
 
 
 if __name__ == "__main__":

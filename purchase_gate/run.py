@@ -27,6 +27,7 @@ edited apart from adding that file.
 
 Commands:
 - handle : judge one fabric.completed event
+- poll   : file as a document only every PDF that no proposal reached, once it is sweep_after_minutes old
 - health : library has documents/ and records/, mail_spool is a folder, the allow-list reads
 """
 
@@ -38,6 +39,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 from datetime import date as Date, datetime, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
@@ -93,6 +95,9 @@ MONTHS = {m: i for i, m in enumerate("jan feb mar apr may jun jul aug sep oct no
 
 DEFAULT_MAX_TEXT_BYTES = 1_000_000
 DEFAULT_MAX_PDF_BYTES = 20 * 1024 * 1024
+# DEFAULT_SWEEP_AFTER_MINUTES is how old an unfiled PDF must be before poll files it as a
+# document only: long enough for the text step and every model retry to have finished.
+DEFAULT_SWEEP_AFTER_MINUTES = 60
 # Not configurable: how many bytes of a snippet is a line of a page and not the page.
 MAX_SNIPPET = 400
 
@@ -838,6 +843,49 @@ def received_date(meta: Dict[str, Any]) -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def mail_meta(payload_dir: Path) -> Tuple[Dict[str, Any], str, List[str]]:
+    """message.json's contents, the mail's id, and the reason it could not be read. The
+    id is 'unknown' when there is none, so a filing still names a mail."""
+    dropped: List[str] = []
+    meta: Dict[str, Any] = {}
+    message_id = "unknown"
+    try:
+        loaded = json.loads((payload_dir / "message.json").read_text(encoding="utf-8"))
+        meta = loaded if isinstance(loaded, dict) else {}
+        message_id = str(meta["message_id"])
+    except (OSError, ValueError, KeyError, TypeError):
+        dropped.append("message.json is missing or has no message_id, so the filing cannot name its mail")
+    return meta, message_id, dropped
+
+
+def file_pdf(library: Path, sub: str, pdf_path: Path, pdf: bytes, key: str, checked: Checked,
+             missing: List[str], dropped: List[str], meta: Dict[str, Any], message_id: str,
+             model: str) -> str:
+    """File one PDF: a document only when missing says why there is no purchase, else a
+    purchase. Writes <pdf>.result.json beside it and returns the line the command reports:
+    the status, the filed name and a note. key is the mail's folder in the spool."""
+    status, files = "", []
+    copy = filed_copy(library, sub, pdf)
+    if copy:
+        status, files = "already_filed", [str(copy)]
+    elif not missing:
+        status, files, problems = file_purchase(library, checked, pdf, message_id, model, sub)
+        missing += problems
+    if not status:
+        received = received_date(meta)
+        subject = meta.get("subject") if isinstance(meta.get("subject"), str) else ""
+        name = mail_name(received, key, pdf_path.stem)
+        status, files = file_document(library, name, pdf, document_sidecar(received, subject, message_id, missing), sub)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    write_json(pdf_path.parent / f"{pdf_path.name}.result.json",
+               {"status": status, "files": files, "dropped": dropped, "missing": missing,
+                "message_id": message_id, "gate": GATE_VERSION, "model": model, "at": now})
+    note = f"; {len(dropped)} value(s) dropped" if dropped else ""
+    if status == "document_only" or (status == "already_filed" and missing):
+        note = f"; no purchase record, {len(missing)} reason(s): {'; '.join(missing)[:500]}"
+    return f"{status} {Path(files[0]).stem}{note}"
+
+
 def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     config = request.get("config") or {}
     library, spool = folders(config)
@@ -863,15 +911,7 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     if not pdf_path.is_file() or pdf_path.stat().st_size > max_pdf:
         raise Refusal(f"{pdf_path.name} is not a file of at most {max_pdf} bytes")
 
-    dropped: List[str] = []
-    meta: Dict[str, Any] = {}
-    message_id = "unknown"
-    try:
-        loaded = json.loads((payload_dir / "message.json").read_text(encoding="utf-8"))
-        meta = loaded if isinstance(loaded, dict) else {}
-        message_id = str(meta["message_id"])
-    except (OSError, ValueError, KeyError, TypeError):
-        dropped.append("message.json is missing or has no message_id, so the filing cannot name its mail")
+    meta, message_id, dropped = mail_meta(payload_dir)
     pdf = pdf_path.read_bytes()
 
     model = str(p.get("model") or "")
@@ -882,26 +922,55 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     if not pdf.startswith(b"%PDF"):
         missing.append("the attachment does not start with %PDF")
 
-    status, files = "", []
-    copy = filed_copy(library, sub, pdf)
-    if copy:
-        status, files = "already_filed", [str(copy)]
-    elif not missing:
-        status, files, problems = file_purchase(library, checked, pdf, message_id, model, sub)
-        missing += problems
-    if not status:
-        received = received_date(meta)
-        subject = meta.get("subject") if isinstance(meta.get("subject"), str) else ""
-        name = mail_name(received, payload_dir.name, pdf_path.stem)
-        status, files = file_document(library, name, pdf, document_sidecar(received, subject, message_id, missing), sub)
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    write_json(pdf_path.parent / f"{pdf_path.name}.result.json",
-               {"status": status, "files": files, "dropped": dropped, "missing": missing,
-                "message_id": message_id, "gate": GATE_VERSION, "model": model, "at": now})
-    note = f"; {len(dropped)} value(s) dropped" if dropped else ""
-    if status == "document_only" or (status == "already_filed" and missing):
-        note = f"; no purchase record, {len(missing)} reason(s): {'; '.join(missing)[:500]}"
-    return ductile.ok(f"{status} {Path(files[0]).stem}{note}")
+    return ductile.ok(file_pdf(library, sub, pdf_path, pdf, payload_dir.name, checked, missing,
+                               dropped, meta, message_id, model))
+
+
+def poll(request: Dict[str, Any]) -> Dict[str, Any]:
+    """File, as a document only, every spooled PDF that no fabric.completed event reached:
+    one with no <pdf>.result.json that is at least sweep_after_minutes old. A failed job's
+    lifecycle event does not say which PDF it was working on, so the gate finds these."""
+    config = request.get("config") or {}
+    library, spool = folders(config)
+    sub = filing_subdir(config)
+    max_pdf = cfg.integer(config, "max_pdf_bytes", DEFAULT_MAX_PDF_BYTES, 1, 1024 * 1024 * 1024)
+    sweep_after = cfg.integer(config, "sweep_after_minutes", DEFAULT_SWEEP_AFTER_MINUTES, 1, 10080)
+    if not (library / "documents" / sub).is_dir() or not (library / "records" / sub).is_dir():
+        raise cfg.bad("library", f"{library} has no {Path('documents', sub)}/ and {Path('records', sub)}/")
+    cutoff = time.time() - sweep_after * 60
+    swept, logs = 0, []
+    # agentmail builds a message under a .tmp- name, then renames it
+    for key_dir in sorted(p for p in spool.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        attachments = key_dir / "attachments"
+        if not attachments.is_dir():
+            continue
+        for raw in sorted(attachments.glob("*.pdf")):
+            try:
+                pdf_path = inside(spool, str(raw), "pdf")
+            except Refusal as exc:
+                logs.append(f"skipped {raw.name}: {exc}")
+                continue
+            if (pdf_path.parent / f"{pdf_path.name}.result.json").exists():
+                continue
+            try:
+                stat = pdf_path.stat()
+            except OSError:
+                continue
+            if stat.st_mtime > cutoff:  # the text step and every retry may still be running
+                continue
+            if stat.st_size > max_pdf:
+                logs.append(f"skipped {pdf_path.name}: {stat.st_size} bytes is more than max_pdf_bytes {max_pdf}")
+                continue
+            meta, message_id, dropped = mail_meta(key_dir)
+            pdf = pdf_path.read_bytes()
+            missing = ["no proposal from the model reached the gate"]
+            if not pdf.startswith(b"%PDF"):
+                missing.append("the attachment does not start with %PDF")
+            # poll checks nothing, so every PDF it reaches is a document only
+            logs.append(file_pdf(library, sub, pdf_path, pdf, key_dir.name, Checked(), missing,
+                                 dropped, meta, message_id, ""))
+            swept += 1
+    return ductile.ok(f"{swept} swept", logs=logs)
 
 
 def health(request: Dict[str, Any]) -> Dict[str, Any]:
@@ -918,4 +987,4 @@ def health(request: Dict[str, Any]) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    ductile.run({"handle": handle, "health": health})
+    ductile.run({"handle": handle, "poll": poll, "health": health})

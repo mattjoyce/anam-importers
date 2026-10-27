@@ -38,6 +38,7 @@ what a person might type, not defaults. Line numbers are as of the card 152 bran
 | anthropic, openai, yubico | `purchase_gate/run.py` `DEFAULT_MERCHANTS` | `merchants` (purchase_gate) | which sellers may be filed unattended, with the pattern that finds each on the page and what a bare `$` means in its invoices, is the person's allow-list |
 | 1,000,000 bytes | `purchase_gate/run.py` `DEFAULT_MAX_TEXT_BYTES` | `max_text_bytes` (purchase_gate) | the largest page text read; follows fabric's own default |
 | 20 MiB | `purchase_gate/run.py` `DEFAULT_MAX_PDF_BYTES` | `max_pdf_bytes` (purchase_gate) | the largest PDF copied into the Library |
+| 60 minutes | `purchase_gate/run.py` `DEFAULT_SWEEP_AFTER_MINUTES` | `sweep_after_minutes` (purchase_gate) | how old an unfiled PDF must be before `poll` files it as a document only: long enough for the text step and every model retry to have finished, and a schedule may run `poll` more or less often |
 
 `timeout`, `busy_timeout_ms` (withings), `pattern`, `logbook_url`, `logbook_user` and every
 `lookback_days` were keys before card 152; they are now range-checked at start and passed down as

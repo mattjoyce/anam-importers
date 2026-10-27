@@ -527,7 +527,9 @@ plugins:
 ```
 
 Optional keys: `merchants` (the allow-list: slug to `{issuer: <regex>, legal_entity: <name>, symbols: {"$": "USD"}}`, default
-anthropic, openai and yubico), `max_text_bytes` (1,000,000) `max_pdf_bytes` (20 MiB) and `filing_subdir` (a folder name such as `mail`: files go under
+anthropic, openai and yubico), `max_text_bytes` (1,000,000) `max_pdf_bytes` (20 MiB), `sweep_after_minutes`
+(60: how old an unfiled PDF must be before `poll` files it as a document only, long enough for the text
+step and every model retry) and `filing_subdir` (a folder name such as `mail`: files go under
 `documents/<name>` and `records/<name>`, so a gateway that mounts the Library read-only needs only those
 two writable; an id already in `records/` itself is not filed again). Fabric forwards
 `input_file`; the gate derives the PDF and the payload folder from it, and refuses an event whose `pdf` or
