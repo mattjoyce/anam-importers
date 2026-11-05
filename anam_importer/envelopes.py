@@ -47,11 +47,21 @@ def asserts_a_subject(envelopes: Iterable[Dict[str, Any]]) -> bool:
 def for_a_daemon_before_270a(envelopes: List[Dict[str, Any]]) -> None:
     """Rename asserted_subject to asserted_person, its name before anam card 270a, in
     place. A daemon from before 270a refuses a field it does not know, so a batch for
-    one carries the old name. An envelope that already names asserted_person is left
-    as it is. Remove once no daemon before 270a is kept to roll back to."""
+    one carries the old name. An envelope naming both with one value keeps
+    asserted_person alone. One naming two values is left as it is, for the gate to
+    refuse: nothing here can tell which the source meant. Remove once no daemon before
+    270a is kept to roll back to."""
     for env in envelopes:
-        if "asserted_subject" in env and "asserted_person" not in env:
-            env["asserted_person"] = env.pop("asserted_subject")
+        if "asserted_subject" not in env:
+            continue
+        if env.setdefault("asserted_person", env["asserted_subject"]) == env["asserted_subject"]:
+            del env["asserted_subject"]
+
+
+def refused_for_asserted_subject(exc: Exception) -> bool:
+    """Whether exc is a daemon from before anam card 270a refusing asserted_subject as
+    a field it does not know: a 400 naming it."""
+    return getattr(exc, "status", None) == 400 and 'unknown field "asserted_subject"' in str(exc)
 
 
 def check(definitions: Dict[str, Definition], envelopes: Iterable[Dict[str, Any]]) -> None:

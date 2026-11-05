@@ -19,6 +19,6 @@ depends_on: []
 | `submit(envelopes, snapshot)` | `POST /v1/envelopes` | 200 must pass `admission`; a 422 with `refused` raises `Refused` |
 | `store_document(name, data)` | `POST /v1/documents?ext=` | extension only, left off when not letters and digits or over 16 |
 | `snapshot(id)` | `GET /v1/snapshots/<id>` | needs a boolean `complete` |
-| `reads_asserted_subject()` | `GET /v1/status` | true when the status names `subject`, which Anam does from card 270a on |
+| `reads_asserted_subject()` | `GET /v1/status` | true when the status names `subject`, which Anam does from card 270a on; every failure is retryable |
 
 `_call` opens one connection per request over `http.client`, sets a bearer token and an `Anam-Timeout` header, and keeps one deadline across connect, headers and body. A 3xx is an error, never followed. An answer over `max_response` bytes is a retryable error. `AnamError.retry` is true for 5xx, 429 and transport failures, and false for other 4xx. See [the client trusts only a whole receipt](/decisions/the-client-trusts-only-a-whole-receipt.md) and [no redirect is followed](/invariants/no-redirect-is-followed.md).

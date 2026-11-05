@@ -14,7 +14,10 @@ All notable changes to this repo. The format follows
   key stays `person_id`. `anam_submit` asks `GET /v1/status` once for a batch that asserts a subject and,
   when the status names no `subject` (Anam v0.794 and older), sends the field as `asserted_person`, so a
   rollback of Anam does not refuse every batch. A batch queued before this change, which carries
-  `asserted_person`, goes through unchanged.
+  `asserted_person`, goes through unchanged. An envelope naming both with one value goes to an old
+  daemon as `asserted_person` alone; two different values are left for the gate to refuse. Every
+  failure of the status read is retryable. A POST refused for `asserted_subject` as an unknown field
+  (a rollback between the read and the POST) asks status again and resends once.
 - `purchase_gate` gains a scheduled `poll` that files, as a document only, every spooled PDF with no
   result file once it is `sweep_after_minutes` old (default 60), so a PDF whose model output was not
   JSON is filed all the same. `handle` is unchanged.

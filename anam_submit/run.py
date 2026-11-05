@@ -25,11 +25,11 @@ from typing import Any, Dict, List, NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from anam_importer import Client, Refused, ensure_published, parse  # noqa: E402
+from anam_importer import AnamError, Client, Refused, ensure_published, parse  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 from anam_importer.client import DEFAULT_MAX_RESPONSE, DEFAULT_TIMEOUT  # noqa: E402
-from anam_importer.envelopes import asserts_a_subject, for_a_daemon_before_270a  # noqa: E402
+from anam_importer.envelopes import asserts_a_subject, for_a_daemon_before_270a, refused_for_asserted_subject  # noqa: E402
 
 # ABSENT_IDS_SHOWN is how many absent facet ids the alert carries unless config's
 # absent_ids_shown says otherwise. The report holds up to the daemon's max_absent_ids,
@@ -88,13 +88,9 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     ensure_published(client, definitions)
     if batch.get("current_versions"):
         stamp_current(client, envelopes)
-    # The importers write asserted_subject (anam card 270a). A daemon rolled back to a
-    # build from before 270a refuses it, so ask once and send the name it reads.
-    if asserts_a_subject(envelopes) and not client.reads_asserted_subject():
-        for_a_daemon_before_270a(envelopes)
     snapshot = batch.get("snapshot") or None
     try:
-        admission = client.submit(envelopes, snapshot)
+        admission = submit_named_for_the_daemon(client, envelopes, snapshot)
     except Refused as exc:
         reasons = [f"envelope {r.get('index')} ({r.get('type')}): {r.get('reason')}" for r in exc.refused]
         return ductile.error(f"batch refused, nothing admitted: {len(reasons)} envelope(s)", retry=False, logs=reasons)
@@ -113,6 +109,30 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
         if report.get("absent"):
             events.append(absent_event(snapshot, report, s.absent_ids_shown))
     return ductile.ok(f"{summary} at W {admission.get('w')}", events=events)
+
+
+def submit_named_for_the_daemon(client: Client, envelopes: List[Dict[str, Any]],
+                                snapshot: Any) -> Dict[str, Any]:
+    """Submit envelopes with the asserted subject under the name the daemon reads. The
+    importers write asserted_subject (anam card 270a); a daemon rolled back to a build
+    from before 270a refuses it, so ask GET /v1/status once and rename for an old one.
+    A rollback can land between that read and the POST: a refusal of the field then asks
+    again and resends once. A daemon whose status still says 270a after refusing the
+    field is a retryable error, so the batch waits for a later run instead of looping."""
+    if not asserts_a_subject(envelopes):
+        return client.submit(envelopes, snapshot)
+    if not client.reads_asserted_subject():
+        for_a_daemon_before_270a(envelopes)
+    try:
+        return client.submit(envelopes, snapshot)
+    except AnamError as exc:
+        if not refused_for_asserted_subject(exc):
+            raise
+        if client.reads_asserted_subject():
+            raise AnamError(f"{exc}; GET /v1/status still names subject, so the batch waits for a later run",
+                            retry=True, status=exc.status) from exc
+        for_a_daemon_before_270a(envelopes)
+        return client.submit(envelopes, snapshot)
 
 
 def stamp_current(client: Client, envelopes: List[Dict[str, Any]]) -> None:

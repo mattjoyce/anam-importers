@@ -58,7 +58,7 @@ steps:
     action: "With the bytes held, the batch's envelopes go through the same path as every other, as in [submit a batch](/workflows/submit-a-batch.md). A document rescanned under the same name has new bytes, so its reference supersedes the old one and Anam keeps the first bytes."
     ends: true
     resource: anam_submit/run.py#handle
-    anchor: "admission = client.submit(envelopes, snapshot)"
+    anchor: "admission = submit_named_for_the_daemon(client, envelopes, snapshot)"
 ---
 
 Bytes never ride in an event, only a path to a file, because an event is a message through the gateway and a document can be large. Only Anam writes its library, and the importer never writes into it. `anam_submit` needs read access to the same folder the importer scans.
