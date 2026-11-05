@@ -12,6 +12,6 @@ depends_on:
   - /components/definitions.md
 ---
 
-Four functions and one constant. `envelope(definition, payload, asserted_person)` returns `{type, definition_version, payload}` and adds `asserted_person` only when given. `check(definitions, envelopes)` raises `Invalid` carrying every problem, so the importer finds all its mistakes in one run. `batches(envelopes, size=MAX_BATCH)` yields slices in order and refuses a size outside 1 to 49. `snapshot_parts(count, types, run_id)` returns one label per batch with a fresh `run-<uuid4>` id unless one is given.
+Six functions and one constant. `envelope(definition, payload, asserted_subject)` returns `{type, definition_version, payload}` and adds `asserted_subject` only when given. `check(definitions, envelopes)` raises `Invalid` carrying every problem, so the importer finds all its mistakes in one run. `batches(envelopes, size=MAX_BATCH)` yields slices in order and refuses a size outside 1 to 49. `snapshot_parts(count, types, run_id)` returns one label per batch with a fresh `run-<uuid4>` id unless one is given. `asserts_a_subject` and `for_a_daemon_before_270a` are for `anam_submit`: the second renames `asserted_subject` to `asserted_person` in place, for a daemon from before anam card 270a.
 
 The records and documents importers build their envelopes without a version and set `current_versions` on the batch, so `anam_submit` stamps the version Anam publishes. See [validate before anything leaves](/invariants/validate-before-anything-leaves.md).

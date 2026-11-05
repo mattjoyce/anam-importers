@@ -49,6 +49,12 @@ steps:
     reads: [/data-structures/batch-event.md]
     resource: anam_submit/run.py#stamp_current
     anchor: 'current = {d["type"]: d["current"] for d in client.definitions()}'
+  - actor: /components/anam-submit.md
+    label: name the subject as the daemon reads it
+    action: "Only a batch where some envelope carries `asserted_subject` does this. `reads_asserted_subject` asks `GET /v1/status` once. A daemon from before anam card 270a names no `subject` there and refuses the new field, so `for_a_daemon_before_270a` renames it `asserted_person`. A failed status call is an error and nothing is posted."
+    reads: [/data-structures/envelope.md]
+    resource: anam_submit/run.py#handle
+    anchor: "if asserts_a_subject(envelopes) and not client.reads_asserted_subject():"
   - actor: /components/anam-client.md
     caller: /components/anam-submit.md
     label: post the envelopes with the bearer token

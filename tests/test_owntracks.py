@@ -80,7 +80,7 @@ class OwnTracksTest(unittest.TestCase):
         self.assertEqual(first["device"], "phone-a")
         self.assertEqual([p["t"] for p in first["points"]], ["2026-01-01T00:01:00Z", "2026-01-01T00:59:59Z"])
         self.assertEqual(envs[0]["type"], "place.track")
-        self.assertEqual(envs[0]["asserted_person"], "person-a")
+        self.assertEqual(envs[0]["asserted_subject"], "person-a")
 
     def test_a_point_keeps_what_the_phone_wrote(self):
         self.spool.add(body(HOUR + 60, vac=3, inregions=["home"], vel=5))

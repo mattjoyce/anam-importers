@@ -192,6 +192,14 @@ class Client:
             raise _error("POST /v1/documents " + name, status, body)
         return _object("POST /v1/documents", body)
 
+    def reads_asserted_subject(self) -> bool:
+        """Whether the daemon reads asserted_subject: GET /v1/status answers subject
+        from anam card 270a on, and a build from before it answers person only."""
+        status, body = self._call("GET", "/v1/status")
+        if status != 200:
+            raise _error("GET /v1/status", status, body)
+        return "subject" in _object("GET /v1/status", body)
+
     def snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """What Anam knows of one of this importer's snapshots: complete, and once it
         is, live, absent and absent_ids."""

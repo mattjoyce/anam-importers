@@ -18,7 +18,7 @@ commands:
         envelopes:
           type: array
           maxItems: 49
-          description: "Envelopes as POST /v1/envelopes takes them: type, definition_version, payload, optional asserted_person."
+          description: "Envelopes as POST /v1/envelopes takes them: type, definition_version, payload, optional asserted_subject. For a daemon from before anam card 270a, whose GET /v1/status names no subject, asserted_subject is sent as asserted_person, its old name."
         definitions:
           type: array
           description: "The manifests the envelopes were shaped to, as JSON text. Registered if Anam does not hold them."

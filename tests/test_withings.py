@@ -37,8 +37,8 @@ class WithingsTest(unittest.TestCase):
             "attrib": "0", "model": "Body Smart", "deviceid": "ab12", "timezone": "Australia/Sydney",
             # date is UTC, so source_time names UTC, not the device's timezone (anam card 198).
             "source_time": {"value": "2026-10-09 07:30:00", "zone": "UTC", "basis": "source"}})
-        self.assertEqual(envs[0]["asserted_person"], "person-a")
-        self.assertNotIn("asserted_person", envs[2], "an ambiguous group asserts no one")
+        self.assertEqual(envs[0]["asserted_subject"], "person-a")
+        self.assertNotIn("asserted_subject", envs[2], "an ambiguous group asserts no one")
         # Every version of the type it emits, oldest first; the old name's history is not sent.
         self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in batch["payload"]["definitions"]], [1, 2, 3])
         self.assertEqual({json.loads(m)["meta"]["facet_type"] for m in batch["payload"]["definitions"]},

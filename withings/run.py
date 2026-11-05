@@ -146,7 +146,7 @@ def render(value: float) -> str:
 def envelopes_of(definition: Definition, rows: List[Dict[str, Any]], person: str) -> List[Dict[str, Any]]:
     """An envelope per payload. An ambiguous group asserts no one."""
     return [
-        envelope(definition, p, asserted_person=None if p.get("attrib") == ATTRIB_AMBIGUOUS else person)
+        envelope(definition, p, asserted_subject=None if p.get("attrib") == ATTRIB_AMBIGUOUS else person)
         for p in rows
     ]
 

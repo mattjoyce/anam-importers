@@ -1,7 +1,7 @@
 ---
 type: invariant
 title: An envelope names no source and no source reference
-description: The token names the source and Anam composes identity from the Definition, so an importer's envelope carries a type, a version, a payload and at most an asserted person.
+description: The token names the source and Anam composes identity from the Definition, so an importer's envelope carries a type, a version, a payload and at most an asserted subject.
 timestamp: 2026-10-17T00:00:00Z
 resource: anam_importer/envelopes.py#envelope
 anchor: "It names no source and no"

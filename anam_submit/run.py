@@ -12,7 +12,8 @@ Commands:
            snapshot and Anam reports facets absent, raise anam.snapshot_absent. A batch
            may name documents ({path, file}): their bytes are handed to Anam's library
            first (POST /v1/documents), read from file, so bytes never ride in an event.
-           Anam names each stored file by its sha256; the path lends it an extension
+           Anam names each stored file by its sha256; the path lends it an extension.
+           A daemon from before anam card 270a gets asserted_subject as asserted_person
 - health : ask Anam for its Definitions under the token
 """
 
@@ -28,6 +29,7 @@ from anam_importer import Client, Refused, ensure_published, parse  # noqa: E402
 from anam_importer import config as cfg  # noqa: E402
 from anam_importer import ductile  # noqa: E402
 from anam_importer.client import DEFAULT_MAX_RESPONSE, DEFAULT_TIMEOUT  # noqa: E402
+from anam_importer.envelopes import asserts_a_subject, for_a_daemon_before_270a  # noqa: E402
 
 # ABSENT_IDS_SHOWN is how many absent facet ids the alert carries unless config's
 # absent_ids_shown says otherwise. The report holds up to the daemon's max_absent_ids,
@@ -86,6 +88,10 @@ def handle(request: Dict[str, Any]) -> Dict[str, Any]:
     ensure_published(client, definitions)
     if batch.get("current_versions"):
         stamp_current(client, envelopes)
+    # The importers write asserted_subject (anam card 270a). A daemon rolled back to a
+    # build from before 270a refuses it, so ask once and send the name it reads.
+    if asserts_a_subject(envelopes) and not client.reads_asserted_subject():
+        for_a_daemon_before_270a(envelopes)
     snapshot = batch.get("snapshot") or None
     try:
         admission = client.submit(envelopes, snapshot)

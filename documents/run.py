@@ -166,7 +166,7 @@ def describe(root: Path, path: Path, person: str) -> Tuple[Dict[str, Any], Dict[
                     "source_time": {"value": payload["date"], "zone": ZONE, "basis": "assumption"}})
     env: Dict[str, Any] = {"type": TYPE, "payload": payload}
     if person:
-        env["asserted_person"] = person
+        env["asserted_subject"] = person
     return env, {"path": rel, "file": str(path)}
 
 

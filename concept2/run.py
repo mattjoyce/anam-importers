@@ -450,7 +450,7 @@ def shape(files: List[Path]) -> Shaped:
 def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) -> List[Dict[str, Any]]:
     definitions = load(HERE)
     definition = definitions[SESSION_TYPE]
-    envs = [envelope(definition, p, asserted_person=person) for p in payloads]
+    envs = [envelope(definition, p, asserted_subject=person) for p in payloads]
     check(definitions, envs)
     groups = list(batches(envs))
     parts = snapshot_parts(len(groups), [SESSION_TYPE]) if snapshot and groups else [None] * len(groups)

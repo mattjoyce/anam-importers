@@ -9,6 +9,12 @@ All notable changes to this repo. The format follows
 
 ### Changed
 
+- Every importer writes `asserted_subject` in place of `asserted_person`, Anam's new wire name since its
+  card 270a (step 6 of its Downstream list). `envelope()` takes `asserted_subject=`. The plugins' config
+  key stays `person_id`. `anam_submit` asks `GET /v1/status` once for a batch that asserts a subject and,
+  when the status names no `subject` (Anam v0.794 and older), sends the field as `asserted_person`, so a
+  rollback of Anam does not refuse every batch. A batch queued before this change, which carries
+  `asserted_person`, goes through unchanged.
 - `purchase_gate` gains a scheduled `poll` that files, as a document only, every spooled PDF with no
   result file once it is `sweep_after_minutes` old (default 60), so a PDF whose model output was not
   JSON is filed all the same. `handle` is unchanged.

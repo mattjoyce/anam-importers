@@ -483,7 +483,7 @@ def assumed(payloads: List[Dict[str, Any]]) -> List[str]:
 
 
 def envelopes_of(definition: Definition, payloads: List[Dict[str, Any]], person: str) -> List[Dict[str, Any]]:
-    return [envelope(definition, p, asserted_person=person) for p in payloads]
+    return [envelope(definition, p, asserted_subject=person) for p in payloads]
 
 
 def poll(request: Dict[str, Any]) -> Dict[str, Any]:

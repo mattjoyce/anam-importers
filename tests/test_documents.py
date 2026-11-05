@@ -67,6 +67,9 @@ class ShapeTest(unittest.TestCase):
             self.assertTrue(os.path.isabs(doc["file"]) and doc["file"].endswith(doc["path"]))
         self.assertTrue(ev["current_versions"])
         self.assertEqual(ev["snapshot"]["types"], ["record.document"])
+        # The wire name since anam card 270a; person_id stays the config key.
+        self.assertEqual({e.get("asserted_subject") for e in ev["envelopes"]}, {"person-a"})
+        self.assertFalse(any("asserted_person" in e for e in ev["envelopes"]))
 
     def test_a_file_without_a_usable_sidecar_refuses_the_run(self):
         cases = {

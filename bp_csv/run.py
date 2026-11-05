@@ -328,7 +328,7 @@ def batch_events(definitions: Dict[str, Definition], path: Path, rows: List[Dict
     envs, skipped = [], []
     for p in rows:
         try:
-            envs.append(envelope(definition, omh(p, clock), asserted_person=person))
+            envs.append(envelope(definition, omh(p, clock), asserted_subject=person))
         except clk.ClockError as exc:
             skipped.append(f"skipped {path.name} reading {p['date_excel']} #{p['reading']}: {exc}")
     check(definitions, envs)
