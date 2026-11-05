@@ -196,14 +196,22 @@ class Client:
         """Whether the daemon reads asserted_subject: GET /v1/status answers subject
         from anam card 270a on, and a build from before it answers person only.
 
-        Every failure here is retryable, a 4xx included. The read asks about the daemon,
-        not about the batch, so no answer to it says the batch is wrong, and a refusal
-        that would stand is met again, as itself, by the calls that follow on a retry."""
-        status, body = self._call("GET", "/v1/status")
-        if status != 200:
-            err = _error("GET /v1/status", status, body)
-            raise AnamError(str(err), retry=True, status=status)
-        return "subject" in _object("GET /v1/status", body)
+        Every failure here is retryable: a 3xx (never followed) and a 4xx included, and
+        an answer naming neither subject nor person, which is not Anam's. The read asks
+        about the daemon, not about the batch, so no answer to it says the batch is wrong,
+        and a refusal that would stand is met again, as itself, by the calls that follow
+        on a retry."""
+        what = "GET /v1/status"
+        try:
+            status, body = self._call("GET", "/v1/status")
+            if status != 200:
+                raise _error(what, status, body)
+            answer = _object(what, body)
+            if "subject" not in answer and "person" not in answer:
+                raise _malformed(what, body)
+            return "subject" in answer
+        except AnamError as exc:
+            raise AnamError(str(exc), retry=True, status=exc.status) from exc
 
     def snapshot(self, snapshot_id: str) -> Dict[str, Any]:
         """What Anam knows of one of this importer's snapshots: complete, and once it

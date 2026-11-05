@@ -47,14 +47,17 @@ def daemon(builds, status_fails=None):
     "new", or a list of them: each GET /v1/status answers as the build in force, then
     the next build in the list takes over, which is a deploy or a rollback landing right
     after the read. status_fails, if set, is how every status read fails instead: an
-    HTTP status, "malformed" or "disconnect". A "liar" answers status as 270a and
+    HTTP status (a 3xx redirects), "malformed" (JSON, not an object), "not json",
+    "neither name" (an object naming neither subject nor person) or "disconnect". A "liar" answers status as 270a and
     takes envelopes as a build before it, as a proxy in front of the wrong daemon might. Records (method, path, JSON body or None)."""
     seen = []
     queue = [builds] if isinstance(builds, str) else list(builds)
 
     class Handler(BaseHTTPRequestHandler):
         def answer(self, code, body):
-            raw = json.dumps(body).encode()
+            self.raw(code, json.dumps(body).encode())
+
+        def raw(self, code, raw):
             self.send_response(code)
             self.send_header("Content-Length", str(len(raw)))
             self.end_headers()
@@ -69,6 +72,15 @@ def daemon(builds, status_fails=None):
                 return
             if status_fails == "malformed":
                 return self.answer(200, [])
+            if status_fails == "not json":
+                return self.raw(200, b"<html>a proxy page</html>")
+            if status_fails == "neither name":
+                return self.answer(200, {"ledger_id": "l", "w": 1})
+            if isinstance(status_fails, int) and 300 <= status_fails < 400:
+                self.send_response(status_fails)
+                self.send_header("Location", "http://127.0.0.1:1/v1/status")
+                self.send_header("Content-Length", "0")
+                return self.end_headers()
             if status_fails is not None:
                 return self.answer(status_fails, {"error": "injected"})
             build = queue[0]
@@ -182,12 +194,24 @@ class WireNameTest(unittest.TestCase):
     def test_every_status_failure_is_retryable_and_posts_no_envelopes(self):
         # Sol's review, finding 2: the status read is a question about the daemon, not
         # about the batch, so no answer to it is a reason to throw the batch away.
-        for failure in (404, 401, 403, 400, 429, 500, 503, "malformed", "disconnect"):
+        for failure in (301, 302, 303, 307, 308, 404, 401, 403, 400, 429, 500, 503,
+                        "malformed", "not json", "neither name", "disconnect"):
             with self.subTest(failure=failure), daemon("new", status_fails=failure) as (url, seen):
                 r = self.submit(url, self.envs())
                 self.assertEqual(r["status"], "error", r)
                 self.assertTrue(r["retry"], r)
                 self.assertEqual(self.posted(seen), [])
+
+    def test_a_status_read_that_cannot_connect_is_retryable(self):
+        # TLS spoken to a plain HTTP port, and a port nothing listens on.
+        with daemon("new") as (url, seen):
+            tls = self.submit(url.replace("http:", "https:"), self.envs())
+        refused = self.submit("http://127.0.0.1:1", self.envs())
+        for name, r in (("tls", tls), ("refused", refused)):
+            with self.subTest(name):
+                self.assertEqual(r["status"], "error", r)
+                self.assertTrue(r["retry"], r)
+                self.assertIn("GET /v1/status", r["error"])
 
     def test_a_rollback_between_the_status_read_and_the_post_is_renegotiated_once(self):
         # Sol's review, finding 3: status answers as 270a, then the old build takes the POST.
