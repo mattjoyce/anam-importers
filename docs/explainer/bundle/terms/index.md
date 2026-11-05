@@ -1,10 +1,10 @@
 # Terms
 
 * [Anam](anam.md) - The service this repository feeds, which keeps one person's record as append-only facts and accepts data only through envelopes posted by importers.
-* [Asserted person](asserted-person.md) - The person id an envelope claims the data belongs to, set from the plugin's person_id config, or left out when the source cannot say.
+* [Asserted subject](asserted-person.md) - The subject id an envelope claims the data is about, set from the plugin's person_id config, or left out when the source cannot say.
 * [Batch](batch.md) - At most 49 envelopes sent in one request, which Anam admits whole or refuses whole in a single transaction.
 * [ductile](ductile.md) - A gateway that runs small plugins on schedules and events, passing each one JSON on stdin and routing the events it returns, used here to run importers.
-* [Envelope](envelope.md) - The one message Anam accepts, a facet type, a Definition version and a payload, with an optional asserted person and nothing that names a source.
+* [Envelope](envelope.md) - The one message Anam accepts, a facet type, a Definition version and a payload, with an optional asserted subject and nothing that names a source.
 * [Facet](facet.md) - One immutable fact in Anam's record, made from a payload an importer sent, with a type, an identity, a fact time and a content hash.
 * [Facet Definition](facet-definition.md) - A JSON manifest that names a facet type and version, the closed JSON Schema its payload must satisfy, and how its identity and fact time are read from the payload.
 * [Fact time](fact-time.md) - The moment a fact was true in the world, read by Anam from a pointer in the payload using the Definition's layout and zone.

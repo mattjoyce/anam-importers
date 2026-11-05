@@ -35,8 +35,8 @@ class DefinitionsTest(unittest.TestCase):
         self.assertTrue(any(p.startswith("envelope 2") for p in caught.exception.problems))
 
     def test_an_envelope_names_no_source(self):
-        env = envelope(self.measurement, {"x": 1}, asserted_person="person-a")
-        self.assertEqual(set(env), {"type", "definition_version", "payload", "asserted_person"})
+        env = envelope(self.measurement, {"x": 1}, asserted_subject="person-a")
+        self.assertEqual(set(env), {"type", "definition_version", "payload", "asserted_subject"})
         self.assertEqual(env["definition_version"], self.measurement.version)
 
 

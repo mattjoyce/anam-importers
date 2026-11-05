@@ -44,7 +44,7 @@ steps:
     action: "The batch names no documents, so nothing is posted to the library. The envelopes go through the same path as every other, as in [submit a batch](/workflows/submit-a-batch.md); Anam admits a `record.link` whose sha256 its library does not hold."
     ends: true
     resource: anam_submit/run.py#handle
-    anchor: "admission = client.submit(envelopes, snapshot)"
+    anchor: "admission = submit_named_for_the_daemon(client, envelopes, snapshot)"
 ---
 
 Unseen is a supersession and never a retraction: the earlier version stands as what was, and a file that comes back is superseded back. The count of missed runs is the importer's, in `state_file`; Anam keeps none of it, and the Definition's `handling` block says what `unseen` means so every writer agrees.

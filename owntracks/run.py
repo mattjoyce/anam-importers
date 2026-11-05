@@ -271,7 +271,7 @@ def read_spool(root: Path) -> Read:
 def batch_events(payloads: List[Dict[str, Any]], person: str, snapshot: bool) -> List[Dict[str, Any]]:
     definitions = load(HERE)
     definition = definitions[TRACK_TYPE]
-    envs = [envelope(definition, p, asserted_person=person) for p in payloads]
+    envs = [envelope(definition, p, asserted_subject=person) for p in payloads]
     check(definitions, envs)
     groups = list(batches(envs))
     parts = snapshot_parts(len(groups), [TRACK_TYPE]) if snapshot and groups else [None] * len(groups)

@@ -722,7 +722,7 @@ def batch_events(definitions: Dict[str, Definition], by_type: Dict[str, List[Dic
     shaped = []
     for typ, payloads in by_type.items():
         definition = definitions[typ]
-        envs = [envelope(definition, p, asserted_person=person) for p in payloads]
+        envs = [envelope(definition, p, asserted_subject=person) for p in payloads]
         check(definitions, envs)
         groups = list(batches(envs))
         shaped += [(definition, g, f"{typ} {i + 1}/{len(groups)}") for i, g in enumerate(groups)]

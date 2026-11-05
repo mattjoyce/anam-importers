@@ -39,10 +39,10 @@ steps:
   - actor: /components/envelopes.md
     caller: /components/importer-bp-csv.md
     label: wrap the payload in an envelope
-    action: "`envelope` returns the type, the Definition's version, the payload and `asserted_person`. It names no source and no source reference."
+    action: "`envelope` returns the type, the Definition's version, the payload and `asserted_subject`. It names no source and no source reference."
     writes: [/data-structures/envelope.md]
     resource: anam_importer/envelopes.py#envelope
-    anchor: 'env["asserted_person"] = asserted_person'
+    anchor: 'env["asserted_subject"] = asserted_subject'
   - actor: /components/envelopes.md
     caller: /components/importer-bp-csv.md
     label: validate against the Definition

@@ -4,7 +4,7 @@ title: Submit a batch
 description: A batch event emitted by any importer becomes admitted facets in Anam, with the documents stored first, the Definitions published, the receipt checked and an alert raised when a complete resend left facets absent.
 timestamp: 2026-10-17T00:00:00Z
 resource: anam_submit/run.py#handle
-anchor: "admission = client.submit(envelopes, snapshot)"
+anchor: "admission = submit_named_for_the_daemon(client, envelopes, snapshot)"
 basis: code
 tier: core
 trigger: An importer's run returns an event named anam_<plugin>.batch, for example anam_withings.batch, and a pipeline routes it to that importer's anam_submit instance.
@@ -49,6 +49,12 @@ steps:
     reads: [/data-structures/batch-event.md]
     resource: anam_submit/run.py#stamp_current
     anchor: 'current = {d["type"]: d["current"] for d in client.definitions()}'
+  - actor: /components/anam-submit.md
+    label: name the subject as the daemon reads it
+    action: "Only a batch where some envelope carries `asserted_subject` does this. `reads_asserted_subject` asks `GET /v1/status` once. A daemon from before anam card 270a names no `subject` there and refuses the new field, so `for_a_daemon_before_270a` renames it `asserted_person`, and an envelope naming both with one value keeps `asserted_person` alone. Any failure of the status call is a retryable error, and no envelopes are posted; documents and Definitions sent before it stay, and are no-ops on the retry. If the POST is then refused for `asserted_subject` as an unknown field, a rollback landed after the read: status is asked once more and the batch resent once under the old name, or, when status still names `subject`, the batch is a retryable error."
+    reads: [/data-structures/envelope.md]
+    resource: anam_submit/run.py#submit_named_for_the_daemon
+    anchor: "if not refused_for_asserted_subject(exc):"
   - actor: /components/anam-client.md
     caller: /components/anam-submit.md
     label: post the envelopes with the bearer token

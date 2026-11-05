@@ -24,7 +24,7 @@ class Invalid(ValueError):
 def envelope(
     definition: Definition,
     payload: Dict[str, Any],
-    asserted_person: Optional[str] = None,
+    asserted_subject: Optional[str] = None,
 ) -> Dict[str, Any]:
     """One envelope for payload, shaped to definition. It names no source and no
     source_ref: the token names the source, and the gate composes identity."""
@@ -33,9 +33,35 @@ def envelope(
         "definition_version": definition.version,
         "payload": payload,
     }
-    if asserted_person:
-        env["asserted_person"] = asserted_person
+    if asserted_subject:
+        env["asserted_subject"] = asserted_subject
     return env
+
+
+def asserts_a_subject(envelopes: Iterable[Dict[str, Any]]) -> bool:
+    """Whether any envelope carries asserted_subject, the name Anam reads since its
+    card 270a."""
+    return any("asserted_subject" in env for env in envelopes)
+
+
+def for_a_daemon_before_270a(envelopes: List[Dict[str, Any]]) -> None:
+    """Rename asserted_subject to asserted_person, its name before anam card 270a, in
+    place. A daemon from before 270a refuses a field it does not know, so a batch for
+    one carries the old name. An envelope naming both with one value keeps
+    asserted_person alone. One naming two values is left as it is, for the gate to
+    refuse: nothing here can tell which the source meant. Remove once no daemon before
+    270a is kept to roll back to."""
+    for env in envelopes:
+        if "asserted_subject" not in env:
+            continue
+        if env.setdefault("asserted_person", env["asserted_subject"]) == env["asserted_subject"]:
+            del env["asserted_subject"]
+
+
+def refused_for_asserted_subject(exc: Exception) -> bool:
+    """Whether exc is a daemon from before anam card 270a refusing asserted_subject as
+    a field it does not know: a 400 naming it."""
+    return getattr(exc, "status", None) == 400 and 'unknown field "asserted_subject"' in str(exc)
 
 
 def check(definitions: Dict[str, Definition], envelopes: Iterable[Dict[str, Any]]) -> None:

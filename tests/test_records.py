@@ -121,7 +121,7 @@ class Files(unittest.TestCase):
         self.assertEqual(sodium["type"], "health.lab-result")
         self.assertNotIn("type", sodium["payload"])
         self.assertNotIn("definition_version", sodium)
-        self.assertEqual(sodium["asserted_person"], "person-a")
+        self.assertEqual(sodium["asserted_subject"], "person-a")
         self.assertEqual(sodium["payload"]["collected"], "2001-02-02 09:10")
         self.assertEqual(sodium["payload"]["value_num"], 137)
         self.assertIs(sodium["payload"]["fasting"], True)

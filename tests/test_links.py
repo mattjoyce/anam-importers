@@ -108,7 +108,7 @@ class ShapeTest(unittest.TestCase):
         self.assertEqual([json.loads(m)["meta"]["definition_version"] for m in ev["payload"]["definitions"]], [1, 2, 3])
         self.assertNotIn("documents", ev["payload"])  # no bytes are handed to anyone
         for env in ev["payload"]["envelopes"]:
-            self.assertEqual((env["type"], env["asserted_person"]), ("record.link", "person-a"))
+            self.assertEqual((env["type"], env["asserted_subject"]), ("record.link", "person-a"))
 
     def test_id_mode_keys_on_the_declared_id_and_skips_a_file_without_one(self):
         files = {"a/first.md": NOTE, "b/moved and edited.md": NOTE.replace("Nothing real", "Edited"),

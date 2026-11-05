@@ -93,7 +93,7 @@ def batch_events(request: Dict[str, Any]) -> Dict[str, Any]:
     definition = definitions[TYPE]
     card = read(str(config["card_path"]))
     person = str(config["person_id"])
-    envs = [envelope(definition, payload(card.device, s), asserted_person=person) for s in card.sessions]
+    envs = [envelope(definition, payload(card.device, s), asserted_subject=person) for s in card.sessions]
     check(definitions, envs)
     groups = list(batches(envs))
     manifests = definitions.manifests()

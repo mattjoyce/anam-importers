@@ -264,7 +264,7 @@ def envelope(rec: Dict[str, Any], person: str, where: str) -> Dict[str, Any]:
     payload["id"] = go_text(rid)
     env: Dict[str, Any] = {"type": typ, "payload": payload}
     if person:
-        env["asserted_person"] = person
+        env["asserted_subject"] = person
     return env
 
 
